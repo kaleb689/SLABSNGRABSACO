@@ -1520,6 +1520,96 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {data,appliedRuleIds:selected.ids};
  }
 
+
+ // Rejig Target from genuine, unmodified Address Bank Main entries, not from
+ // previously jigged profile values. Fill each exact Main to four first, then
+ // apply only the currently selected jig rules to further source variations.
+ function allocateTargetMainRejig(rows,bankChoices,inventory,selected,ruleIds,{mirrorBilling=false,phoneSeed}={}){
+  const selectedIds=new Set(selected.map(row=>row.id));
+  const occupancy=new Map();
+  for(const row of inventory)if(row.retailer==='target'&&!selectedIds.has(row.id)){
+   const key=mainAddressKey(row);occupancy.set(key,(occupancy.get(key)||0)+1);
+  }
+  const bankRows=bankChoices.filter(item=>item.id.startsWith('bank:')&&item.type==='main');
+  const unique=new Map();
+  const rank=address=>{
+   const street=String(address.address1||'').toUpperCase().replace(/\s+/g,' ');
+   if(/^(980 BAYBERRY POINT|1811 SABAL PALM|3775 TURTLE RUN|5871 BRISTOL)\b/.test(street))return 0;
+   if(/^451\s+(?:NW|NORTHWEST|NORTH WEST)\s+87TH?\s+/.test(street))return 1;
+   return 2;
+  };
+  for(const item of bankRows){
+   const address=item.address;
+   if(/^451\s+(?:NW|NORTHWEST|NORTH WEST)\s+87TH?\s+/.test(String(address.address1||'').toUpperCase())&&
+      (normalizedAddressPart(address.city)!=='PLANTATION'||String(address.zip||'').slice(0,5)!=='33324'))
+    throw Error('451 NW 87th Lane must be saved in this Address Bank with city Plantation and ZIP 33324 before Target Rejig. No changes made.');
+   const values=D.toValues(rows[0].originalData);
+   for(const field of ['address1','address2','city','state','zip'])values['shipping.'+field]=address[field];
+   const key=mainAddressKey({data:D.manualEdit(rows[0].originalData,values)});
+   if(!unique.has(key))unique.set(key,{...item,key});
+  }
+  const mains=[...unique.values()].sort((a,b)=>rank(a.address)-rank(b.address)||a.summary.localeCompare(b.summary));
+  if(!mains.length)throw Error('Target Rejig needs your saved, unjigged Main addresses in this vault’s Address Bank. No profiles were changed.');
+  for(const main of mains)if((occupancy.get(main.key)||0)>TARGET_MAX_PER_FORMAT)
+   throw Error('Saved Target accounts already exceed the four-profile cap at '+main.summary+'. Resolve that address before Rejig; nothing changed.');
+  function sourceData(row,main){
+   const values=D.toValues(row.originalData);
+   for(const field of ['address1','address2','city','state','zip']){
+    values['shipping.'+field]=main.address[field];
+    if(mirrorBilling)values['billing.'+field]=main.address[field];
+   }
+   return C.syncCardholderToProfile(D.manualEdit(row.originalData,values));
+  }
+  function assign(row,main,data,ruleIdsApplied,kind){
+   row.data=data;row.after=addressView(data);
+   ensureExistingUnitPreserved(main.address,row.after,ruleIdsApplied);
+   row.appliedRuleIds=[...ruleIdsApplied];
+   row.category=kind;
+   row.mainAddress={...main.address};
+   row.unitBankSourceId=main.id;row.unitBankSourceAddress={...main.address};
+   row.postalCityApplied=null;
+  }
+  const assigned=new Set();
+  // Existing selected profiles already on a genuine Main count toward that
+  // Main's four. Retain them there before filling each remaining vacant slot.
+  for(const main of mains){
+   const matching=rows.filter(row=>!assigned.has(row.profileId)&&
+    mainAddressKey({data:row.originalData})===main.key);
+   for(const row of matching){
+    if((occupancy.get(main.key)||0)>=TARGET_MAX_PER_FORMAT)break;
+    assign(row,main,sourceData(row,main),[],'Target saved Main address');
+    occupancy.set(main.key,(occupancy.get(main.key)||0)+1);assigned.add(row.profileId);
+   }
+  }
+  const pending=rows.filter(row=>!assigned.has(row.profileId));
+  let next=0,originals=assigned.size;
+  for(const main of mains)while(next<pending.length&&(occupancy.get(main.key)||0)<TARGET_MAX_PER_FORMAT){
+   const row=pending[next++];
+   assign(row,main,sourceData(row,main),[],'Target saved Main address');
+   occupancy.set(main.key,(occupancy.get(main.key)||0)+1);originals++;
+  }
+  // Only after filling ALL original Main slots do any variants consume space.
+  const extras=pending.slice(next);
+  for(let i=0;i<extras.length;i++){
+   const row=extras[i];let done=false;
+   for(let offset=0;offset<mains.length;offset++){
+    const main=mains[offset];
+    const baseData=sourceData(row,main);
+    try{
+     const plan=preferredTargetJig({data:baseData},ruleIds,occupancy,{single:true,mirrorBilling});
+     if(!plan.appliedRuleIds.length)continue;
+     assign(row,main,plan.data,plan.appliedRuleIds,'Target variation after saved Mains');
+     done=true;break;
+    }catch(error){
+     if(!String(error.message||'').startsWith('Target has no available four-use address variation slots'))throw error;
+    }
+   }
+   if(!done)throw Error('The '+mains.length+' saved Main addresses are filled to four each, but '+extras.length+
+    ' more selected Target profiles need allowed variations. Check additional jig styles. Nothing was changed.');
+  }
+  return {mainAddresses:mains.length,originalSlots:originals,extraVariations:extras.length};
+ }
+
  function distributeJigs(ruleIds,count,preferences){
   const styles=[...new Set(ruleIds.filter(id=>id!==C.FL_PHONE_RULE).map(C.jigStyle))];
   if(!styles.length)return {sequence:[],counts:{}};
@@ -1558,6 +1648,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.autoUnitFromAddressBank!==undefined&&typeof p.autoUnitFromAddressBank!=='boolean')
    throw Error('Invalid automatic Address Bank source option.');
   const autoUnitFromAddressBank=p.autoUnitFromAddressBank===true&&optionalUnitCount>0;
+  const targetMainFromBank=p.targetMainFromBank===true;
+  if(p.targetMainFromBank!==undefined&&typeof p.targetMainFromBank!=='boolean')throw Error('Invalid Target Main Address Bank setting.');
+  if(targetMainFromBank&&retailer!=='target')throw Error('Main-first Rejig is only available for Target.');
+  if(targetMainFromBank&&(optionalUnitCount>0||p.reuse||p.distribution?.enabled===true||p.combine===true))
+   throw Error('Target Main-first Rejig fills all original addresses before variations. Turn off optional unit generation, exact address reuse, weighted distribution, and combined jigs for this mode.');
   if(p.sourceMainFromBank!==undefined&&typeof p.sourceMainFromBank!=='boolean')throw Error('Invalid full Address Bank source setting.');
   const sourceMainFromBank=p.sourceMainFromBank===true;
   if(sourceMainFromBank&&retailer!=='walmart')throw Error('Full Address Bank sourcing currently applies to Walmart Jig only.');
@@ -1569,12 +1664,12 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const reuseCount=reuse?reuse.count:0;
   if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
   if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
-     (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount))
+     (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
   const all=await profiles.fieldSnapshot(a.scope,a.id),selected=p.profileIds.map(id=>all.find(x=>x.id===id&&x.retailer===retailer));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
   const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
   // Random appended Apt/Unit/etc. designators use only unitless Main
   // houses from the saved bank. With units OFF, every saved bank entry is eligible.
@@ -1588,7 +1683,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   // verification. Only the city name may change; ZIP/state/street stay intact.
   const postalScanned=new Map();
   let postalAlternativeCount=0;
-  if(p.postalScan===true){
+  if(p.postalScan===true&&!targetMainFromBank){
    if(typeof getPostalJigOptions!=='function')throw Error('Online postal city crossover scanner is unavailable in this Studio build.');
    const distinct=new Map();
    for(const row of regularSelected){
@@ -1631,6 +1726,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      if(p.billingSameAsShipping===true)values['billing.'+field]=source.address[field];
     }
     data=C.syncCardholderToProfile(D.manualEdit(row.data,values));
+   }else if(targetMainFromBank){
+    data=structuredClone(row.data);
    }else if(targetFourMode){
     const preferred=preferredTargetJig(row,p.ruleIds,targetCounts,{single:regularSelected.length===1,mirrorBilling:p.billingSameAsShipping===true});
     data=preferred.data;appliedRuleIds=preferred.appliedRuleIds;
@@ -1680,7 +1777,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const lookupKey=String(before.zip||'').slice(0,5)+'|'+String(before.state||'').toUpperCase()+'|'+String(before.city||'').toUpperCase();
    const availablePostal=postalScanned.get(lookupKey)?.cities||[];
    let appliedPostalCity=null;
-   if(!reuseThis&&p.postalApplyCities===true&&availablePostal.length&&
+   if(!targetMainFromBank&&!reuseThis&&p.postalApplyCities===true&&availablePostal.length&&
      (groupSizes.get(key)===1||groupPosition>0)){
     const current=D.toValues(data),nextCity=availablePostal[(regularIndex+groupPosition)%availablePostal.length];
     // Retain any separately selected city edit and preserve the ZIP/state.
@@ -1700,6 +1797,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     category:reuseThis?'reused saved address':hardResults?.[regularIndex]?.kind||((groupPosition===0&&groupSizes.get(key)>1)?'original':'legacy'),
     mainAddress:reuseThis?source.address:hardResults?.[regularIndex]?.mainAddress||before};
   });
+  const targetAllocation=targetMainFromBank?allocateTargetMainRejig(rows,savedBankChoices,all,selected,p.ruleIds,
+   {mirrorBilling:p.billingSameAsShipping===true,phoneSeed}):null;
   // First use selected profiles whose existing address is unitless. If the
   // owner enabled automatic sourcing, pull unitless Main entries from THIS
   // vault's Address Bank for the remaining requested profiles. This is a
@@ -1840,13 +1939,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const token=uuid();
   for(const [id,plan] of jigPlans)if(now()-plan.at>600000)jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
-   autoUnitFromAddressBank,sourceMainFromBank,
+   autoUnitFromAddressBank,sourceMainFromBank,targetMainFromBank,
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
   return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitBankReassigned:bankReassigned,
    optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
    count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
-   postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
+   targetAllocation,postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
    distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
@@ -1856,14 +1955,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
   if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('No profile address changes to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
-  const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank?await reusableShippingChoices(a,latest):[];
+  const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank||plan.targetMainFromBank?await reusableShippingChoices(a,latest):[];
   for(const change of plan.rows){
    if(change.unitBankSourceId){
-    const fullBankSource=plan.sourceMainFromBank&&change.category==='random saved Address Bank source';
+    const fullBankSource=(plan.sourceMainFromBank&&change.category==='random saved Address Bank source')||
+     (plan.targetMainFromBank&&change.category.startsWith('Target '));
     if(!fullBankSource&&(!plan.autoUnitFromAddressBank||!change.appliedRuleIds.includes('second-line.add')))
      throw Error('Automatic Address Bank source is not authorized for this profile.');
     const saved=bankChoices.find(item=>item.id===change.unitBankSourceId&&item.id.startsWith('bank:')&&
-     (fullBankSource||item.type==='main')&&
+     (fullBankSource?(!plan.targetMainFromBank||item.type==='main'):item.type==='main')&&
      (!change.appliedRuleIds.includes('second-line.add')||(!item.address.address2.trim()&&!inlineUnit(item.address.address1))));
     if(!saved||Object.values(saved.address).map(normalizedAddressPart).join('|')!==
       Object.values(change.unitBankSourceAddress).map(normalizedAddressPart).join('|'))

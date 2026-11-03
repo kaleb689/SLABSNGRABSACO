@@ -1419,3 +1419,86 @@ test('Five Target profiles use four identical full addresses followed by first s
  const saved=(await h.lib.list(event,h.p)).profiles;
  assert.equal(saved.filter(x=>D.toValues(x.data)['shipping.address1']==='100 Example Ave').length,1);
 });
+
+
+test('Target Main-first Rejig fills all saved original address slots before enabled variations',async t=>{
+ const h=await library(t);
+ for(const a of [
+  {...address,label:'Main One',address1:'2110 Forest Lane',address2:'',city:'Plantation'},
+  {...address,label:'Main Two',address1:'9911 Sunrise Road',address2:'',city:'Plantation'}
+ ])await h.service.addAddress(event,{...h.p,address:a});
+ for(let i=0;i<10;i++)await commit(h,await preview(h,[complete('target','target-main-first-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const before=JSON.stringify(rows);
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
+  ruleIds:['suffix.matching'],targetMainFromBank:true,combine:false,billingSameAsShipping:true});
+ assert.deepEqual(plan.targetAllocation,{mainAddresses:2,originalSlots:8,extraVariations:2});
+ assert.equal(plan.profiles.length,10);
+ for(const base of ['2110 Forest Lane','9911 Sunrise Road'])
+  assert.equal(plan.profiles.filter(row=>row.after.address1===base).length,4);
+ assert.equal(plan.profiles.filter(row=>/Forest Ln|Sunrise Rd/.test(row.after.address1)).length,2);
+ assert.equal(plan.duplicateAddresses.length,0);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'Preview must not modify profiles');
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore,'Preview must not modify the Address Bank');
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(applied.updated,10);
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+});
+
+test('Target Main-first Rejig respects an unselected account already occupying a Main slot',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,label:'Main',address1:'2110 Forest Lane',address2:'',city:'Plantation'}});
+ const existingBase=complete('target','already-at-main@example.test');
+ const existing=D.manualEdit(existingBase,{...LC.values(existingBase),
+  'shipping.address1':'2110 Forest Lane','shipping.city':'Plantation','billing.address1':'2110 Forest Lane','billing.city':'Plantation'
+ });
+ await commit(h,await preview(h,[existing]));
+ for(let i=0;i<3;i++)await commit(h,await preview(h,[complete('target','incoming-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles;
+ const chosen=rows.filter(x=>x.email!=='already-at-main@example.test');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:chosen.map(x=>x.id),
+  targetMainFromBank:true,ruleIds:[],billingSameAsShipping:true});
+ assert.equal(plan.targetAllocation.originalSlots,3);
+ assert.equal(plan.targetAllocation.extraVariations,0);
+ assert.ok(plan.profiles.every(row=>row.after.address1==='2110 Forest Lane'));
+ assert.equal(plan.duplicateAddresses.length,0);
+});
+
+test('Target Main-first Rejig requires Plantation for 451 saved Main address',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,label:'451 Apt 102',address1:'451 NW 87th Lane',address2:'Apt 102',city:'Fort Lauderdale',zip:'33324-6540'}});
+ await commit(h,await preview(h,[complete('target','wrong-city@example.test')]));
+ const profile=(await h.lib.list(event,h.p)).profiles[0];
+ await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[profile.id],
+  targetMainFromBank:true,ruleIds:[],billingSameAsShipping:true}),/Plantation/);
+});
+
+
+test('Main-first Target Rejig allocates 100 profiles across 18 Mains and fills every exact address to four before variations',async t=>{
+ const h=await library(t);
+ const mainAddresses=Array.from({length:18},(_,i)=>({...address,label:'Main '+(i+1),
+  address1:(3000+i)+' Example Road',address2:'',city:'Plantation',zip:'33324'}));
+ for(const main of mainAddresses)await h.service.addAddress(event,{...h.p,address:main});
+ for(let i=0;i<100;i++)await commit(h,await preview(h,[complete('target','hundred-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const before=JSON.stringify(rows);
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:rows.map(row=>row.id),targetMainFromBank:true,ruleIds:['suffix.matching'],
+  combine:false,billingSameAsShipping:true,postalScan:false});
+ assert.equal(result.count,100);
+ assert.deepEqual(result.targetAllocation,{mainAddresses:18,originalSlots:72,extraVariations:28});
+ for(const main of mainAddresses)assert.equal(result.profiles.filter(row=>
+  row.after.address1===main.address1&&row.after.city==='Plantation').length,4);
+ const counts=new Map();
+ for(const row of result.profiles){
+  const key=[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip].join('|');
+  counts.set(key,(counts.get(key)||0)+1);
+ }
+ assert.ok([...counts.values()].every(n=>n<=4),'No Target format exceeds four profiles');
+ assert.equal([...counts.values()].reduce((sum,n)=>sum+n,0),100);
+ assert.equal(result.duplicateAddresses.length,0);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'preview is read-only');
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+});

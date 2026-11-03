@@ -1047,6 +1047,10 @@
    const info=text('p','All '+chosen.length+' selected profiles will be processed from this one review. You do not need to open them one at a time.');
    const rules=d.createElement('div');rules.className='profileJigRules';
    groupedJigChoices(rules,settings);
+   const targetMainLabel=text('label','Target Rejig: start with all saved Main addresses (up to 4 profiles each) before variations'),targetMainToggle=d.createElement('input');
+   targetMainLabel.className='check';targetMainLabel.hidden=retailer!=='target';targetMainToggle.type='checkbox';targetMainToggle.checked=retailer==='target';targetMainLabel.prepend(targetMainToggle);
+   const targetMainInfo=text('small','This resets the address allocation in the PREVIEW only. Existing Target profiles outside this selection count toward each four-use limit. The Address Bank is never changed. All address changes require Apply.');
+   targetMainInfo.hidden=retailer!=='target';
    const combine=text('label','Combine selected jig styles (up to 3 per profile)'),combineBox=d.createElement('input');combine.className='check';combineBox.type='checkbox';combine.prepend(combineBox);
    const distributionLabel=text('label','Choose more of one or more jig styles'),distributionToggle=d.createElement('input');
     distributionLabel.className='check';distributionToggle.type='checkbox';distributionToggle.checked=false;distributionLabel.prepend(distributionToggle);
@@ -1105,13 +1109,22 @@
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    let changedCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
+   const enforceMainMode=()=>{
+    if(!targetMainToggle.checked)return;
+    combineBox.checked=false;distributionToggle.checked=false;distributionPanel.hidden=true;
+    optionalUnitToggle.checked=false;unitQuantityLabel.hidden=true;
+    reuseToggle.checked=false;reusePanel.hidden=true;
+    postalApplyBox.checked=false;
+   };
+   targetMainToggle.addEventListener('change',()=>{enforceMainMode();schedulePreview();});
+   enforceMainMode();
    // Every checkbox or quantity edit invalidates the old approval token and
    // recomputes against the currently selected rules. Never apply a stale plan.
    const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
     previewTimer=setTimeout(()=>{previewTimer=null;if(win.valid()&&(!reuseToggle.checked||reuseLoaded))void preview.onclick?.();},400);};
-   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,bankSourceToggle,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',schedulePreview);
+   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,bankSourceToggle,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',()=>{enforceMainMode();schedulePreview();});
    for(const control of [unitQuantity,reuseCount,distributionPanel])control.addEventListener('input',schedulePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}reusePanel.hidden=!reuseToggle.checked;
@@ -1144,16 +1157,17 @@
      const optionalUnitCount=optionalUnitToggle.checked?Number(unitQuantity.value):0;
      if(optionalUnitToggle.checked&&(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<1||optionalUnitCount>chosen.length))
       throw Error('Choose how many selected profiles should receive an optional new unit (1–'+chosen.length+').');
-     win.status().textContent=postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
+     win.status().textContent=targetMainToggle.checked?'Allocating saved Target Main addresses (four per exact address) before additional enabled jigs…':postalScanBox.checked?'Checking online ZIP/city matches for selected main addresses…':'Preparing offline jig preview…';
      const counts=Object.fromEntries([...distributionPanel.querySelectorAll('input[data-style]')].map(input=>[input.dataset.style,Number(input.value)]));
       const distribution={enabled:distributionToggle.checked,counts};
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
-      ruleIds:selectedJigChoices(rules),combine:combineBox.checked,
+      ruleIds:selectedJigChoices(rules),targetMainFromBank:targetMainToggle.checked,combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
       autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
       postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
      if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;changedCount=result.changed;
-      if(result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
+      if(result.targetAllocation)review.append(text('p','Target Main-first allocation: '+result.targetAllocation.mainAddresses+' saved Main addresses · '+result.targetAllocation.originalSlots+' selected profiles allocated to original addresses · '+result.targetAllocation.extraVariations+' allocated to additional enabled variations · max 4 per exact Target address.'));
+     if(!result.targetAllocation&&result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      for(const row of result.profiles.slice(0,100))review.append(jigPreviewEntry(row,settings));
