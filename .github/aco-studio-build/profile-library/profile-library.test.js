@@ -1449,7 +1449,8 @@ test('Target Main-first Rejig fills all saved original address slots before enab
 test('Target Main-first Rejig respects an unselected account already occupying a Main slot',async t=>{
  const h=await library(t);
  await h.service.addAddress(event,{...h.p,address:{...address,label:'Main',address1:'2110 Forest Lane',address2:'',city:'Plantation'}});
- const existing=D.manualEdit(complete('target','already-at-main@example.test'),{
+ const existingBase=complete('target','already-at-main@example.test');
+ const existing=D.manualEdit(existingBase,{...LC.values(existingBase),
   'shipping.address1':'2110 Forest Lane','shipping.city':'Plantation','billing.address1':'2110 Forest Lane','billing.city':'Plantation'
  });
  await commit(h,await preview(h,[existing]));
@@ -1471,4 +1472,33 @@ test('Target Main-first Rejig requires Plantation for 451 saved Main address',as
  const profile=(await h.lib.list(event,h.p)).profiles[0];
  await assert.rejects(h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:[profile.id],
   targetMainFromBank:true,ruleIds:[],billingSameAsShipping:true}),/Plantation/);
+});
+
+
+test('Main-first Target Rejig allocates 100 profiles across 18 Mains and fills every exact address to four before variations',async t=>{
+ const h=await library(t);
+ const mainAddresses=Array.from({length:18},(_,i)=>({...address,label:'Main '+(i+1),
+  address1:(3000+i)+' Example Road',address2:'',city:'Plantation',zip:'33324'}));
+ for(const main of mainAddresses)await h.service.addAddress(event,{...h.p,address:main});
+ for(let i=0;i<100;i++)await commit(h,await preview(h,[complete('target','hundred-'+i+'@example.test')]));
+ const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const before=JSON.stringify(rows);
+ const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:rows.map(row=>row.id),targetMainFromBank:true,ruleIds:['suffix.matching'],
+  combine:false,billingSameAsShipping:true,postalScan:false});
+ assert.equal(result.count,100);
+ assert.deepEqual(result.targetAllocation,{mainAddresses:18,originalSlots:72,extraVariations:28});
+ for(const main of mainAddresses)assert.equal(result.profiles.filter(row=>
+  row.after.address1===main.address1&&row.after.city==='Plantation').length,4);
+ const counts=new Map();
+ for(const row of result.profiles){
+  const key=[row.after.address1,row.after.address2,row.after.city,row.after.state,row.after.zip].join('|');
+  counts.set(key,(counts.get(key)||0)+1);
+ }
+ assert.ok([...counts.values()].every(n=>n<=4),'No Target format exceeds four profiles');
+ assert.equal([...counts.values()].reduce((sum,n)=>sum+n,0),100);
+ assert.equal(result.duplicateAddresses.length,0);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'preview is read-only');
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
 });
