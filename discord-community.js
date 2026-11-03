@@ -547,10 +547,35 @@ export function setGlobalSkuQuantity(items, quantity) {
   if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
   return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
 }
-export function skuOwnerDetails(items) {
+// groupOf(row) names the retailer a selection belongs to. With it, the owner
+// breakdown lists SKUs under one heading per retailer; without it, one list.
+export function skuOwnerDetails(items, groupOf) {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return { title: "New SKU Order", description: "No SKUs selected.", color: 0x41b6e6 };
   const summary = skuCompactNotification(rows);
+  if (typeof groupOf === "function") {
+    const groups = new Map();
+    for (const row of rows) {
+      const name = skuSafeText(groupOf(row) || "Other").slice(0, 60) || "Other";
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name).push(skuSafeText(row.sku).slice(0, 80));
+    }
+    let description = "", shown = 0;
+    for (const [name, skus] of groups) {
+      const block = "**" + name + "** (" + skus.length + ")\n(" + skus.join(", ") + ")";
+      if (description && description.length + block.length + 2 > 3400) break;
+      description += (description ? "\n\n" : "") + block;
+      shown += skus.length;
+    }
+    const more = rows.length - shown;
+    return {
+      title: "New SKU Order",
+      description: description +
+        (more > 0 ? "\n\n+" + more + " more SKUs — choose View all SKUs for the full list." : "") +
+        "\n\n**Qty: " + summary.quantity + " for ALL SKUs**",
+      color: 0xfa9238
+    };
+  }
   const skus = rows.map(row => skuSafeText(row.sku).slice(0, 80));
   const visible = [];
   for (const sku of skus) {
@@ -2659,7 +2684,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const other = withoutSupersededSkus(record.items, channelId, sourceId, validSkus)
         .filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
       const chosenQty = draft.items.length ? uniformSkuQuantity(draft.items) : uniformSkuQuantity(other);
-      const next = setGlobalSkuQuantity([...other, ...draft.items], chosenQty || 1);
+      const next = setGlobalSkuQuantity([...other, ...tagRetailer(draft.items, channelId, sourceId, source)], chosenQty || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
@@ -3099,7 +3124,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!monitored.length && isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")) {
       const label = retailerDropLabels[d.channel_id] ||
         (d.channel_id === tonightChannelId ? "Dropping Tonight" : "Upcoming Drops");
-      const payloads = dropNewsPayloads(parseDropNews(d), label);
+      const payloads = dropNewsPayloads(parseDropNews(d), label, d.content || "");
       const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
       const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
       if (payloads.length && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
@@ -3114,6 +3139,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             await notifyRetailerSkuChange(formatted);
           }
           if (rendered.length === payloads.length) {
+            // SKU-less Upcoming posts still send the retailer announcement,
+            // linked to the formatted card rather than the removed paste.
+            await notifyUpcomingRetailerAnnouncement({ ...rendered[0], content: d.content || "" })
+              .catch(error => console.error("Formatted upcoming announcement:", error.message));
             try {
               await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
               await retireReformattedRawSource(d.channel_id, d.id);
@@ -3132,8 +3161,32 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await notifyRetailerSkuChange(d);
     await notifyUpcomingRetailerAnnouncement(d);
   }
+  // Retailer channels are labeled directly; Upcoming / Tonight selections use
+  // the retailer named in that post when one was detected.
+  function sourceRetailerKey(source) {
+    const text = [source?.content, ...(source?.embeds || []).flatMap(embed => [embed?.title, embed?.description])]
+      .filter(Boolean).join("\n");
+    const found = mentionedRetailers(text);
+    return found.length === 1 ? found[0] : "";
+  }
+  function tagRetailer(items, channelId, sourceId, source) {
+    if (retailerDropLabels[channelId]) return items;
+    const key = sourceRetailerKey(source);
+    if (!key) return items;
+    const prefix = channelId + ":" + sourceId + ":";
+    return items.map(item => String(item.key || "").startsWith(prefix) ? { ...item, retailer: key } : item);
+  }
+  function ownerSkuGroup(row) {
+    const channelId = String(row?.key || "").split(":")[0];
+    const retailer = retailerDropLabels[channelId];
+    if (retailer) return String(retailer).replace(/\s+Drops?$/i, "");
+    const where = channelId === tonightChannelId ? "Dropping Tonight" :
+      channelId === upcomingChannelId ? "Upcoming Drops" : "Other drops";
+    const named = retailerAlert(row?.retailer)?.name;
+    return named ? named + " · " + where : where;
+  }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
-    const summary = skuOwnerDetails(items);
+    const summary = skuOwnerDetails(items, ownerSkuGroup);
     const skipping = skipTonightDate === tonightDate();
     return {
       content: `${mention(ownerId)} · ${mention(userId)} (${skuSafeText(username).slice(0, 70)}) ${skipping ? "DO NOT RUN MY PROFILES TONIGHT" : "selected SKUs"}\n${change} · <t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -3220,8 +3273,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       record.username = username;
-      record.items = changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
-        chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity);
+      record.items = tagRetailer(changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
+        chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity), channelId, sourceId, source);
       if (channelId === tonightChannelId && quantity) delete record.skipTonightDate;
       if (channelId !== tonightChannelId && quantity) record.skippedUpcomingDrops =
         (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
@@ -4097,7 +4150,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         channelId===tonightChannelId?"tonight":"upcoming";
       return sources.map(source=>({
         channelId:String(channelId),sourceId:String(source.id),
-        retailer,label,products:parseDropSkus(source)
+        retailer,label,products:parseDropSkus(source),
+        postRetailer:retailerDropLabels[channelId]?"":sourceRetailerKey(source)
       }));
     }));
     return perChannel.flat();
@@ -4174,7 +4228,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         for (const product of source.products) {
           if (wanted.has(product.sku)) chosen.push({
             key: source.channelId + ":" + source.sourceId + ":" + product.sku,
-            sku: product.sku, name: product.name, quantity
+            sku: product.sku, name: product.name, quantity,
+            ...(source.postRetailer ? { retailer: source.postRetailer } : {})
           });
         }
       }

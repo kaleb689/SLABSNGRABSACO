@@ -6,6 +6,7 @@
 // in a code box, and the release date/time as a Discord timestamp.
 // Read-only: never follows links or invents SKUs, prices or dates.
 import { FORMATTED_DROP_MARKER, formattedDropName } from "./drop-monitor-format.js";
+import { mentionedRetailers, retailerAlert } from "./retailer-alert-roles.js";
 
 const COLOR = 0x38dce8;
 const TZ = "America/New_York";
@@ -160,10 +161,11 @@ export function parseDropNews(input, now = Date.now()) {
 }
 
 // A paste qualifies only when it really is a structured drop list: at least
-// one product with a valid SKU, and every product block carries a SKU.
+// one product block, and each block has a valid SKU or its own details
+// (Retail, Resale, Link...). Upcoming lists often have no SKUs yet.
 export function isDropNewsPaste(parsed) {
   return Boolean(parsed?.products?.length &&
-    parsed.products.every(product => validSku(product.sku)));
+    parsed.products.every(product => validSku(product.sku) || product.fields.length || product.link));
 }
 
 // ---- rendering ---------------------------------------------------------
@@ -173,7 +175,7 @@ function quoteLine(label, value) {
 function renderProduct(product) {
   const numeric = /^\d{6,14}$/.test(product.sku);
   const lines = ["**" + safe(product.name).slice(0, 200) + "**" + (numeric ? " `" + product.sku + "`" : "")];
-  if (!numeric) lines.push("> **SKU:** `" + safe(product.sku).slice(0, 80) + "`");
+  if (!numeric && product.sku) lines.push("> **SKU:** `" + safe(product.sku).slice(0, 80) + "`");
   // The owner does not want the "Market: eBay Sold" line in formatted posts.
   for (const f of product.fields) {
     if (/^market$/i.test(f.label)) continue;
@@ -182,9 +184,15 @@ function renderProduct(product) {
   if (product.link) lines.push("> **Link:** " + product.link);
   return lines.join("\n");
 }
-export function dropNewsPayloads(parsed, label) {
+// rawText lets Upcoming / Tonight titles name the one retailer the post
+// mentions ("Upcoming Drop · Target"). Retailer channels keep their name.
+export function dropNewsPayloads(parsed, label, rawText = "") {
   if (!isDropNewsPaste(parsed)) return [];
-  const title = formattedDropName(label);
+  let title = formattedDropName(label);
+  if (/upcoming|tonight/i.test(String(label || ""))) {
+    const found = mentionedRetailers(rawText);
+    if (found.length === 1 && retailerAlert(found[0])?.name) title += " · " + retailerAlert(found[0]).name;
+  }
   const sections = [];
   const head = [];
   for (const line of parsed.header.intro) head.push("> " + emojiFix(safe(line)).slice(0, 300));

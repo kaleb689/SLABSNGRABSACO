@@ -62,9 +62,10 @@ test("release times are Eastern; date-only releases keep their wording", () => {
   assert.equal(parseReleaseDate("no date here", NOW), null);
 });
 
-test("plain chat and SKU-less posts are never reformatted", () => {
+test("plain chat is never reformatted; a product list without SKUs is", () => {
   assert.equal(isDropNewsPaste(parseDropNews("Heads up, restock soon!", NOW)), false);
-  assert.equal(isDropNewsPaste(parseDropNews("Some Box\nRetail: $10", NOW)), false);
+  assert.equal(isDropNewsPaste(parseDropNews("Heads up\nrestock Friday at Target", NOW)), false);
+  assert.equal(isDropNewsPaste(parseDropNews("Some Box\nRetail: $10", NOW)), true);
 });
 
 test("a bare ID only counts at the end of a product line, never in times or links", () => {
@@ -78,4 +79,26 @@ test("confirming a newer copy of a drop replaces the same SKU from the older cop
   ];
   assert.deepEqual(withoutSupersededSkus(items, "c1", "new", ["111111"]).map(x => x.key),
     ["c1:old:222222", "c2:other:111111", "c1:new:111111"]);
+});
+
+test("Upcoming and Tonight cards name the one retailer the post mentions; SKU-less lists still format", () => {
+  const text = "Target restock this Friday\nNov 6 @ Store Open\n\nPrismatic ETB\nRetail: $49.99\nResale: ~$90";
+  const [card] = dropNewsPayloads(parseDropNews(text, NOW), "Upcoming Drops", text);
+  assert.equal(card.embeds[0].title, "Upcoming Drop · Target");
+  assert.match(card.embeds[0].description, /\*\*Prismatic ETB\*\*\n> \*\*Retail:\*\* \$49\.99/);
+  assert.doesNotMatch(card.embeds[0].description, /SKU/);
+  const [tonight] = dropNewsPayloads(parseDropNews(POST, NOW), "Dropping Tonight", POST);
+  assert.equal(tonight.embeds[0].title, "Dropping Tonight");
+});
+
+test("owner SKU request breakdown lists SKUs under each retailer", async () => {
+  const { skuOwnerDetails } = await import("../discord-community.js");
+  const rows = [
+    { key: "t:1:111111", sku: "111111", quantity: 2 },
+    { key: "w:2:222222", sku: "222222", quantity: 2 },
+    { key: "t:3:333333", sku: "333333", quantity: 2 }
+  ];
+  const label = row => ({ t: "Target", w: "Walmart" })[row.key.split(":")[0]];
+  const text = skuOwnerDetails(rows, label).description;
+  assert.match(text, /^\*\*Target\*\* \(2\)\n\(111111, 333333\)\n\n\*\*Walmart\*\* \(1\)\n\(222222\)\n\n\*\*Qty: 2 for ALL SKUs\*\*$/);
 });
