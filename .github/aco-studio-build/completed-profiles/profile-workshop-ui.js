@@ -58,9 +58,9 @@
  <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
  <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
  <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
- <label class="workshopCheck"><input data-optional-unit type="checkbox"> Add Random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg (e.g., Apt A; OFF by default)</label>
+ <label class="workshopCheck"><input data-optional-unit type="checkbox"> Append Random Apt / Unit / Ste / Lot / Rm / # / Fl / Bldg to Address Line 1 (123 Main St → 123 Main St Apt A; OFF by default)</label>
  <label data-optional-unit-count-wrap hidden>How many selected unitless profiles? <input data-optional-unit-count type="number" min="1" max="500" step="1" value="1"></label>
- <small>Optional — OFF by default. Never change, remove or rename any existing Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg or its identifier. New second lines always use a named label plus A-D or 1-9 (never bare numbers). Applies alongside the selected jig styles. Generated units are not confirmed delivery points.</small>
+ <small>Optional — OFF by default. Never change, remove or rename any existing Apt/Unit/Ste/Lot/Rm/#/Fl/Bldg or its identifier. New designators are appended after the street on Address Line 1 and use a label plus A-D or 1-9 (never a bare number); Address Line 2 stays unchanged. Applies alongside the selected jig styles. Generated units are not confirmed delivery points.</small>
  <label class="workshopCheck"><input data-distribution-toggle type="checkbox"> Choose more of one or more jig styles</label><div data-distribution-panel hidden><small>OFF: selected styles are distributed evenly. ON: enter preferred counts and the remainder is distributed automatically.</small><div data-distribution-rows></div></div><label class="workshopCheck"><input data-reuse-toggle type="checkbox"> Reuse a saved Main or Jigged shipping address across selected profiles</label>
  <section data-reuse-panel hidden><p>Choose the exact Main or previously Jigged address to use. Its complete shipping fields are copied without generating another jig.</p>
  <label>Choose Main or Jigged address<select data-reuse-choice></select></label>
@@ -168,7 +168,7 @@
     const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:distribution.enabled||!panel.querySelector('[data-enable-hard-counts]').checked?null:selectedHardCounts(),distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;bulkDuplicateCount=(result.duplicateAddresses||[]).length;
    if(optionalUnitCount!==result.optionalUnitAdded)throw Error('The selected unit count did not match the preview; do not apply this batch.');
-   const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' optional second-line unit(s) added in preview. Existing units are unchanged.';
+   const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' unit designation(s) appended to Address Line 1 in preview. Address Line 2 and existing units are unchanged.';
    bq('allow-duplicate').checked=false;bq('duplicate-warning').hidden=!bulkDuplicateCount;
    const out=bq('review-rows');out.replaceChildren();out.append(addedNote);if(result.distribution) {const info=d.createElement('p');info.textContent='Jig distribution: '+Object.entries(result.distribution).map(([style,n])=>style+': '+n).join(' · ');out.append(info);}
    if(bulkDuplicateCount){
@@ -200,7 +200,7 @@
       changed.append(word);
      }
      line.append(changed);
-     if(row.appliedRuleIds?.length){const applied=d.createElement('small');applied.textContent='Applied: '+row.appliedRuleIds.map(id=>id==='second-line.add'?'Added second-line unit':id).join(', ');applied.style.color='#8dddd4';line.append(applied);}
+     if(row.appliedRuleIds?.length){const applied=d.createElement('small');applied.textContent='Applied: '+row.appliedRuleIds.map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id).join(', ');applied.style.color='#8dddd4';line.append(applied);}
      group.append(line);
     }
     for(const group of groupViews.values()){const qty=group.querySelectorAll('p').length;group.querySelector('summary').textContent+=' · '+qty+' profile'+(qty===1?'':'s');}
