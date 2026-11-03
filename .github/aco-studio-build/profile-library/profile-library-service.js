@@ -2022,7 +2022,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      row.manualOverride=true;row.needsReview=false;
      if(row.pendingSourceHash){row.sourceHash=row.pendingSourceHash;delete row.pendingSourceHash;}
     }
-    ctx.audit('bulk-rejig-local',plan.retailer,{count:plan.rows.length});
+    ctx.audit('bulk-rejig-local','',{retailer:plan.retailer,count:plan.rows.length});
     return {updated:plan.rows.length};
    },a.check);
    jigPlans.delete(p.token);a.check();
