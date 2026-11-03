@@ -67,7 +67,7 @@ test('Target preset keeps fractional 1/2 through 1/4 and A-H hyphen house-number
  for(const id of ['target.house.fraction.half','target.house.fraction.third','target.house.fraction.quarter',...'abcdefgh'.split('').map(x=>'target.house.hyphen.'+x)])assert.ok(settings.selected.includes(id),id+' default');
 });
 
-test('Bulk Target jig leaves one original per main address and then distributes soft and hard variants',async t=>{
+test('Target fills four slots per exact base before applying different enabled jig styles',async t=>{
  const h=await library(t);
  for(let i=0;i<4;i++)await commit(h,await preview(h,[complete('target','mix'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
@@ -76,8 +76,9 @@ test('Bulk Target jig leaves one original per main address and then distributes 
  const streets=plan.profiles.map(x=>x.after.address1);
  assert.equal(streets[0],'100 Example Avenue');
  assert.ok(plan.profiles.every(x=>!x.after.address2),'Unitless addresses must not receive a unit without checking the new optional box');
- assert.ok(plan.profiles.slice(1).some(x=>x.appliedRuleIds.some(id=>id.startsWith('target.house.'))),'Selected hard jigs are used');
- assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,4);
+ assert.equal(plan.changed,0,'Four original address slots should be filled before moving on');
+ assert.equal(new Set(plan.profiles.map(x=>x.after.address1+'|'+x.after.address2)).size,1);
+ await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/No profile address changes/);
 });
 
 test('Multiple hard Target primary jigs stack only when Combine is explicitly enabled',async t=>{
@@ -87,8 +88,8 @@ test('Multiple hard Target primary jigs stack only when Combine is explicitly en
  const normal=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:false,billingSameAsShipping:false});
  assert.equal(normal.profiles[0].after.address1,'100 Example Avenue');
- assert.match(normal.profiles[1].after.address1,/^100(?:-A| 1\/2) Example Avenue$/i);
- assert.doesNotMatch(normal.profiles[1].after.address1,/-A 1\/2/i,'Normal mode must never stack two hard variants');
+ assert.equal(normal.profiles[1].after.address1,'100 Example Avenue','Second profile still uses the available original format slot');
+ assert.doesNotMatch(normal.profiles[1].after.address1,/-A 1\/2/i,'No forced stacking');
  const mixed=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:['target.house.fraction.half','target.house.hyphen.a'],combine:true,billingSameAsShipping:false});
  assert.equal(mixed.profiles[0].after.address1,'100 Example Avenue');
@@ -188,7 +189,7 @@ test('Exact Main/Jigged reuse count changes the chosen profiles only and can be 
  assert.equal(result.profiles[2].after.address2,'','The explicitly preserved original in the remaining group stays unchanged');
  const before=(await h.lib.list(event,h.p)).profiles;
  assert.ok(before.every(x=>!String(LC.values(x.data)['shipping.address2']||'').includes('Apt 2')));
- assert.equal(result.duplicateAddresses.length,2,'Intentional exact address reuse must show the two conflicts');
+ assert.equal(result.duplicateAddresses.length,0,'Two matching Target profiles remain within the four-per-variation ceiling');
  await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:true});
  const after=(await h.lib.list(event,h.p)).profiles;
  assert.equal(after.filter(x=>String(LC.values(x.data)['shipping.address2']).toUpperCase()==='APT 2').length,2);
@@ -726,7 +727,7 @@ test('Optional inline designators are OFF by default and appended to exactly the
   assert.equal(item.before.address2,'');
  }
  assert.ok(receiving.some(x=>x.after.address1!==x.before.address1),'Unit jig may accompany an address jig');
- assert.equal(new Set(receiving.map(x=>x.after.address1)).size,3);
+ assert.equal(new Set(receiving.map(x=>x.after.address1)).size,1,'Identical inline designators can each fill four exact-address slots');
  await assert.rejects(h.lib.batchJigPreview(event,{...args,optionalUnitCount:9}),/Only 8(?: of 8)? selected profiles/);
 
 });
@@ -748,7 +749,7 @@ test('Existing Apt, Ste, bare number and inline unit never change even if unit r
   assert.equal(row.after.address2,LC.values(existing.data)['shipping.address2']);
   assert.doesNotMatch(row.appliedRuleIds.join(','),/second-line.add/);
  }
- await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
+ if(result.changed)await h.lib.batchJigCommit(event,{token:result.token,confirmed:true,allowDuplicateAddresses:result.duplicateAddresses.length>0});
  const updated=(await h.lib.list(event,h.p)).profiles;
  for(const original of all){
   const saved=updated.find(x=>x.id===original.id);
@@ -775,8 +776,9 @@ test('Target hard fraction and hyphen groups appear in a realistic multi-address
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',profileIds:rows.map(x=>x.id),
   ruleIds:selected,combine:false,billingSameAsShipping:false,optionalUnitCount:0});
  const rules=result.profiles.flatMap(x=>x.appliedRuleIds);
- assert.ok(rules.some(x=>x.startsWith('target.house.fraction.')),'Fraction group must actually run');
- assert.ok(rules.some(x=>x.startsWith('target.house.hyphen.')),'Hyphen group must actually run');
+ assert.ok(rules.some(x=>x.startsWith('target.house.')),'Primary house-number jigs must remain available after preferred address spellings');
+ const addressCounts=new Map();for(const row of result.profiles){const key=[row.after.address1,row.after.address2,row.after.city,row.after.zip].join('|').toUpperCase();addressCounts.set(key,(addressCounts.get(key)||0)+1);}
+ assert.ok([...addressCounts.values()].every(count=>count<=4),'A Target variation cannot be allocated more than four times');
  assert.equal(rules.filter(x=>x==='second-line.add').length,0,'Unit box unchecked means no new units');
  assert.equal(result.profiles.filter(x=>x.after.address2).length,0,'Legacy unit-formatting rules may not add second lines without explicit checkbox');
 });
@@ -799,7 +801,7 @@ test('Unit addition alone works when explicitly enabled without any other jig ch
 
 test('Selected Target fractional and hyphen styles are actually applied across repeated main addresses',async t=>{
  const h=await library(t);
- for(let i=0;i<19;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
+ for(let i=0;i<25;i++)await commit(h,await preview(h,[complete('target','hard-family-'+i+'@example.test')]));
  const rows=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='target');
  const result=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
   profileIds:rows.map(x=>x.id),ruleIds:['suffix.matching','target.house.fraction.half',
@@ -807,9 +809,9 @@ test('Selected Target fractional and hyphen styles are actually applied across r
   'target.house.hyphen.b','target.house.hyphen.c'],combine:false,billingSameAsShipping:false,
   optionalUnitCount:0});
  const unchanged=result.profiles.filter(row=>row.after.address1===row.before.address1);
- assert.equal(unchanged.length,2,'One original is retained per 18, rather than per main address group');
+ assert.equal(unchanged.length,4,'Exactly four profiles get the original written address first');
  const applied=result.profiles.slice(1).filter(row=>row.appliedRuleIds.some(id=>id.startsWith('target.house.')));
- assert.ok(applied.length>=10,'Hard styles retain an approximately balanced two-of-three family share');
+ assert.ok(applied.length>=16,'Once preferred full and short slots fill, subsequent profiles receive hard transformations');
  assert.ok(applied.some(row=>/target\.house\.fraction\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.some(row=>/target\.house\.hyphen\./.test(row.appliedRuleIds.join(','))));
  assert.ok(applied.every(row=>row.after.address2===''),'No unit may be added without the checkbox');
