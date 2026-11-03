@@ -1166,7 +1166,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  function normalizedAddressPart(v){return String(v||'').trim().toUpperCase().replace(/\s+/g,' ');}
  function mainAddressKey(row){
   const v=C.values(row.data);
-  return ['shipping.address1','shipping.address2','shipping.city','shipping.state','shipping.zip'].map(k=>normalizedAddressPart(v[k])).join('|');
+  const line1=normalizedAddressPart(v['shipping.address1']);
+  const line2=normalizedAddressPart(v['shipping.address2']);
+  // An inline Apt/Unit/etc. designator represents the same address as the
+  // identical real unit stored on Address Line 2. Detect both as collisions.
+  const inline=inlineUnit(line1);
+  const street=inline?line1.slice(0,line1.length-inline.length).trim():line1;
+  const unit=line2||normalizedAddressPart(inline);
+  return [street,unit,'shipping.city','shipping.state','shipping.zip'].map((value,index)=>
+    index<2?value:normalizedAddressPart(v[value])).join('|');
  }
  // Detect exact full-address reuse across all saved accounts in this one vault,
  // including other retailer tabs. Do not read any other customer's vault.
