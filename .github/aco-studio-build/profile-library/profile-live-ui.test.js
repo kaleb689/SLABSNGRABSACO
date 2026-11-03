@@ -392,14 +392,16 @@ test('Jig UI groups related ordinal, compass, unit and Target hard variants',()=
 });
 
 test('Both Jig entrypoints allow optional units, with Walmart opt-in by default and unchanged other-retailer defaults',()=>{
- assert.match(source,/Add random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(source,/Append random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(source,/123 Main St Apt A/);
  assert.match(source,/optionalUnitToggle\.checked=retailer==='walmart'/);
  assert.match(source,/optionalUnitCount,/);
  assert.match(source,/autoUnitFromAddressBank:optionalUnitToggle\.checked/);
  assert.match(source,/postalScan:postalScanBox\.checked/);
  assert.match(workshopSource,/data-optional-unit type="checkbox"/);
  assert.match(workshopSource,/data-optional-unit-count type="number"/);
- assert.match(workshopSource,/Add Random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(workshopSource,/Append Random Apt \/ Unit \/ Ste \/ Lot \/ Rm \/ # \/ Fl \/ Bldg/);
+ assert.match(workshopSource,/Address Line 1/);
  assert.match(workshopSource,/optionalUnitCount,combine:state\.combine/);
  assert.match(workshopSource,/randomUnit:0/);
 });
