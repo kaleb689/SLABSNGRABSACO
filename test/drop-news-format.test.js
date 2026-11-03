@@ -84,7 +84,9 @@ test("confirming a newer copy of a drop replaces the same SKU from the older cop
 test("Upcoming and Tonight cards name the one retailer the post mentions; SKU-less lists still format", () => {
   const text = "Target restock this Friday\nNov 6 @ Store Open\n\nPrismatic ETB\nRetail: $49.99\nResale: ~$90";
   const [card] = dropNewsPayloads(parseDropNews(text, NOW), "Upcoming Drops", text);
-  assert.equal(card.embeds[0].title, "Upcoming Drop · Target");
+  assert.equal(card.embeds[0].title, "Target restock this Friday", "a headline first line becomes the title");
+  const plain = "Nov 6 @ Store Open\nTarget only\n\nPrismatic ETB\nRetail: $49.99";
+  assert.equal(dropNewsPayloads(parseDropNews(plain, NOW), "Upcoming Drops", plain)[0].embeds[0].title, "Upcoming Drop · Target");
   assert.match(card.embeds[0].description, /\*\*Prismatic ETB\*\*\n> \*\*Retail:\*\* \$49\.99/);
   assert.doesNotMatch(card.embeds[0].description, /SKU/);
   const [tonight] = dropNewsPayloads(parseDropNews(POST, NOW), "Dropping Tonight", POST);
@@ -104,9 +106,34 @@ test("owner SKU request breakdown lists SKUs under each retailer", async () => {
 });
 
 test("In-Store Drops cards are titled for the channel and name the store", () => {
-  const text = "Best Buy in-store Friday\nNov 6 @ Store Open\n\nDelta Reign Elite Trainer Box 6689672\nRetail: $49.99";
+  const text = "Nov 6 @ Store Open\n\nDelta Reign Elite Trainer Box 6689672\nRetail: $49.99";
   const [card] = dropNewsPayloads(parseDropNews(text, NOW), "In-Store Drops", text);
   assert.equal(card.embeds[0].title, "In-Store Drop");
-  const target = "Target in-store\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
+  const target = "Nov 6\nTarget only\n\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
   assert.equal(dropNewsPayloads(parseDropNews(target, NOW), "In-Store Drops", target)[0].embeds[0].title, "In-Store Drop · Target");
+});
+
+test("Kaleb's In-Store post: headline title, SKUs on their own line or after a slash name", () => {
+  const text = `In-Store: 30th Celebration Best Buy Releases
+Release: Friday, Nov 6 @ Store Open
+Product: Select 30th Celebration SKU's
+
+Ultra Premium Collection Day/Night 6685563
+Retail: $179.99
+
+Ditto Premium Collection
+6685562
+Retail: $39.99
+
+Figure Collection Mew/Mewtwo
+6685564
+Retail: $29.99`;
+  const [card] = dropNewsPayloads(parseDropNews(text, NOW), "In-Store Drops", text);
+  assert.equal(card.embeds[0].title, "In-Store: 30th Celebration Best Buy Releases");
+  assert.match(card.embeds[0].description, /\*\*Release:\*\* <t:\d+:D> @ Store Open/);
+  assert.match(card.embeds[0].description, /\*\*Ditto Premium Collection\*\* `6685562`/);
+  assert.match(card.embeds[0].description, /\*\*Figure Collection Mew\/Mewtwo\*\* `6685564`/);
+  const raw = parseDropSkus({ content: text }).map(x => x.sku).sort();
+  assert.deepEqual(raw, ["6685562", "6685563", "6685564"]);
+  assert.deepEqual(parseDropSkus(card).map(x => x.sku).sort(), raw);
 });

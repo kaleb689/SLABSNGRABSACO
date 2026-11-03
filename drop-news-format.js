@@ -17,9 +17,11 @@ const PRODUCT_FIELD = /^(?:retail|price|msrp|resale|market|links?|cart\s*limit|l
 const NOTES_HEADING = /^(?:additional\s*info(?:rmation)?|notes?|info|details)\s*:?\s*(.*)$/i;
 
 const strip = value => String(value || "").replace(/\*\*|__|`/g, "").replace(/^>\s?/, "").trim();
-const safe = value => String(value || "").replace(/[\r\n<>@`]/g, " ").replace(/\s+/g, " ").trim();
+// "@ Store Open" keeps its @; an @ touching a name is dropped (no mentions).
+const safe = value => String(value || "").replace(/[\r\n<>`]/g, " ").replace(/@(?=\S)/g, "")
+  .replace(/\s+/g, " ").trim();
 const isUrl = value => /^https:\/\/\S+$/i.test(String(value || "").trim());
-const bareSku = line => /^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
+const bareSku = line => /:|https?:\/\/|www\./i.test(line) ? null : /^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
 const validSku = value => /^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(String(value || ""));
 
 function labeled(line) {
@@ -103,7 +105,7 @@ function sourceText(input) {
 export function parseDropNews(input, now = Date.now()) {
   const raw = sourceText(input).split(/\r?\n/);
   const lines = raw.map(strip);
-  const header = { release: null, releaseText: "", fields: [], intro: [] };
+  const header = { release: null, releaseText: "", fields: [], intro: [], headline: "" };
   const products = [], notes = [];
   let current = null, notesMode = false;
   const nextFilled = from => { for (let j = from; j < lines.length; j++) if (lines[j]) return lines[j]; return ""; };
@@ -138,7 +140,14 @@ export function parseDropNews(input, now = Date.now()) {
     }
     if (field && !products.length) { header.fields.push({ label: field.label, value: field.value }); continue; }
     if (field) { notes.push(line); continue; }
-    // Plain text line.
+    // Plain text line. A bare ID alone on the next line is this product's SKU.
+    const ownLineSku = /^\d{6,14}$/.test(lines[i + 1] || "") && !/:/.test(line) ? lines[i + 1] : "";
+    if (ownLineSku && !/^\d+$/.test(line)) {
+      current = { name: line, sku: ownLineSku, fields: [], link: "" };
+      products.push(current);
+      i++;
+      continue;
+    }
     const bare = bareSku(line);
     const following = labeled(nextFilled(i + 1));
     const startsProduct = bare || (following && (SKU_LABEL.test(following.label) || PRODUCT_FIELD.test(following.label)));
@@ -149,6 +158,11 @@ export function parseDropNews(input, now = Date.now()) {
     }
     if (!products.length) {
       const date = !header.release ? parseReleaseDate(line, now) : null;
+      // The paste's very first line, when it is not a date, is its headline
+      // ("In-Store: 30th Celebration Best Buy Releases") and becomes the title.
+      if (!date && !header.headline && !header.intro.length && !header.fields.length && !header.release) {
+        header.headline = line; continue;
+      }
       if (date) { header.release = date; header.releaseText = line; }
       else header.intro.push(line);
       continue;
@@ -189,7 +203,8 @@ function renderProduct(product) {
 export function dropNewsPayloads(parsed, label, rawText = "") {
   if (!isDropNewsPaste(parsed)) return [];
   let title = formattedDropName(label);
-  if (/upcoming|tonight|in-?store/i.test(String(label || ""))) {
+  if (parsed.header.headline) title = emojiFix(safe(parsed.header.headline)).slice(0, 240);
+  else if (/upcoming|tonight|in-?store/i.test(String(label || ""))) {
     const found = mentionedRetailers(rawText);
     if (found.length === 1 && retailerAlert(found[0])?.name) title += " · " + retailerAlert(found[0]).name;
   }

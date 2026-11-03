@@ -269,7 +269,7 @@ export function parseDropSkus(message) {
       .filter(Boolean).join("\n"))];
   const products=[],seen=new Set();
   for(const section of sections){
-    let title="Product name not provided",pendingId=false;
+    let title="Product name not provided",pendingId=false,titleLine=false;
     const addSku=(sku,name)=>{
       const id=String(sku||"").toUpperCase();
       if(!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(id)||seen.has(id))return;
@@ -283,18 +283,24 @@ export function parseDropSkus(message) {
         pendingId=false;
         if(/^[A-Z0-9][A-Z0-9._-]{2,79}$/i.test(line)){addSku(line,title);continue;}
       }
+      // A bare retailer ID on its own line right under a product name
+      // ("Ditto Premium Collection" then "6685562") is that product's SKU.
+      const ownLine=titleLine&&/^\d{6,14}$/.test(line);
+      titleLine=false;
+      if(ownLine){addSku(line,title);continue;}
       if(/^(?:SKU|PID|TCIN)\s*:?[ \t]*$/i.test(line)){pendingId=true;continue;}
       const sku=/\b(?:SKU|PID|TCIN)\s*(?:#|:|-|\s)\s*([A-Z0-9][A-Z0-9._-]{2,79})\b/i.exec(line);
       if(sku){
         const prefix=line.slice(0,sku.index).replace(/[-:|\s]+$/,"").trim();
         addSku(sku[1],prefix||title);
-      }else if(!/[:\/]/.test(line)&&/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.test(line)){
+      }else if(!/:|https?\/\/|www\./i.test(line)&&/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.test(line)){
         // "Figure Collection Mew 1012793603": a bare retailer ID ending a
         // product line (no label, no links or times) is that product's SKU.
         const bare=/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
         addSku(bare[2],bare[1].trim());
       }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
         title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"").slice(0,100);
+        titleLine=!/:/.test(line);
       }
     }
   }

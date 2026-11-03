@@ -83,7 +83,7 @@ test("In-Store Drops posts are formatted for viewing only, with no SKU picker", 
     api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title]); return { id: "card" }; },
     ensureSkuControls: async () => controls.push(1), console };
   vm.createContext(context); vm.runInContext(snippet, context);
-  const content = "Target in-store\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
+  const content = "Nov 6\nTarget only\n\nUltra Premium Collection Day\nSKU: 1012850570\nRetail: $249.99";
   await context.onDropPost({ guild_id: "guild", channel_id: "instore", id: "raw", author: { id: "owner" }, content });
   assert.deepEqual(calls.map(c => c[0]), ["POST", "DELETE"]);
   assert.equal(calls[0][2], "In-Store Drop · Target");
