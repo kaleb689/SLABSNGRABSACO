@@ -719,7 +719,7 @@ test('Optional second lines are OFF by default and added to exactly the owner-se
  const receiving=result.profiles.filter(x=>x.after.address2);
  assert.equal(receiving.length,3);
  for(const item of receiving){
-  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(item.after.address2,/^(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
   assert.ok(item.appliedRuleIds.includes('second-line.add'));
   assert.equal(item.before.address2,'');
  }
@@ -860,7 +860,7 @@ test('Auto second-line sources saved unitless Main addresses when all selected p
  for(const item of changed){
   assert.equal(item.before.address2,'Apt 1309');
   assert.ok(/Forest Lane|Sunrise Road/.test(item.after.address1));
-  assert.match(item.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(item.after.address2,/^(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
   assert.ok(item.appliedRuleIds.includes('second-line.add'));
   assert.equal(item.category,'automatic Address Bank source');
  }
@@ -1046,7 +1046,7 @@ test('Walmart Jig uses every eligible saved Main house, adds unique optional sec
  for(const p of plan.profiles){
   assert.equal(p.before.address2,'Apt 41');
   assert.equal(p.category,'random saved Address Bank source');
-  assert.match(p.after.address2,/^(?:(?:Apt|Unit|Ste|#)\s+)?(?:[A-D]|[1-9])$/);
+  assert.match(p.after.address2,/^(?:Apt|Unit|Ste|Lot|Rm|#|Fl|Bldg)\s+(?:[A-D]|[1-9])$/);
   assert.ok(mainAddresses.some(a=>a.address1===p.mainAddress.address1));
   assert.ok(p.unitBankSourceId?.startsWith('bank:'));
   assert.ok(p.appliedRuleIds.includes('second-line.add'));
@@ -1257,4 +1257,48 @@ test('Failed or stale website returns do not delete local customer mirrors or mo
  row=(await lib.list(event,h.a)).profiles[0];
  assert.equal(row.sourceLinked,true);
  assert.equal((await lib.list(event,h.b)).profiles.length,0);
+});
+
+
+test('Target directional rules normalize all eight directions and keep alternate formats opt-in',()=>{
+ const cases=[
+  ['North','N','No'],['South','S','So'],['East','E','Ea'],['West','W','We'],
+  ['Northeast','NE','N.E.'],['Northwest','NW','N.W.'],['Southeast','SE','S.E.'],['Southwest','SW','S.W.']
+ ];
+ const ids=LC.ruleOptions('target').map(x=>x.id);
+ for(const id of ['target.direction.short','target.direction.long','target.direction.alternate','target.direction.spaced'])
+  assert.ok(ids.includes(id),id+' must be selectable in Target Jig Settings');
+ const original=complete('target','directions@example.test');
+ function address(street){
+  return D.manualEdit(original,{...D.toValues(original),'shipping.address1':street,'billing.address1':street});
+ }
+ for(const [long,short,alternate] of cases){
+  const full='100 '+long+' Example Avenue';
+  const result=LC.jig(address(full),'target',1,['target.direction.short']);
+  assert.equal(D.toValues(result)['shipping.address1'],'100 '+short+' Example Avenue',long+' standard short');
+  const nonstandard=LC.jig(address(full),'target',1,['target.direction.alternate']);
+  assert.equal(D.toValues(nonstandard)['shipping.address1'],'100 '+alternate+' Example Avenue',long+' alternative');
+  const restored=LC.jig(address('100 '+short+' Example Avenue'),'target',1,['target.direction.long']);
+  assert.equal(D.toValues(restored)['shipping.address1'],full,long+' full direction');
+ }
+ for(const [short,spaced] of [['NE','North East'],['NW','North West'],['SE','South East'],['SW','South West']]){
+  const result=LC.jig(address('100 '+short+' Example Avenue'),'target',1,['target.direction.spaced']);
+  assert.equal(D.toValues(result)['shipping.address1'],'100 '+spaced+' Example Avenue',short+' spaced diagonal');
+  const normalized=LC.jig(address('100 '+spaced+' Example Avenue'),'target',1,['target.direction.short']);
+  assert.equal(D.toValues(normalized)['shipping.address1'],'100 '+short+' Example Avenue',short+' spaced normalizes');
+ }
+ const post=LC.jig(address('100 Example Avenue Northeast'),'target',1,['target.direction.short']);
+ assert.equal(D.toValues(post)['shipping.address1'],'100 Example Avenue NE');
+ const noDirection=LC.jig(address('100 Example Avenue'),'target',1,['target.direction.alternate']);
+ assert.equal(D.toValues(noDirection)['shipping.address1'],'100 Example Avenue','Never insert a direction that is not already present');
+ assert.equal(LC.jigStyle('target.direction.alternate'),'direction-alternate');
+ assert.equal(LC.jigStyle('target.direction.spaced'),'direction-spaced');
+});
+
+test('Random second-line generator allows only eight labeled formats, never a bare number',()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../profile-library-service.js'),'utf8');
+ assert.match(source,/SECOND_LINE_LABELS=\['Apt','Unit','Ste','Lot','Rm','#','Fl','Bldg'\]/);
+ assert.match(source,/const unit=label\+' '\+identifier/);
+ assert.doesNotMatch(source,/SECOND_LINE_LABELS=\[[^\n]*''\]/);
+ assert.match(source,/crypto\.randomInt\(SECOND_LINE_LABELS\.length\*SECOND_LINE_IDS\.length\)/);
 });
