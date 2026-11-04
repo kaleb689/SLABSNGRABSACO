@@ -1,6 +1,6 @@
 'use strict';
 const path=require('node:path'),fs=require('node:fs/promises'),crypto=require('node:crypto');
-const Core=require('./app'),Fields=require('./jig-field-core'),Draft=require('./profile-draft-core'),CardPolicy=require('./card-pool-policy');
+const Core=require('./app'),Fields=require('./jig-field-core'),Draft=require('./profile-draft-core'),CardPolicy=require('./card-pool-policy'),ProfilePhone=require('./profile-library-core');
 function ids(v,label){if(!Array.isArray(v)||!v.length||v.length>500||v.some(x=>typeof x!=='string'||!x||x.length>180)||new Set(v).size!==v.length)throw Error('Select '+label+' from this vault.');return v;}
 const cardKey=(scope,id)=>scope==='personal'?'personal:owner':id;
 const same=(a,b)=>Fields.hash(a)===Fields.hash(b);
@@ -274,7 +274,8 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   if(operation==='remove'){beforeWrite();return scope==='personal'?addressBanks.removePersonal(resourceId):addressBanks.removeAco(id,resourceId);}
   return addressBanks.updateWorkshopAddress(scope,id,resourceId,p.value,beforeWrite);
  }
- async function create(e,p){const {scope,id}=await access(e,p),generation=epoch(e);const data=Draft.blank(p.retailer,p.format,p.fields||{},uuid);
+ async function create(e,p){const {scope,id}=await access(e,p),generation=epoch(e);const draft=Draft.blank(p.retailer,p.format,p.fields||{},uuid);
+  const data=ProfilePhone.ensureMissingPhone(draft,String(p.fields?.email||uuid()),0).data;
   return profiles.createBlank(scope,id,p.retailer,p.format,data,()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault locked before saving draft.');});}
 
  async function emails(e,p){const {scope,id}=await access(e,p),generation=epoch(e),result=await profiles.emailInventory(scope,id,p.retailer);guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed while loading.');return result;}
@@ -291,7 +292,19 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
    const records=emails.map((email,i)=>Draft.blank(p.retailer,p.format,{...(accounts[i]?Draft.toValues(accounts[i].data):{}),email,label:(p.label||'Profile')+' '+(i+1)},uuid));
    const result=Fields.build({records,indices:records.map((_,i)=>i),scope,customerId:id,addresses,cards,choices:{address:true,card:true,name:p.randomNames===true},allowCardReuse:false,mirrorBilling:true});
    CardPolicy.checkAllocation(inventory,p.retailer,result.records.map(data=>CardPolicy.fromProfile({data})),settings,{excludeProfileIds:accounts.filter(Boolean).map(x=>x.id)});
-   return result.records.map((data,i)=>({data:syncCardholderToProfileName(data),format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}}));
+   const occupiedPhones=new Set();
+   for(const entry of inventory){
+    const vals=Draft.toValues(entry.data||{});
+    for(const field of ['phone','shipping.phone','billing.phone']){
+     const digits=String(vals[field]||'').replace(/\D/g,'');
+     if(digits)occupiedPhones.add(digits);
+    }
+   }
+   return result.records.map((data,i)=>({
+    data:ProfilePhone.ensureMissingPhone(syncCardholderToProfileName(data),
+     String(scope)+'|'+String(id||'owner')+'|'+emails[i],i,occupiedPhones).data,
+    format:p.format,assetRefs:{addressId:result.summary[i].addressId,cardId:result.summary[i].cardId}
+   }));
   },()=>{guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed before profile creation.');},p.emailIds??null)));
  }
 
