@@ -1662,12 +1662,15 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Choose an existing address and a profile count.');
   const reuseCount=reuse?reuse.count:0;
   if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
-  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id))||
-     (p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank))
+  if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
+  const phoneOnlyRequest=p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank;
   const all=await profiles.fieldSnapshot(a.scope,a.id),byId=new Map(all.filter(x=>x.retailer===retailer).map(x=>[x.id,x]));
   const selected=p.profileIds.map(id=>byId.get(id));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
+  if(phoneOnlyRequest&&!selected.some(row=>{
+   const v=D.toValues(row.data);return ['phone','shipping.phone','billing.phone'].some(k=>!String(v[k]||'').trim());
+  }))throw Error('Choose supported jig rules or select profiles with missing phone fields. No profile changes were made.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
   const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
   const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
