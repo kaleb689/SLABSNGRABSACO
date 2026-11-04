@@ -5,7 +5,9 @@
  // Preserve existing controls and handlers while grouping the sidebar explicitly.
  for(const node of [admin])if(node)nav.append(node);
  const customerProfiles=d.createElement('button');customerProfiles.type='button';customerProfiles.className='tabButton profileNavChild';customerProfiles.innerHTML='<span class="navIcon">▤</span><span>Profiles</span>';customer?.after(customerProfiles);
- separator('PERSONAL');if(personal)nav.append(personal);const personalProfiles=customerProfiles.cloneNode(true);nav.append(personalProfiles);if(email)nav.append(email);
+ const customerLogins=customerProfiles.cloneNode(true);customerLogins.innerHTML='<span class="navIcon">⇄</span><span>Login Accounts</span>';customerProfiles.after(customerLogins);
+ separator('PERSONAL');if(personal)nav.append(personal);const personalProfiles=customerProfiles.cloneNode(true);nav.append(personalProfiles);
+ const personalLogins=customerLogins.cloneNode(true);personalProfiles.after(personalLogins);if(email)nav.append(email);
  separator('SETTINGS');if(settings)nav.append(settings);if(notifications)nav.append(notifications);
  // Duplicate older workspaces remain installed but are no longer primary tabs.
  for(const el of [customer,personal,settings,nav.querySelector('[data-tab="site"]')])if(el){el.hidden=true;el.style.display='none';el.setAttribute('aria-hidden','true');}
@@ -34,6 +36,22 @@
  const main=d.createElement('main');main.id='profileLibraryPage';main.className='shell main profileLibrary';main.hidden=true;
  main.innerHTML='<header><div><div class="eyebrow" data-owner-title></div><h1>Profiles</h1><p>Choose a retailer, prepare unused accounts, review completed jigs, export, then move selected profiles to Live.</p></div><div class="buttons"><button type="button" class="btn primary" data-create-pools>Create profiles from pools</button><button type="button" class="btn secondary" data-import>Import</button><button type="button" class="btn secondary" data-import-live>Import live profiles</button><button type="button" class="btn secondary" data-jig-selected disabled>Jig selected</button><button type="button" class="btn secondary" data-bulk-move disabled>Move All Selected</button><button type="button" class="btn plain" data-bulk-delete disabled>Delete All Selected</button><button type="button" class="btn secondary" data-import-history>Import History</button><button type="button" class="btn primary" data-export>Export selected</button><button type="button" class="btn secondary" data-export-archive>Export full profile JSON</button></div></header><div class="profileLibraryControls"><label data-customer-label>Customer<select data-customer></select></label><label data-retailer-picker hidden>Retailer<select data-retailer aria-label="Current retailer"><option value="target">Target · Shikari CSV</option><option value="walmart">Walmart · Valor JSON</option><option value="pokemoncenter">Pokémon Center · Valor JSON</option><option value="costco">Costco · Valor JSON</option><option value="sams">Sam’s · Valor JSON</option></select></label><div class="profileRetailerButtons" data-retailer-tabs role="group" aria-label="Choose retailer"></div><label>Search<input type="search" data-search placeholder="Email, card or address"></label><label>View<select data-view><option value="all">All profiles</option><option value="issues">Issues only</option><option value="duplicates">Duplicates only</option></select></label><button type="button" class="btn secondary" data-pkc-reconcile>Reconcile PKC email pool</button><button type="button" class="btn secondary" data-rules>Retailer jig rules</button><button type="button" class="btn secondary" data-sync>Sync linked profiles</button></div><section data-retailer-workspace class="profileRetailerWorkspace" aria-label="Profiles for selected retailer"><div class="profileLibraryTabs"><button type="button" class="btn secondary" data-stage="unused" aria-pressed="true">Unused</button><button type="button" class="btn secondary" data-stage="new">New · Not Exported</button><button type="button" class="btn secondary" data-stage="completed">Ready for Export</button><button type="button" class="btn secondary" data-stage="live">Live Profiles</button><button type="button" class="btn plain" data-all>Select All on Page</button><button type="button" class="btn plain" data-clear>Clear selection</button></div><p data-current-retailer role="status">Target · Unused accounts</p></section><p data-selected-count role="status" aria-live="polite" style="position:sticky;top:0;z-index:2;background:#0d1b2a;padding:10px;border:1px solid #32d6d9;border-radius:8px">0 profiles selected on this page</p><p data-pool-counts role="status"></p><section class="profileResourceBanks" data-resource-banks><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Card Bank <span data-card-count></span></h3><div data-hard-card-tracker role="status" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div></div><button type="button" class="btn slim secondary" data-manage-cards>Manage cards</button></header><input type="search" data-card-bank-search aria-label="Search Card Bank by full card number, linked email or retailer" placeholder="Search card number, email, retailer, label…" autocomplete="off"><div class="profileResourceList" data-card-bank><p>Loading saved cards…</p></div></div><div class="profileResourceBank"><header><div><span class="eyebrow">AVAILABLE RESOURCES</span><h3>Address Bank <span data-address-count></span></h3></div><button type="button" class="btn slim secondary" data-manage-addresses>Manage addresses</button></header><div class="profileResourceList" data-address-bank><p>Loading saved addresses…</p></div></div></section><p class="profileLibrarySummary" data-status role="status"></p><div class="profileLibraryLayout"><aside class="profileLibraryGroups" data-groups></aside><section class="profileLibraryCards" data-cards></section></div><input type="file" data-file hidden accept=".csv,.json,.txt,.tsv"><input type="file" data-live-file hidden multiple accept=".csv,.json,.txt,.tsv">';
  $('sitePage').before(main);const q=s=>main.querySelector('[data-'+s+']');
+ const loginPage=d.createElement('main');loginPage.id='retailerLoginPage';loginPage.className='shell main profileLibrary';loginPage.hidden=true;
+ loginPage.innerHTML=`<header><div><div class="eyebrow" data-login-scope>RETAILER LOGINS</div><h1>Login Accounts</h1><p>Import and export retailer usernames/passwords without changing saved profiles, addresses, cards or website assignments.</p></div></header>
+ <section class="profileLibraryControls"><label data-login-customer-label>Customer<select data-login-customer></select></label><label>Retailer<select data-login-retailer><option value="target">Target</option><option value="walmart">Walmart</option><option value="pokemoncenter">Pokémon Center</option><option value="costco">Costco</option><option value="sams">Sam’s Club</option></select></label></section>
+ <section class="profileLibraryAdvanced" style="margin-top:16px;padding:18px"><h2>Import retailer logins</h2><p>Accepts Shikari account CSV (username,password), Valor account JSON, and email:password / email:::password / email; password lists. The selected retailer must match the file. Existing accounts and other vaults are never overwritten.</p>
+ <label>Select account files<input type="file" data-login-files accept=".csv,.json,.txt,.tsv" multiple></label>
+ <label style="display:block;margin-top:12px">Or paste login lines<textarea data-login-paste rows="5" spellcheck="false" autocomplete="off" placeholder="email:password"></textarea></label>
+ <div class="buttons"><button class="btn secondary" data-login-preview type="button">Preview import</button><button class="btn primary" data-login-apply type="button" disabled>Confirm &amp; import to encrypted bank</button></div>
+ <p data-login-review role="status" aria-live="polite">No accounts imported or changed.</p></section>
+ <section class="profileLibraryAdvanced" style="margin-top:16px;padding:18px"><h2>Export saved retailer logins</h2>
+ <label>Export format<select data-login-format><option value="shikari">Shikari Accounts CSV</option><option value="valor">Valor Accounts JSON</option><option value="txt">Custom TXT</option></select></label>
+ <label data-login-template-label hidden>Text export pattern<input data-login-template type="text" value="email:password" placeholder="email:::password" maxlength="120"></label>
+ <label class="check"><input data-login-unused-only type="checkbox"> Only unused logins</label>
+ <button class="btn primary" data-login-export type="button">Export logins…</button>
+ <p><small>Exported files contain plaintext login passwords. Save only in a trusted location; encrypted bank data stays unchanged.</small></p></section>
+ <section class="profileLibraryAdvanced" style="margin-top:16px;padding:18px"><h2>Saved login bank <span data-login-total></span></h2><label>Search saved account emails<input data-login-search type="search" placeholder="Filter by email"></label><p data-login-status role="status"></p><div data-login-rows></div></section>`;
+ main.after(loginPage);const l=s=>loginPage.querySelector('[data-'+s+']');
  const returnToPoolsButton=text('button','Delete & Return to Pools');
  returnToPoolsButton.type='button';returnToPoolsButton.className='btn secondary';
  q('bulk-delete').after(returnToPoolsButton);
@@ -856,11 +874,114 @@
   return true;
  }
  async function refresh(){if(editorBusy()){pendingRefresh=true;return;}const ticket=++refreshTicket,owner=request(),ownerEpoch=epoch,priorCards=JSON.stringify(bankAssets.cardPool||[]),priorUnused=JSON.stringify(unusedAccounts);if(scope==='aco'&&!customerId){rows=[];unusedAccounts=[];poolReport=null;bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();return;}try{if(scope==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;const [result]=await Promise.all([api.list(owner),loadResourceBanks(owner,ticket,ownerEpoch)]);if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;if(editorBusy()){pendingRefresh=true;return;}const same=sameProfileRows(rows,result.profiles);const poolsSame=JSON.stringify(unusedConflicts)===JSON.stringify(result.unusedConflicts||[]);unusedConflicts=Array.isArray(result.unusedConflicts)?result.unusedConflicts:[];if(!same){const scroll={x:window.scrollX,y:window.scrollY};rows=result.profiles;customGroups=result.customGroups||{};selected=new Set([...selected].filter(id=>stage==='unused'?(unusedAccounts.some(x=>x.id===id)||rows.some(x=>x.id===id&&x.bank!=='live'&&x.stage==='in-progress')):rows.some(x=>x.id===id)));draw();window.scrollTo(scroll.x,scroll.y);}else if(!poolsSame||priorUnused!==JSON.stringify(unusedAccounts)||priorCards!==JSON.stringify(bankAssets.cardPool||[]))draw();else { /* The visible DOM and selected count have not changed. */ }note(customerName()+' · '+visible().length+' profiles · '+retailName[q('retailer').value]+' · '+(bankAssets.cardPool||[]).filter(x=>x.fromSavedBank&&x.availableRetailers?.includes(q('retailer').value)).length+' eligible cards · '+bankAssets.addresses.length+' saved addresses');}catch(e){if(ticket===refreshTicket&&ownerEpoch===epoch){rows=[];bankAssets={addresses:[],cards:[]};draw();drawResourceBanks();note(e.message);}}}
- function close(){epoch++;backupPanel.hidden=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
+ function close(){loginPage.hidden=true;l('login-files').value='';l('login-paste').value='';loginSources=[];loginApproval=null;epoch++;backupPanel.hidden=true;restoreFromBackup.hidden=true;restoreStatus.textContent='Scan this vault before previewing any restoration.';reviewOutput.textContent='No recovery scan has been run for this vault.';rows=[];unusedAccounts=[];unusedConflicts=[];poolReport=null;pageIndex=0;selected.clear();main.hidden=true;d.querySelectorAll('.profileLibraryModal').forEach(x=>x.remove());void api.cancel();}
  async function open(next){if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;close();stage='unused';pageIndex=0;scope=next;lastVaultSwitchAt=Date.now();issueView='all';q('view').value='all';customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;customerList();q('customer-label').hidden=scope==='personal';q('owner-title').textContent=scope==='personal'?'PERSONAL VAULT':'CUSTOMER VAULTS';q('sync').hidden=scope==='personal';q('pkc-reconcile').hidden=scope!=='personal';websiteVault.hidden=scope==='personal';websiteVault.open=false;websiteLoad++;for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;main.hidden=false;backupPanel.hidden=scope!=='personal';if(scope==='personal')void updateBackupPanel();for(const b of nav.querySelectorAll('button'))b.classList.remove('on');(scope==='personal'?personalProfiles:customerProfiles).classList.add('on');d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent=scope==='personal'?'Personal Profiles':'Customer Profiles';await window.desktopAPI.site?.hide?.();await refresh();void passiveHealthCheck();}
+
+ // Separate, scoped retailer-login workspace: passwords never appear in the
+ // visible list; exports are explicit, read-only and stored by the OS picker.
+ let loginApproval=null,loginSources=[],loginList=[],loginRequest=0;
+ function resetLoginApproval(){loginApproval=null;l('login-apply').disabled=true;l('login-review').textContent='Preview an import to review the account count before saving.';}
+ function renderLoginAccounts(){
+  const term=l('login-search').value.trim().toLowerCase();
+  const filtered=loginList.filter(x=>x.email.toLowerCase().includes(term));
+  l('login-rows').replaceChildren();
+  for(const item of filtered.slice(0,100)){
+   const entry=d.createElement('div');entry.className='profileResourceRow';
+   entry.append(text('strong',item.email),text('small',item.used?'Assigned to a profile':'Unused in this retailer bank'));
+   l('login-rows').append(entry);
+  }
+  if(filtered.length>100)l('login-rows').append(text('p','Showing first 100 of '+filtered.length+' matching accounts. Refine the search to find another.'));
+ }
+ async function loadLoginAccounts(){
+  const ticket=++loginRequest,owner=request(),retailer=l('login-retailer').value;
+  loginList=[];l('login-total').textContent='';l('login-rows').replaceChildren();
+  if(owner.scope==='aco'&&!owner.customerId){l('login-status').textContent='Choose a customer vault first.';return;}
+  l('login-status').textContent='Loading saved retailer logins…';
+  try{
+   const result=await api.retailerLogins({...owner,retailer});
+   if(loginPage.hidden||ticket!==loginRequest||retailer!==l('login-retailer').value)return;
+   loginList=result.accounts;
+   l('login-total').textContent='('+result.count+')';
+   l('login-status').textContent=result.unused+' unused · '+result.used+' assigned · '+result.count+' saved logins · '+retailName[retailer];
+   renderLoginAccounts();
+  }catch(error){if(ticket===loginRequest&&!loginPage.hidden)l('login-status').textContent=String(error.message||error);}
+ }
+ async function openLogin(next){
+  if(next==='personal'&&!await window.JigPersonalGuard.ensureUnlocked())return;
+  close();scope=next;stage='unused';lastVaultSwitchAt=Date.now();
+  customerId=next==='aco'?(window.ACOProfileBank?.context?.().customerId||null):null;
+  customerList();
+  l('login-customer').replaceChildren(...[...q('customer').options].map(option=>option.cloneNode(true)));
+  l('login-customer').value=customerId||'';l('login-customer-label').hidden=next!=='aco';
+  l('login-scope').textContent=next==='personal'?'PERSONAL VAULT · RETAILER LOGINS':'CUSTOMER VAULT · RETAILER LOGINS';
+  for(const id of ['jigPage','sitePage','adminPage','emailPage'])if($(id))$(id).hidden=true;
+  main.hidden=true;loginPage.hidden=false;
+  for(const button of nav.querySelectorAll('button'))button.classList.remove('on');
+  (next==='personal'?personalLogins:customerLogins).classList.add('on');
+  d.body.dataset.mode='profiles';d.querySelector('.headerTitle strong').textContent='Login Accounts';
+  await window.desktopAPI.site?.hide?.();
+  resetLoginApproval();void loadLoginAccounts();
+ }
+ personalLogins.onclick=()=>void openLogin('personal');
+ customerLogins.onclick=()=>void openLogin('aco');
+ l('login-customer').onchange=()=>{
+  customerId=l('login-customer').value||null;q('customer').value=customerId||'';
+  epoch++;loginRequest++;loginSources=[];l('login-files').value='';l('login-paste').value='';resetLoginApproval();void loadLoginAccounts();
+ };
+ l('login-retailer').onchange=()=>{
+  loginRequest++;l('login-files').value='';l('login-paste').value='';loginSources=[];resetLoginApproval();void loadLoginAccounts();
+ };
+ l('login-files').onchange=resetLoginApproval;
+ l('login-paste').oninput=resetLoginApproval;
+ l('login-format').onchange=()=>{l('login-template-label').hidden=l('login-format').value!=='txt';};
+ l('login-search').oninput=renderLoginAccounts;
+ l('login-preview').onclick=async()=>{
+  const owner=request(),retailer=l('login-retailer').value,origin=epoch;
+  const button=l('login-preview');button.disabled=true;resetLoginApproval();
+  try{
+   if(owner.scope==='aco'&&!owner.customerId)throw Error('Select a customer first.');
+   const files=[...l('login-files').files];
+   if(files.length>10||files.some(file=>file.size>5*1024*1024))throw Error('Choose at most 10 files, each under 5 MB.');
+   const sources=await Promise.all(files.map(async file=>({fileName:file.name,text:await file.text()})));
+   const pasted=l('login-paste').value;
+   if(pasted.trim())sources.push({fileName:'pasted-accounts.txt',text:pasted});
+   if(!sources.length)throw Error('Select account files or paste login lines first.');
+   const preview=await api.retailerLoginImport({...owner,retailer,sources,previewOnly:true});
+   if(loginPage.hidden||origin!==epoch||retailer!==l('login-retailer').value)return;
+   loginSources=sources;loginApproval={fingerprint:preview.fingerprint,retailer,owner,epoch:origin};
+   l('login-review').textContent='Preview: '+preview.total+' rows · '+preview.unique+' unique · '+preview.duplicatesInFiles+' repeated within import · '+preview.alreadySaved+' already saved in this retailer vault. Preview only; no data changed. Sample emails: '+preview.sampleEmails.join(', ');
+   l('login-apply').disabled=false;
+  }catch(error){loginSources=[];loginApproval=null;l('login-review').textContent=String(error.message||error);}
+  finally{button.disabled=false;}
+ };
+ l('login-apply').onclick=async()=>{
+  const approval=loginApproval;if(!approval||approval.epoch!==epoch||loginPage.hidden)return;
+  if(!confirm('Import these retailer logins into the exact '+(approval.owner.scope==='personal'?'Personal':customerName())+' / '+retailName[approval.retailer]+' encrypted bank? Existing and foreign-vault accounts are skipped.'))return;
+  const button=l('login-apply');button.disabled=true;
+  try{
+   const result=await api.retailerLoginImport({...approval.owner,retailer:approval.retailer,sources:loginSources,expectedFingerprint:approval.fingerprint,confirmed:true});
+   if(loginPage.hidden||approval.epoch!==epoch)return;
+   l('login-review').textContent='Imported '+result.added+' logins · '+result.skipped+' already saved · '+result.skippedForeign+' belonging to other vaults skipped · '+result.duplicatesInFiles+' repeated lines ignored. Existing passwords were not overwritten.';
+   loginApproval=null;loginSources=[];l('login-files').value='';l('login-paste').value='';
+   await loadLoginAccounts();
+  }catch(error){if(!loginPage.hidden)l('login-review').textContent='Import stopped: '+String(error.message||error);}
+  finally{button.disabled=!loginApproval;}
+ };
+ l('login-export').onclick=async()=>{
+  const owner=request(),retailer=l('login-retailer').value,fmt=l('login-format').value;
+  if(owner.scope==='aco'&&!owner.customerId){l('login-status').textContent='Choose a customer first.';return;}
+  if(!confirm('Export '+retailName[retailer]+' retailer logins as '+fmt.toUpperCase()+'? The saved file contains plaintext passwords.'))return;
+  const button=l('login-export');button.disabled=true;
+  try{
+   const result=await api.retailerLoginExport({...owner,retailer,exportFormat:fmt,template:l('login-template').value,unusedOnly:l('login-unused-only').checked,confirmed:true});
+   if(result.saved&&!loginPage.hidden)l('login-status').textContent='Exported '+result.count+' saved logins to '+result.name+'. The encrypted bank is unchanged.';
+  }catch(error){if(!loginPage.hidden)l('login-status').textContent='Export stopped: '+String(error.message||error);}
+  finally{button.disabled=false;}
+ };
+
  q('manage-cards').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'cards');};
  q('manage-addresses').onclick=()=>{if(scope==='aco'&&!customerId){note('Choose a customer first.');return;}void window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
- customerProfiles.onclick=()=>void open('aco');personalProfiles.onclick=()=>void open('personal');for(const b of nav.querySelectorAll('button'))if(b!==customerProfiles&&b!==personalProfiles)b.addEventListener('click',()=>{if(!main.hidden)close();});
+ customerProfiles.onclick=()=>void open('aco');personalProfiles.onclick=()=>void open('personal');for(const b of nav.querySelectorAll('button'))if(![customerProfiles,personalProfiles,customerLogins,personalLogins].includes(b))b.addEventListener('click',()=>{if(!main.hidden||!loginPage.hidden)close();});
  function dialog(title){const wrap=d.createElement('div');wrap.className='profileLibraryModal';const body=d.createElement('div');body.className='profileLibraryDialog';const head=d.createElement('header'),close=d.createElement('button');close.type='button';close.className='btn plain';close.textContent='X';head.append(text('h2',title),close);body.append(head);wrap.append(body);d.body.append(wrap);const owner=request(),at=epoch;close.onclick=()=>{wrap.remove();void flushRefresh();};wrap.addEventListener('keydown',e=>{if(e.key==='Escape'){wrap.remove();void flushRefresh();}});return {wrap,body,owner,valid:()=>at===epoch&&!main.hidden&&wrap.isConnected,status:()=>{let el=body.querySelector('[role=status]');if(!el){el=text('p','');el.setAttribute('role','status');body.append(el);}return el;}};}
  function field(form,key,label,value,type='text'){const l=text('label',label),i=d.createElement('input');i.name=key;i.type=type;i.value=value??'';l.append(i);form.append(l);return i;}
  function formValues(data){const shipping=data.shipping||{},billing=data.billing||{},sh=Object.hasOwn(data,'cc_number');const result={label:data.profile_name||data.name||'',email:data.email||'',password:data.password||'',first:data.first_name||data.firstName||shipping.firstName||'',last:data.last_name||data.lastName||shipping.lastName||'',phone:data.phone_num||data.phoneNumber||''};for(const role of ['shipping','billing']){const source=data[role]||{};for(const [a,b]of Object.entries({first:'first_name',last:'last_name',address1:'street',address2:'street_2',city:'city',state:'state',zip:'zip_code',country:'country',phone:'phone'})){const valor={first:'firstName',last:'lastName',address1:'addressLine1',address2:'addressLine2',city:'city',state:'state',zip:'zipCode',country:'countryCode',phone:'phoneNumber'};result[role+'.'+a]=sh?data[role+'_'+b]||result[a]||'':source[valor[a]]||result[a]||'';}}return result;}
