@@ -319,7 +319,7 @@ if (appEnabled) {
         <span class="sng-product-image">${image(item)}</span>
         <span class="sng-row-main"><strong>${e(displayProductName(item.name || (order.retailer + ' order')))}</strong>
           <small>${e(order.retailer)} · ${dateLabel(order.checkoutAt)} · ${Number(order.itemCount) || 0} items</small>
-          <small class="sng-stage">● ${e(stageLabels[stage] || 'Ordered')}</small></span>
+          <small class="sng-stage">${stage === 'delivered' ? '✓ DELIVERED' : '● ' + e(stageLabels[stage] || 'Ordered')}</small></span>
         <span class="sng-row-value"><strong>${e(totalLabel)}</strong><small>VIEW ORDER${e(totalSource)} →</small></span>
       </button>`;
       return `<details class="sng-order-card stage-${stage}" data-order-id="${e(order.id || order.orderNumber)}" ${expanded.has(order.id || order.orderNumber) ? 'open' : ''}>
