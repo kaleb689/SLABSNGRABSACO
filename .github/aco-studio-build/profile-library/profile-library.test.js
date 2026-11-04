@@ -1669,3 +1669,62 @@ test('Phone-only Rejig works for Walmart with no checked jig rules and does not 
  assert.equal(after.phone,after['billing.phone']);
  assert.equal(after['shipping.address1'],prev['shipping.address1']);
 });
+
+
+test('Rejig address picker excludes unchecked 1811 Main, rejects unapproved IDs, preserves bank',async t=>{
+ const h=await library(t);
+ await h.service.addAddress(event,{...h.p,address:{...address,label:'1811 - exclude',
+  address1:'1811 Sabal Palm Drive',address2:'',city:'Plantation',zip:'33324'}});
+ await h.service.addAddress(event,{...h.p,address:{...address,label:'Selected Main',
+  address1:'7777 Safe Road',address2:'',city:'Plantation',zip:'33324'}});
+ await commit(h,await preview(h,[complete('target','selected-main@example.test')]));
+ const saved=(await h.lib.list(event,h.p)).profiles;
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ const picker=(await h.lib.reuseChoices(event,h.p)).choices.filter(x=>x.id.startsWith('bank:'));
+ const allowed=picker.find(x=>x.summary.includes('7777 Safe Road'));
+ const excluded=picker.find(x=>x.summary.includes('1811 Sabal Palm Drive'));
+ assert.ok(allowed&&excluded);
+ const args={...h.p,retailer:'target',profileIds:saved.map(x=>x.id),
+  ruleIds:[],targetMainFromBank:true,billingSameAsShipping:true,sourceAddressIds:[allowed.id]};
+ const plan=await h.lib.batchJigPreview(event,args);
+ assert.ok(plan.profiles.every(x=>x.after.address1==='7777 Safe Road'));
+ assert.equal(plan.targetAllocation.mainAddresses,1);
+ assert.equal(plan.changed,1);
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[]}),/Select at least one saved address/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[allowed.id,'bank:foreign-id']}),/not in this vault/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[allowed.id,allowed.id]}),/Choose valid saved Main addresses/);
+});
+
+test('Login Accounts Shikari/Valor/TXT imports and exports are scoped, preview-only, and never overwrite',async t=>{
+ const h=await library(t);
+ const csv='username,password\nshikari@example.test,ShikariPass\n';
+ const input={...h.p,retailer:'target',sources:[{fileName:'accounts.csv',text:csv}]};
+ const before=await h.lib.retailerLogins(event,{...h.p,retailer:'target'});
+ assert.equal(before.count,0);
+ const pre=await h.lib.retailerLoginImport(event,{...input,previewOnly:true});
+ assert.equal(pre.unique,1);assert.equal(pre.alreadySaved,0);
+ assert.equal((await h.lib.retailerLogins(event,{...h.p,retailer:'target'})).count,0,'Preview must never save.');
+ await assert.rejects(h.lib.retailerLoginImport(event,{...input,confirmed:true,expectedFingerprint:'wrong'}),/Review and confirm/);
+ const imported=await h.lib.retailerLoginImport(event,{...input,confirmed:true,expectedFingerprint:pre.fingerprint});
+ assert.equal(imported.added,1);
+ const repeats=await h.lib.retailerLoginImport(event,{...input,confirmed:true,expectedFingerprint:pre.fingerprint});
+ assert.equal(repeats.added,0);assert.equal(repeats.skipped,1,'Existing password remains unchanged');
+ const exported=await h.lib.retailerLoginExport(event,{...h.p,retailer:'target',confirmed:true,exportFormat:'shikari'});
+ assert.equal(exported.count,1);
+ assert.ok(h.writes.at(-1)[1].startsWith('username,password\r\n'));
+ assert.match(h.writes.at(-1)[1],/ShikariPass/);
+ const txt=await h.lib.retailerLoginExport(event,{...h.p,retailer:'target',confirmed:true,exportFormat:'txt',template:'email:::password'});
+ assert.equal(txt.count,1);assert.match(h.writes.at(-1)[1],/shikari@example.test:::ShikariPass/);
+ const json=await h.lib.retailerLoginExport(event,{...h.p,retailer:'target',confirmed:true,exportFormat:'valor'});
+ const shape=JSON.parse(h.writes.at(-1)[1]);
+ assert.equal(json.count,1);assert.equal(shape.site,'Target');assert.equal(Object.values(shape.accounts)[0].password,'ShikariPass');
+ assert.equal((await h.lib.retailerLogins(event,{...h.a,retailer:'target'})).count,0);
+ await assert.rejects(h.lib.retailerLoginImport(foreign,{...input,previewOnly:true}),/owner/i);
+ await assert.rejects(h.lib.retailerLoginImport(event,{...h.p,retailer:'walmart',sources:[{fileName:'target.json',text:JSON.stringify(shape)}],previewOnly:true}),/belongs to Target/);
+ const cInput={...h.a,retailer:'target',sources:[{fileName:'customer.txt',text:'shikari@example.test; DifferentPass'}]};
+ const cPre=await h.lib.retailerLoginImport(event,{...cInput,previewOnly:true});
+ const foreignSkipped=await h.lib.retailerLoginImport(event,{...cInput,confirmed:true,expectedFingerprint:cPre.fingerprint});
+ assert.equal(foreignSkipped.added,0);assert.equal(foreignSkipped.skippedForeign,1);
+ assert.equal((await h.lib.retailerLogins(event,{...h.a,retailer:'target'})).count,0);
+});
