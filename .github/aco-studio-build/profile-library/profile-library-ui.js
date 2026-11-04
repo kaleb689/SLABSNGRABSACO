@@ -1000,7 +1000,7 @@
   const fields=['address1','address2','city','state','zip','phone'];
   const streetChanged=['address1','address2'].some(k=>row.before[k]!==row.after[k]);
   const postalChanged=['city','state','zip'].some(k=>row.before[k]!==row.after[k]);
-  const phoneChanged=row.before.phone!==row.after.phone;
+  const phoneChanged=row.before.phone!==row.after.phone||row.phoneAutoFilled===true;
   const status=streetChanged?'JIGGED':postalChanged?'CITY / POSTAL ONLY':phoneChanged?'PHONE ONLY':'UNCHANGED';
   const block=d.createElement('section');
   block.style.cssText='padding:10px 12px;border:1px solid #344a5c;border-radius:9px;margin:8px 0;background:#0d1828;white-space:normal';
