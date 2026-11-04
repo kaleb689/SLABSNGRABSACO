@@ -1646,3 +1646,26 @@ test('Phone-only Target Rejig can Apply with unchanged addresses, without a sele
   assert.equal(vals.phone,vals['billing.phone']);
  }
 });
+
+
+test('Phone-only Rejig works for Walmart with no checked jig rules and does not modify shipping address',async t=>{
+ const h=await library(t);
+ const item=complete('walmart','phone-only-walmart@example.test');
+ item.phoneNumber='';item.shipping.phoneNumber='';item.billing.phoneNumber='';
+ await commit(h,await preview(h,[item],h.p,'walmart'));
+ const saved=(await h.lib.list(event,h.p)).profiles[0];
+ const prev=D.toValues(saved.data);
+ assert.equal(prev.phone,'');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'walmart',
+  profileIds:[saved.id],ruleIds:[],combine:false,billingSameAsShipping:false});
+ assert.equal(plan.changed,1);
+ assert.equal(plan.phoneAutoFilled,1);
+ assert.equal(plan.profiles[0].after.address1,prev['shipping.address1']);
+ assert.match(plan.profiles[0].after.phone,/^\d{3}55501\d{2}$/);
+ const result=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(result.updated,1);
+ const after=D.toValues((await h.lib.list(event,h.p)).profiles[0].data);
+ assert.equal(after.phone,after['shipping.phone']);
+ assert.equal(after.phone,after['billing.phone']);
+ assert.equal(after['shipping.address1'],prev['shipping.address1']);
+});
