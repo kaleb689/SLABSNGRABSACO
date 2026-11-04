@@ -91,14 +91,17 @@ function rewriteValorNames(body,names){
  for(let i=0;i<profiles.length;i++)profiles[i].name=names[i];
  return JSON.stringify(data,null,2);
 }
-function exportRows(rows,r,customerName='Personal',scope='personal'){
+function exportRows(rows,r,customerName='Personal',scope='personal',style='retailer'){
+ const output=style==='retailer'?format(r):style;
+ if(!['shikari','valor'].includes(output))throw Error('Choose Shikari CSV or Valor JSON profile export.');
+ const templateRetailer=output==='shikari'?'target':r==='target'?'walmart':r;
  if(!rows.length)throw Error('Choose completed profiles to export.');
  const exportNames=rows.map((row,i)=>exportProfileName(row,i,customerName,scope));
  const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:profileCode(x.data)};});
- const out=model.exportTemplates(r==='costco'||r==='sams'?'walmart':r,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
- out.body=format(r)==='shikari'?rewriteShikariNames(out.body,exportNames):rewriteValorNames(out.body,exportNames);
- out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(format(r)==='shikari'?'.csv':'.json');
- if(r==='target'){
+ const out=model.exportTemplates(templateRetailer==='costco'||templateRetailer==='sams'?'walmart':templateRetailer,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
+ out.body=output==='shikari'?rewriteShikariNames(out.body,exportNames):rewriteValorNames(out.body,exportNames);
+ out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(output==='shikari'?'.csv':'.json');
+ if(output==='shikari'){
   const parsed=Core.parseFile(out.name,out.body),records=parsed?.records||[];
   if(records.length!==rows.length)throw Error('Export blocked: generated Target CSV row count is incomplete.');
   const blank=records.filter(record=>typeof record.cc_cvv!=='string'||record.cc_cvv.length===0).length;
@@ -145,8 +148,8 @@ function exportArchiveRows(rows,r,owner='Personal',scope='personal'){
 // retailer structure. Text/tabular exports flatten a temporary copy only.
 function exportSelectedRows(rows,r,owner='Personal',choice='retailer',scope='personal'){
  const type=String(choice||'retailer').toLowerCase();
- if(type==='retailer')return exportRows(rows,r,owner,scope);
- if(!['json','csv','tsv','txt'].includes(type))throw Error('Choose retailer format, JSON, CSV, TSV, or TXT.');
+ if(['retailer','shikari','valor'].includes(type))return exportRows(rows,r,owner,scope,type);
+ if(!['json','csv','tsv','txt'].includes(type))throw Error('Choose Shikari, Valor, or a generic file export.');
  const archive=exportArchiveRows(rows,r,owner,scope);
  if(type==='json')return archive;
  const records=JSON.parse(archive.body).profiles;
