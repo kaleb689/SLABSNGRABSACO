@@ -1654,6 +1654,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Target Main-first Rejig fills all original addresses before variations. Turn off optional unit generation, exact address reuse, weighted distribution, and combined jigs for this mode.');
   if(p.sourceMainFromBank!==undefined&&typeof p.sourceMainFromBank!=='boolean')throw Error('Invalid full Address Bank source setting.');
   const sourceMainFromBank=p.sourceMainFromBank===true;
+  // An explicit picker selection applies to every operation sourcing Main
+  // addresses from the saved bank; absent means legacy all-address behavior.
+  const hasAddressSelection=Object.prototype.hasOwnProperty.call(p,'sourceAddressIds');
+  const sourceAddressIds=hasAddressSelection?p.sourceAddressIds:null;
+  if(hasAddressSelection&&(!Array.isArray(sourceAddressIds)||sourceAddressIds.length>10000||
+      sourceAddressIds.some(id=>typeof id!=='string'||!/^bank:[^\s]+$/.test(id))||
+      new Set(sourceAddressIds).size!==sourceAddressIds.length))
+   throw Error('Choose valid saved Main addresses using the address picker.');
   if(sourceMainFromBank&&retailer!=='walmart')throw Error('Full Address Bank sourcing currently applies to Walmart Jig only.');
   if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>MAX_BULK_REJIG_PROFILES)
    throw Error('Choose an optional unit count between 0 and '+MAX_BULK_REJIG_PROFILES+'.');
@@ -1672,7 +1680,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const v=D.toValues(row.data);return ['phone','shipping.phone','billing.phone'].some(k=>!String(v[k]||'').trim());
   }))throw Error('Choose supported jig rules or select profiles with missing phone fields. No profile changes were made.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  const allBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  // Verify against the current authorized vault, not a user-supplied address.
+  const addressIdSet=hasAddressSelection?new Set(sourceAddressIds):null;
+  if(addressIdSet){
+   const available=new Set(allBankChoices.map(item=>item.id));
+   if([...addressIdSet].some(id=>!available.has(id)))
+    throw Error('An address selection is no longer in this vault. Reopen the address picker; no profiles changed.');
+   if((targetMainFromBank||sourceMainFromBank||autoUnitFromAddressBank)&&!addressIdSet.size)
+    throw Error('Select at least one saved address to use for Rejig; no profiles changed.');
+  }
+  const savedBankChoices=addressIdSet?allBankChoices.filter(item=>addressIdSet.has(item.id)):allBankChoices;
   const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
   // Random appended Apt/Unit/etc. designators use only unitless Main
   // houses from the saved bank. With units OFF, every saved bank entry is eligible.
