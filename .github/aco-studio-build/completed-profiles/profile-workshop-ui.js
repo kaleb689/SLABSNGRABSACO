@@ -42,7 +42,15 @@
  function invalidate(){if(plan)void api.cancel(plan.token);plan=null;$('workshopReview').hidden=true;$('workshopReviewRows').replaceChildren();importer()?.clearWorkshopPreview?.();controls();}
  function assetRows(){
   $('workshopAddressRows').replaceChildren();$('workshopCardRows').replaceChildren();
-  for(const a of assets?.addresses||[]){const label=d.createElement('label'),box=d.createElement('input'),text=d.createElement('span');box.type='checkbox';box.value=a.id;box.checked=picks.addresses.has(a.id);text.textContent=[a.label,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(' | ');box.addEventListener('change',()=>{box.checked?picks.addresses.add(a.id):picks.addresses.delete(a.id);invalidate();});label.append(box,text);const count=d.createElement('input');count.type='number';count.min='0';count.max='500';count.step='1';count.value=String(extraAllocation[a.id]||0);count.setAttribute('aria-label','Extra profiles for '+(a.label||a.address1));count.title='Extra profiles allocated to this address';count.disabled=!box.checked;count.addEventListener('change',()=>{const n=Number(count.value);if(!Number.isInteger(n)||n<0||n>500){count.value='0';extraAllocation[a.id]=0;note('Extra allocation must be between 0 and 500.',true);}else{extraAllocation[a.id]=n;invalidate();}});box.addEventListener('change',()=>{count.disabled=!box.checked;if(!box.checked)delete extraAllocation[a.id];});label.append(count);$('workshopAddressRows').append(label);}
+  for(const a of assets?.addresses||[]){const label=d.createElement('label'),box=d.createElement('input'),text=d.createElement('span');box.type='checkbox';box.value=a.id;box.checked=picks.addresses.has(a.id);text.textContent=[a.label,a.address1,a.address2,a.city,a.state,a.zip].filter(Boolean).join(' | ');box.addEventListener('change',()=>{
+    box.checked?picks.addresses.add(a.id):picks.addresses.delete(a.id);
+    bulkAddressOverrides.set('bank:'+a.id,box.checked);
+    if(bulkAddressChoices.some(item=>item.id==='bank:'+a.id)){
+     box.checked?bulkAddressIds.add('bank:'+a.id):bulkAddressIds.delete('bank:'+a.id);
+     renderBulkAddresses();invalidateReuse();
+    }
+    invalidate();
+   });label.append(box,text);const count=d.createElement('input');count.type='number';count.min='0';count.max='500';count.step='1';count.value=String(extraAllocation[a.id]||0);count.setAttribute('aria-label','Extra profiles for '+(a.label||a.address1));count.title='Extra profiles allocated to this address';count.disabled=!box.checked;count.addEventListener('change',()=>{const n=Number(count.value);if(!Number.isInteger(n)||n<0||n>500){count.value='0';extraAllocation[a.id]=0;note('Extra allocation must be between 0 and 500.',true);}else{extraAllocation[a.id]=n;invalidate();}});box.addEventListener('change',()=>{count.disabled=!box.checked;if(!box.checked)delete extraAllocation[a.id];});label.append(count);$('workshopAddressRows').append(label);}
   for(const c of assets?.cards||[]){if($('workshopUnused').checked&&!c.unused)continue;const label=d.createElement('label'),box=d.createElement('input'),text=d.createElement('span');box.type='checkbox';box.value=c.id;box.checked=picks.cards.has(c.id);text.textContent=c.label+' | ending '+c.last4+' | '+(c.hardCard?'Hard Card | ':'')+(c.eligibleRetailers?.includes(context()?.retailer||activeRetailerPreset)?'Eligible for this retailer':c.unused?'Unused':c.usedCount?'Linked to '+c.usedCount+' profile(s)':'Previously assigned');box.addEventListener('change',()=>{box.checked?picks.cards.add(c.id):picks.cards.delete(c.id);invalidate();});label.append(box,text);$('workshopCardRows').append(label);}
   if(!$('workshopAddressRows').children.length)$('workshopAddressRows').textContent='No saved addresses. Open Cards & Addresses Vault to add one.';
   if(!$('workshopCardRows').children.length)$('workshopCardRows').textContent='No matching saved cards. Add a card to this vault, or review the Unused only filter.';
@@ -77,7 +85,7 @@
  panel.after(bulkPanel);
  const bq=name=>bulkPanel.querySelector('[data-'+name+']');
  let bulkRetailer='target',bulkRows=[],bulkSelected=new Set(),bulkToken=null,bulkOwnerKey='',bulkLoading=false,bulkSettings=null,bulkDuplicateCount=0,activeRetailerPreset='target';
- let bulkAddressChoices=[],bulkAddressIds=new Set(),bulkAddressContext='',bulkAddressLoading=false;
+ let bulkAddressChoices=[],bulkAddressIds=new Set(),bulkAddressContext='',bulkAddressLoading=false,bulkAddressOverrides=new Map();
  const bulkOwner=()=>fallback();
  const bulkKey=p=>p.scope+':'+(p.customerId||'owner');
  let reuseLoadedKey='';
@@ -113,7 +121,15 @@
    if(filter&&!String(item.label+' '+item.summary).toLowerCase().includes(filter))continue;
    const label=d.createElement('label'),checkbox=d.createElement('input');
    label.className='workshopCheck';checkbox.type='checkbox';checkbox.checked=bulkAddressIds.has(item.id);
-   checkbox.onchange=()=>{checkbox.checked?bulkAddressIds.add(item.id):bulkAddressIds.delete(item.id);invalidateReuse();renderBulkAddresses();};
+   checkbox.onchange=()=>{
+    checkbox.checked?bulkAddressIds.add(item.id):bulkAddressIds.delete(item.id);
+    bulkAddressOverrides.set(item.id,checkbox.checked);
+    if(assets?.addresses?.some(a=>a.id===item.id.slice(5))){
+     checkbox.checked?picks.addresses.add(item.id.slice(5)):picks.addresses.delete(item.id.slice(5));
+     assetRows();
+    }
+    invalidateReuse();renderBulkAddresses();
+   };
    label.append(checkbox,d.createTextNode((item.label||'Saved Main')+' · '+item.summary));host.append(label);
   }
   if(!host.children.length)host.textContent='No Main addresses match this filter.';
@@ -126,7 +142,10 @@
    const result=await library.reuseChoices(owner);
    if(bulkKey(bulkOwner())!==originalKey)return;
    bulkAddressChoices=(result.choices||[]).filter(x=>x.type==='main'&&String(x.id).startsWith('bank:'));
-   bulkAddressIds=new Set(bulkAddressChoices.map(x=>x.id));
+   bulkAddressIds=new Set(bulkAddressChoices.filter(x=>
+    (picks.addresses.size===0||picks.addresses.has(x.id.slice(5)))&&bulkAddressOverrides.get(x.id)!==false
+   ).map(x=>x.id));
+   for(const id of bulkAddressOverrides.keys())if(bulkAddressOverrides.get(id)===true)bulkAddressIds.add(id);
    bulkAddressContext=key;
    renderBulkAddresses();invalidateReuse();
   }catch(error){bulkStatus('Unable to load saved Main addresses: '+String(error.message||error),true);}
@@ -358,7 +377,7 @@
  $('workshopSave').addEventListener('click',async()=>{if(!plan||busy)return;if(!confirm('Save ONLY the checked fields to '+ownerText(plan)+'? Other vaults and unchecked fields will not be changed.'))return;busy=true;controls();try{const r=await api.save(confirmPayload());plan.saved=true;const view=await api.apply(confirmPayload());importer().acceptWorkshopPreview(view);plan.applied=true;void window.ACOProfileBank?.refresh?.();note(r.updated+' profile(s) saved in '+ownerText(plan)+'. Saved card usage is now reflected in the vault.');}catch(e){note(e.message,true);}finally{busy=false;controls();}});
  $('workshopExport').addEventListener('click',async()=>{if(!plan||busy)return;busy=true;controls();try{const r=await api.exportFile(confirmPayload());if(r.saved)note('Exported '+r.name+'. Original input files were not edited.');}catch(e){note(e.message,true);}finally{busy=false;controls();}});
  $('workshopLegacy').addEventListener('click',()=>{invalidate();for(const id of ['workshopAddress','workshopCard','workshopName'])$(id).checked=false;$('workshopAddresses').hidden=true;$('workshopCards').hidden=true;try{importer()?.endWorkshop?.();note('Previous formatting controls restored for this file. No vault data was changed.');}catch(e){note(e.message,true);}controls();});
- function contextChanged(){const c=context(),key=c?.contextKey||'';if(key===seenKey)return;seenKey=key;const identity=window.ACOWorkspaceCore.sourceIdentity(c);if(c&&identity===seenSourceKey){invalidate();note('Formatting changed. Your address and card selections are retained; prepare a new preview.');return;}seenSourceKey=identity;assetEpoch++;loading=false;assets=null;picks={addresses:new Set(),cards:new Set()};extraAllocation={};invalidate();for(const id of ['workshopAddress','workshopCard','workshopName','workshopMirror','workshopStyles','workshopReuse'])$(id).checked=false;$('workshopAddresses').hidden=true;$('workshopCards').hidden=true;note('Choose Address, Card information and/or Name. Unchecked fields stay unchanged.');controls();}
+ function contextChanged(){const c=context(),key=c?.contextKey||'';if(key===seenKey)return;seenKey=key;const identity=window.ACOWorkspaceCore.sourceIdentity(c);if(c&&identity===seenSourceKey){invalidate();note('Formatting changed. Your address and card selections are retained; prepare a new preview.');return;}seenSourceKey=identity;assetEpoch++;loading=false;assets=null;picks={addresses:new Set(),cards:new Set()};extraAllocation={};bulkAddressOverrides.clear();bulkAddressContext='';bulkAddressChoices=[];bulkAddressIds.clear();invalidate();for(const id of ['workshopAddress','workshopCard','workshopName','workshopMirror','workshopStyles','workshopReuse'])$(id).checked=false;$('workshopAddresses').hidden=true;$('workshopCards').hidden=true;note('Choose Address, Card information and/or Name. Unchecked fields stay unchanged.');controls();}
  d.addEventListener('jigstudio:bank-context-updated',contextChanged);d.addEventListener('jigstudio:workshop-context-changed',contextChanged);
  // Scoped vault modal, with search/paging instead of an endlessly growing list.
  const modal=d.createElement('div');modal.className='workshopModal';modal.hidden=true;
