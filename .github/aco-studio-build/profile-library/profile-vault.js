@@ -497,6 +497,15 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
 
  // Main-process-only snapshots. Renderer APIs receive only masked data.
  async function fieldSnapshot(scope,customerId){await pending;const key=bank(scope,customerId),d=await read(scope);return structuredClone(d.groups[key]||[]);}
+ // Authorized main-process-only retailer login snapshot. Credentials never
+ // go to the renderer; the caller may render only metadata or save an export.
+ async function retailerLoginSnapshot(scope,customerId,retailer){
+  await pending;const key=bank(scope,customerId),r=retailerId(retailer),d=await read(scope);
+  return (d.emailBanks?.[key]||[]).filter(x=>x.retailer===r&&typeof x.password==='string'&&x.password.length)
+   .map(x=>({id:x.id,email:normalizeEmail(x.email),password:x.password,
+     used:Boolean(x.profileId),source:String(x.source||'saved-login'),createdAt:x.createdAt||null}));
+ }
+
  async function createBlank(scope,customerId,retailer,format,data,beforeWrite){const key=bank(scope,customerId),r=retailerId(retailer);return serial(async()=>{
   const d=await read(scope),rows=d.groups[key]||[],email=emailFrom(data);if(rows.length>=10000)throw Error('Profile vault is full.');
   if(email&&rows.some(x=>x.email===email&&x.retailer===r))throw Error('This account email already has a profile in the same vault and retailer.');
@@ -1033,7 +1042,7 @@ function makeProfileVault({baseDir,safeStorage,fs=fsDefault,uuid=crypto.randomUU
   backupCheckpoint:()=>workspaceBackup.checkpoint('manual'),
   backupPreview:id=>workspaceBackup.previewRestore(id),
   backupConfirm:params=>workspaceBackup.restore(params),
-  codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,foreignEmails,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
+  codeRecovery,historicSourceReview,retailers:RETAILERS,importHistory,removeImportBatch,bulkManage,librarySettings,libraryTransaction,retailerLoginSnapshot,foreignEmails,importLiveProfiles,reconcileExistingLiveProfiles,reconcileTargetLivePkcEmails,emailInventory,unusedEmailConflicts,importEmails,createEmailProfiles,list,preview,importRows,remove,setStatus,swapWithAvailable,scanRows,audit,jigProfile,applyShippingPlan,fieldSnapshot,createBlank,editBlank,applyFieldBatch});
 }
 module.exports={makeProfileVault,normalizeEmail,emailFrom,retailerId,memberId,stripVerifiers};
 

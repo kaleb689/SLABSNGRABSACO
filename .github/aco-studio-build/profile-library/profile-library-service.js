@@ -1654,6 +1654,14 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    throw Error('Target Main-first Rejig fills all original addresses before variations. Turn off optional unit generation, exact address reuse, weighted distribution, and combined jigs for this mode.');
   if(p.sourceMainFromBank!==undefined&&typeof p.sourceMainFromBank!=='boolean')throw Error('Invalid full Address Bank source setting.');
   const sourceMainFromBank=p.sourceMainFromBank===true;
+  // An explicit picker selection applies to every operation sourcing Main
+  // addresses from the saved bank; absent means legacy all-address behavior.
+  const hasAddressSelection=Object.prototype.hasOwnProperty.call(p,'sourceAddressIds');
+  const sourceAddressIds=hasAddressSelection?p.sourceAddressIds:null;
+  if(hasAddressSelection&&(!Array.isArray(sourceAddressIds)||sourceAddressIds.length>10000||
+      sourceAddressIds.some(id=>typeof id!=='string'||!/^bank:[^\s]+$/.test(id))||
+      new Set(sourceAddressIds).size!==sourceAddressIds.length))
+   throw Error('Choose valid saved Main addresses using the address picker.');
   if(sourceMainFromBank&&retailer!=='walmart')throw Error('Full Address Bank sourcing currently applies to Walmart Jig only.');
   if(!Number.isSafeInteger(optionalUnitCount)||optionalUnitCount<0||optionalUnitCount>MAX_BULK_REJIG_PROFILES)
    throw Error('Choose an optional unit count between 0 and '+MAX_BULK_REJIG_PROFILES+'.');
@@ -1672,7 +1680,17 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    const v=D.toValues(row.data);return ['phone','shipping.phone','billing.phone'].some(k=>!String(v[k]||'').trim());
   }))throw Error('Choose supported jig rules or select profiles with missing phone fields. No profile changes were made.');
   if(selected.some(x=>x.needsReview))throw Error('Resolve website conflicts before bulk jigging.');
-  const savedBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  const allBankChoices=(autoUnitFromAddressBank||sourceMainFromBank||targetMainFromBank)?(await reusableShippingChoices(a,all)).filter(item=>item.id.startsWith('bank:')):[];
+  // Verify against the current authorized vault, not a user-supplied address.
+  const addressIdSet=hasAddressSelection?new Set(sourceAddressIds):null;
+  if(addressIdSet){
+   const available=new Set(allBankChoices.map(item=>item.id));
+   if([...addressIdSet].some(id=>!available.has(id)))
+    throw Error('An address selection is no longer in this vault. Reopen the address picker; no profiles changed.');
+   if((targetMainFromBank||sourceMainFromBank||autoUnitFromAddressBank)&&!addressIdSet.size)
+    throw Error('Select at least one saved address to use for Rejig; no profiles changed.');
+  }
+  const savedBankChoices=addressIdSet?allBankChoices.filter(item=>addressIdSet.has(item.id)):allBankChoices;
   const unitlessBankChoices=savedBankChoices.filter(item=>item.type==='main'&&!item.address.address2.trim()&&!inlineUnit(item.address.address1));
   // Random appended Apt/Unit/etc. designators use only unitless Main
   // houses from the saved bank. With units OFF, every saved bank entry is eligible.
@@ -2309,6 +2327,80 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   },a.check);
  }
 
+
+ // Standalone retailer-login workspace. Parsing happens in the authorized
+ // Electron main process. Imported credentials go only to encrypted email
+ // banks, never to profile/card/address values or website assignments.
+ async function retailerLogins(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer);
+  if(typeof profiles.retailerLoginSnapshot!=='function')throw Error('Account bank reader is unavailable.');
+  const entries=await profiles.retailerLoginSnapshot(a.scope,a.id,retailer);
+  a.check();
+  return {retailer,count:entries.length,unused:entries.filter(x=>!x.used).length,
+   used:entries.filter(x=>x.used).length,
+   accounts:entries.slice(0,5000).map(x=>({email:x.email,used:x.used,source:x.source,createdAt:x.createdAt}))};
+ }
+ async function retailerLoginImport(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer);
+  const F=require('./retailer-login-formats');
+  const sources=p?.sources;
+  if(!Array.isArray(sources)||!sources.length||sources.length>10)
+   throw Error('Choose up to 10 account files or one pasted login list.');
+  const selected=[],seen=new Set();let inputCount=0,duplicates=0;
+  for(const source of sources){
+   if(typeof source?.fileName!=='string'||source.fileName.length>255||typeof source?.text!=='string')
+    throw Error('Invalid account import file.');
+   const result=F.parseText(source.text,{fileName:source.fileName,retailer});
+   inputCount+=result.inputCount;duplicates+=result.duplicateCount;
+   for(const row of result.accounts){
+    if(seen.has(row.email)){duplicates++;continue;}
+    seen.add(row.email);selected.push(row);
+   }
+  }
+  if(!selected.length||selected.length>5000||inputCount>10000)
+   throw Error('Choose 1 to 5000 unique retailer logins per import.');
+  const fingerprint=crypto.createHash('sha256').update(JSON.stringify({
+   scope:a.scope,id:a.id,retailer,accounts:selected
+  })).digest('hex');
+  if(p?.previewOnly===true){
+   const existing=await profiles.fieldSnapshot(a.scope,a.id);
+   const bank=await profiles.retailerLoginSnapshot(a.scope,a.id,retailer);
+   const owned=new Set([...existing.filter(x=>x.retailer===retailer).map(x=>C.email(x.email)),
+    ...bank.map(x=>C.email(x.email))]);
+   a.check();return {preview:true,retailer,total:inputCount,unique:selected.length,
+    duplicatesInFiles:duplicates,alreadySaved:selected.filter(x=>owned.has(x.email)).length,
+    sampleEmails:selected.slice(0,12).map(x=>x.email),fingerprint};
+  }
+  if(p?.confirmed!==true||fingerprint!==p?.expectedFingerprint)
+   throw Error('Review and confirm the current account file before import. No data changed.');
+  const result=await importPastedAccounts(e,{...p,retailer,accounts:selected,confirmed:true});
+  a.check();return {...result,sourceCount:sources.length,total:inputCount,duplicatesInFiles:duplicates};
+ }
+ async function retailerLoginExport(e,p){
+  const a=await access(e,p),retailer=C.retailer(p?.retailer);
+  if(p?.confirmed!==true)throw Error('Confirm the exact retailer login export.');
+  const type=String(p?.exportFormat||'txt').toLowerCase();
+  if(!['shikari','valor','txt'].includes(type))throw Error('Choose Shikari accounts, Valor accounts, or custom TXT.');
+  const F=require('./retailer-login-formats');
+  const all=await profiles.retailerLoginSnapshot(a.scope,a.id,retailer);
+  const selected=all.filter(x=>p?.unusedOnly===true?!x.used:true);
+  if(!selected.length)throw Error('No saved login/password entries match this retailer and selection.');
+  const signature=crypto.createHash('sha256').update(JSON.stringify(selected)).digest('hex');
+  const file=F.exportAccounts(selected,retailer,type,p?.template||'email:password',uuid);
+  if(!await confirmExport(e))return {cancelled:true};
+  const ext=path.extname(file.name);
+  const choice=await chooseSave(e,{name:file.name,extension:ext.slice(1)});
+  if(choice.canceled||!choice.filePath)return {cancelled:true};
+  if(path.extname(choice.filePath).toLowerCase()!==ext)throw Error('Keep the selected export file extension.');
+  const fresh=await profiles.retailerLoginSnapshot(a.scope,a.id,retailer);
+  const stillSelected=fresh.filter(x=>p?.unusedOnly===true?!x.used:true);
+  if(crypto.createHash('sha256').update(JSON.stringify(stillSelected)).digest('hex')!==signature)
+   throw Error('Account bank changed during export. Reopen and review before saving.');
+  a.check();
+  await writeFile(choice.filePath,file.body,{encoding:'utf8',mode:0o600});
+  return {saved:true,retailer,count:selected.length,name:path.basename(choice.filePath),format:type};
+ }
+
  async function importPastedAccounts(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
   if(p.confirmed!==true||!Array.isArray(p.accounts)||!p.accounts.length||p.accounts.length>5000)
@@ -2354,7 +2446,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   return {selected:grouped,legacyMigrated:legacyTarget||grouped.length!==selected.length||grouped.some((id,i)=>id!==selected[i]),presetVersion:retailer==='target'?3:2,options:[...C.ruleOptions(retailer),{id:C.FL_PHONE_RULE,label:'Random Florida phone number',risk:'standard',family:'phone'}]};
  }
  async function saveRules(e,p){const a=await access(e,p);C.retailer(p.retailer);if(!Array.isArray(p.rules)||p.rules.length>300||new Set(p.rules).size!==p.rules.length||p.rules.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))throw Error('Choose supported jig rules for this retailer.');return profiles.libraryTransaction(a.scope,a.id,ctx=>{ctx.settings[p.retailer]={rules:p.rules,presetVersion:p.retailer==='target'?3:2};return {saved:true,presetVersion:p.retailer==='target'?3:2};},a.check);}
- return {syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,returnToPools,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
+ return {retailerLogins,retailerLoginImport,retailerLoginExport,syncOwnerWalmartUnused,importPastedAccounts,customerCardDetails,jigAssets,reuseChoices,list,duplicateRepairPreview,duplicateRepairCommit,detail,recoverCodes,recoverCodesFromFile,recoverCodesFromSavedCards,recoveryReview,recoveryReviewSelectedFiles,historicalFolderReview,reconcileLivePreview,reconcileLiveCommit,importPreview,importCommit,importHistory,removeImportBatch,bulkManage,returnToPools,repair,edit,exportFile,exportArchive,syncCustomer,previewLinkedJig,publishLinkedJig,batchJigPreview,batchJigCommit,websiteSnapshot,saveWebsiteAddress,saveWebsitePayment,manageWebsiteRecord,resolveSourceConflict,changeAssignment,linkLocal,removeLocal,manageGroups,rules,saveRules,cancel};
 }
 function registerLibrary(options){
  const chooseHistoricalFolder=options.chooseHistoricalFolder||(async e=>{
@@ -2382,7 +2474,7 @@ function registerLibrary(options){
   const backupTick=setInterval(automaticBackup,60*60*1000);
   backupTick.unref?.();
  }
- const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['syncOwnerWalmartUnused','importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','returnToPools','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
+ const service=createLibrary({...options,chooseHistoricalFolder,chooseOriginalFiles});for(const method of ['retailerLogins','retailerLoginImport','retailerLoginExport','syncOwnerWalmartUnused','importPastedAccounts','customerCardDetails','jigAssets','reuseChoices','list','duplicateRepairPreview','duplicateRepairCommit','detail','recoverCodes','recoverCodesFromFile','recoverCodesFromSavedCards','recoveryReview','recoveryReviewSelectedFiles','historicalFolderReview','reconcileLivePreview','reconcileLiveCommit','importPreview','importCommit','importHistory','removeImportBatch','bulkManage','returnToPools','repair','edit','exportFile','exportArchive','syncCustomer','previewLinkedJig','publishLinkedJig','batchJigPreview','batchJigCommit','websiteSnapshot','saveWebsiteAddress','saveWebsitePayment','manageWebsiteRecord','resolveSourceConflict','changeAssignment','linkLocal','removeLocal','manageGroups','rules','saveRules'])options.ipcMain.handle('profile:library:'+method,(e,p)=>service[method](e,p));options.ipcMain.handle('profile:library:cancel',e=>{options.requireOwner(e);return service.cancel(e);});
  // Complete encrypted local workspace checkpoints. Never expose decrypted data.
  for(const [method,invoke] of Object.entries({
   backupStatus:()=>options.profiles.backupStatus(),
