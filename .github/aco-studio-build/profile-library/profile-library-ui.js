@@ -53,7 +53,7 @@
   const exportTypeLabel=d.createElement('label');exportTypeLabel.textContent='Export as';
  const exportType=d.createElement('select');exportType.setAttribute('aria-label','Choose exported profile file type');
  exportType.dataset.exportFormat='true';
- for(const [value,label]of [['retailer','Retailer format (Shikari / Valor)'],['json','JSON'],['csv','CSV'],['tsv','TSV'],['txt','TXT']])
+ for(const [value,label]of [['retailer','Retailer default'],['shikari','Shikari CSV'],['valor','Valor JSON'],['json','JSON archive'],['csv','CSV'],['tsv','TSV'],['txt','TXT']])
   exportType.append(new Option(label,value));
  exportTypeLabel.append(exportType);q('export').before(exportTypeLabel);
  // One owner-authorized, read-only recovery entry point across every
@@ -815,7 +815,9 @@
  q('selected-count').textContent=selectedVisible.length+' profile(s) selected on this page';
  const totalRejig=allSavedRetailerProfiles().length;
  rejigAllButton.disabled=busy||totalRejig===0||totalRejig>MAX_BULK_REJIG_PROFILES;
- rejigAllButton.textContent='Re-jig all '+retailName[q('retailer').value]+' saved profiles ('+totalRejig+')';
+ const incompleteCount=rows.filter(x=>x.retailer===q('retailer').value&&x.stage==='in-progress').length;
+ rejigAllButton.textContent='Re-jig all '+retailName[q('retailer').value]+' complete saved profiles ('+totalRejig+')';
+ rejigAllButton.title=incompleteCount+' unfinished/draft profiles are separate and not included in complete-profile Rejig. They remain saved and can be completed first.';
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?(stage==='unused'?'Jig selected ('+selectedVisible.length+')':'Re-jig selected ('+selectedVisible.length+')'):(stage==='unused'?'Jig selected':'Re-jig selected');
  for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||stage==='unused'||!selectedVisible.length;
@@ -1058,7 +1060,47 @@
   try{
    const win=dialog('Jig '+chosen.length+' selected '+retailName[retailer]+' profiles'),settings=await api.rules({...win.owner,retailer});
    if(!win.valid())return;
-   const info=text('p','All '+chosen.length+' selected profiles will be processed from this one review. You do not need to open them one at a time.');
+   const info=text('p','All '+chosen.length+' selected complete profiles will be processed from this one review. Saved unfinished drafts remain in the Unused stage and are not modified by this action.');
+   const addressPicker=d.createElement('details');addressPicker.className='profileJigAddressPicker';
+   const addressSummary=d.createElement('summary');addressSummary.textContent='Choose addresses used for Rejig · loading…';addressPicker.append(addressSummary);
+   const addressHelp=text('small','Only checked saved Main addresses can be assigned by Target Main-first and Walmart full-bank Rejig. Unchecking an address (such as 1811) excludes it. This never deletes or alters Address Bank entries.');
+   const addressSearch=d.createElement('input');addressSearch.type='search';addressSearch.placeholder='Filter saved addresses by street, unit, city, ZIP…';addressSearch.setAttribute('aria-label','Search addresses eligible for Rejig');
+   const addressActions=d.createElement('div');addressActions.className='buttons';
+   const addressAll=text('button','Select all');addressAll.type='button';addressAll.className='btn secondary slim';
+   const addressNone=text('button','Deselect all');addressNone.type='button';addressNone.className='btn secondary slim';
+   addressActions.append(addressAll,addressNone);
+   const addressList=d.createElement('div');addressList.className='profileJigAddressList';addressList.style.cssText='max-height:230px;overflow:auto;padding:8px;border:1px solid #476577;border-radius:8px';
+   addressPicker.append(addressHelp,addressSearch,addressActions,addressList);
+   const chosenAddressIds=new Set();let addressesLoaded=false;let addressesError='';
+   const availableAddresses=[];
+   function addressPickerSummary(){
+    addressSummary.textContent='Addresses for Rejig ('+chosenAddressIds.size+' of '+availableAddresses.length+' selected)';
+   }
+   function renderAddressPicker(){
+    addressList.replaceChildren();
+    const query=addressSearch.value.trim().toLowerCase();
+    for(const address of availableAddresses){
+     if(query&&!String(address.label+' '+address.summary).toLowerCase().includes(query))continue;
+     const label=d.createElement('label');label.className='check';
+     const checkbox=d.createElement('input');checkbox.type='checkbox';checkbox.checked=chosenAddressIds.has(address.id);
+     checkbox.onchange=()=>{checkbox.checked?chosenAddressIds.add(address.id):chosenAddressIds.delete(address.id);addressPickerSummary();schedulePreview();};
+     label.append(checkbox,d.createTextNode(' '+(address.label||'Main address')+' · '+address.summary));
+     label.style.cssText='display:flex;gap:8px;padding:4px 0';addressList.append(label);
+    }
+    if(!addressList.children.length)addressList.append(text('small','No matching Main addresses.'));
+    addressPickerSummary();
+   }
+   addressSearch.oninput=renderAddressPicker;
+   addressAll.onclick=()=>{for(const address of availableAddresses)chosenAddressIds.add(address.id);renderAddressPicker();schedulePreview();};
+   addressNone.onclick=()=>{chosenAddressIds.clear();renderAddressPicker();schedulePreview();};
+   void api.reuseChoices({...win.owner}).then(result=>{
+    if(!win.valid())return;
+    for(const address of result.choices||[]){
+     if(address.type!=='main'||!String(address.id).startsWith('bank:'))continue;
+     availableAddresses.push(address);chosenAddressIds.add(address.id);
+    }
+    addressesLoaded=true;renderAddressPicker();schedulePreview();
+   }).catch(error=>{if(!win.valid())return;addressesError=String(error.message||error);addressSummary.textContent='Could not load saved Main addresses';win.status().textContent=addressesError;});
    const rules=d.createElement('div');rules.className='profileJigRules';
    groupedJigChoices(rules,settings);
    const autoPhoneNote=text('small','Missing profile, shipping and billing phone fields are filled automatically on Preview and saved only with Apply. Existing phone numbers remain unchanged. Newly generated 555-01xx numbers are sample placeholders, not working SMS numbers.');
@@ -1124,7 +1166,7 @@
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    let changedCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,autoPhoneNote,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,autoPhoneNote,addressPicker,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    const enforceMainMode=()=>{
     if(!targetMainToggle.checked)return;
@@ -1165,6 +1207,9 @@
    preview.onclick=async()=>{
     preview.disabled=true;invalidatePreview();const activeRevision=previewRevision;
     try{
+     const sourcingAddresses=targetMainToggle.checked||(retailer==='walmart'&&bankSourceToggle.checked)||(optionalUnitToggle.checked&&!targetMainToggle.checked);
+     if(sourcingAddresses&&!addressesLoaded)throw Error(addressesError||'Saved Main address picker is still loading. No changes made.');
+     if(sourcingAddresses&&!chosenAddressIds.size)throw Error('Select at least one Main address in the dropdown before previewing. Nothing was changed.');
      const quantity=Number(reuseCount.value);
      if(reuseToggle.checked&&(!reuseLoaded||!reuseSelect.value||!Number.isSafeInteger(quantity)||quantity<2||quantity>chosen.length))
       throw Error('Choose a saved Main or Jigged address and a valid number of profiles to reuse it.');
@@ -1176,7 +1221,8 @@
      const counts=Object.fromEntries([...distributionPanel.querySelectorAll('input[data-style]')].map(input=>[input.dataset.style,Number(input.value)]));
       const distribution={enabled:distributionToggle.checked,counts};
       const result=await api.batchJigPreview({...win.owner,retailer,profileIds:chosen.map(x=>x.id),distribution,
-      ruleIds:selectedJigChoices(rules),targetMainFromBank:targetMainToggle.checked,combine:combineBox.checked,
+      ruleIds:selectedJigChoices(rules),targetMainFromBank:targetMainToggle.checked,
+      ...(sourcingAddresses?{sourceAddressIds:[...chosenAddressIds]}:{}),combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
       autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
       postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
