@@ -1554,3 +1554,118 @@ test('Large local Target Rejig rejects stale revisions before applying any profi
  await assert.rejects(h.lib.batchJigCommit(event,{token:plan.token,confirmed:true}),/changed|preview again/i);
  assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),before,'Failed batch is atomic');
 });
+
+
+test('Auto phone assignment fills missing profile/shipping/billing fields and preserves existing phone, card, and independent reference',()=>{
+ for(const retailer of ['target','pokemoncenter']){
+  const blank=D.blank(retailer,LC.format(retailer),{email:'auto@example.test',first:'Alex',last:'Example'});
+  blank.profileSecurityCode='PRESERVE-REF';
+  const cardBefore=LC.payment(blank);
+  const filled=LC.ensureMissingPhone(blank,'test-owner|auto@example.test');
+  const v=D.toValues(filled.data);
+  assert.equal(filled.changed,true);
+  assert.equal(filled.generated,true);
+  assert.match(v.phone,/^\d{3}55501\d{2}$/,'Sample placeholder follows reserved 555 format');
+  assert.equal(v['shipping.phone'],v.phone);
+  assert.equal(v['billing.phone'],v.phone);
+  assert.deepEqual(LC.payment(filled.data),cardBefore,'No card or code changes');
+  assert.equal(filled.data.profileSecurityCode,'PRESERVE-REF');
+  assert.equal(D.toValues(blank).phone,'','Never modify input during preview');
+  const again=LC.ensureMissingPhone(filled.data,'test-owner|auto@example.test');
+  assert.equal(again.changed,false);
+  assert.equal(D.toValues(again.data).phone,v.phone);
+  const provided=D.blank(retailer,LC.format(retailer),{
+   email:'saved@example.test',phone:'9547770123',
+   'shipping.phone':'9547770123','billing.phone':'9547770123'
+  });
+  const retained=LC.ensureMissingPhone(provided,'other');
+  assert.equal(retained.changed,false);
+  assert.equal(D.toValues(retained.data).phone,'9547770123');
+ }
+});
+
+test('Target Main-first Rejig automatically fills blank phones without selecting Florida phone rule',async t=>{
+ const h=await library(t);
+ const base={...address,label:'Unitless Main',address1:'4141 Real Road',address2:'',city:'Plantation'};
+ await h.service.addAddress(event,{...h.p,address:base});
+ const rowsToCreate=Array.from({length:4},(_,i)=>{
+  const row=complete('target','missing-phone-main-'+i+'@example.test');
+  row.phone_num='';row.shipping_phone='';row.billing_phone='';
+  return row;
+ });
+ await commit(h,await preview(h,rowsToCreate));
+ const previous=(await h.lib.list(event,h.p)).profiles;
+ const bankBefore=JSON.stringify((await h.addresses.listPersonal()).addresses);
+ assert.ok(previous.every(x=>!D.toValues(x.data).phone));
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:previous.map(x=>x.id),ruleIds:[],targetMainFromBank:true,
+  combine:false,billingSameAsShipping:true,postalScan:false});
+ assert.equal(plan.count,4);
+ assert.equal(plan.phoneAutoFilled,4);
+ assert.equal(plan.phoneGenerated,4);
+ assert.ok(plan.profiles.every(row=>/^\d{3}55501\d{2}$/.test(row.after.phone)));
+ assert.equal(new Set(plan.profiles.map(x=>x.after.phone)).size,4,'Unique placeholders within the selected batch');
+ assert.ok(plan.profiles.every(row=>row.appliedRuleIds.includes('phone.auto-fill')));
+ assert.equal(plan.targetAllocation.originalSlots,4);
+ assert.equal(plan.changed,4);
+ assert.equal(JSON.stringify((await h.lib.list(event,h.p)).profiles),JSON.stringify(previous),'Preview does not save');
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(applied.updated,4);
+ const after=(await h.lib.list(event,h.p)).profiles;
+ for(const row of after){
+  const vals=D.toValues(row.data);
+  assert.equal(vals.phone,vals['shipping.phone']);
+  assert.equal(vals.phone,vals['billing.phone']);
+  assert.match(vals.phone,/^\d{3}55501\d{2}$/);
+  assert.equal(vals['shipping.address1'],'4141 Real Road');
+ }
+ assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
+});
+
+test('Phone-only Target Rejig can Apply with unchanged addresses, without a selected phone jig',async t=>{
+ const h=await library(t);
+ const input=Array.from({length:4},(_,i)=>{
+  const row=complete('target','phone-only-'+i+'@example.test');
+  row.phone_num='';row.shipping_phone='';row.billing_phone='';
+  return row;
+ });
+ await commit(h,await preview(h,input));
+ const before=(await h.lib.list(event,h.p)).profiles;
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'target',
+  profileIds:before.map(row=>row.id),ruleIds:['suffix.matching'],
+  combine:false,billingSameAsShipping:false});
+ assert.equal(plan.phoneAutoFilled,4);
+ assert.equal(plan.changed,4);
+ assert.ok(plan.profiles.every(row=>row.before.address1===row.after.address1));
+ assert.ok(plan.profiles.every(row=>row.before.phone===''&&row.after.phone));
+ const done=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(done.updated,4);
+ for(const row of (await h.lib.list(event,h.p)).profiles){
+  const vals=D.toValues(row.data);
+  assert.equal(vals.phone,vals['shipping.phone']);
+  assert.equal(vals.phone,vals['billing.phone']);
+ }
+});
+
+
+test('Phone-only Rejig works for Walmart with no checked jig rules and does not modify shipping address',async t=>{
+ const h=await library(t);
+ const item=complete('walmart','phone-only-walmart@example.test');
+ item.phoneNumber='';item.shipping.phoneNumber='';item.billing.phoneNumber='';
+ await commit(h,await preview(h,[item],h.p,'walmart'));
+ const saved=(await h.lib.list(event,h.p)).profiles[0];
+ const prev=D.toValues(saved.data);
+ assert.equal(prev.phone,'');
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'walmart',
+  profileIds:[saved.id],ruleIds:[],combine:false,billingSameAsShipping:false});
+ assert.equal(plan.changed,1);
+ assert.equal(plan.phoneAutoFilled,1);
+ assert.equal(plan.profiles[0].after.address1,prev['shipping.address1']);
+ assert.match(plan.profiles[0].after.phone,/^\d{3}55501\d{2}$/);
+ const result=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(result.updated,1);
+ const after=D.toValues((await h.lib.list(event,h.p)).profiles[0].data);
+ assert.equal(after.phone,after['shipping.phone']);
+ assert.equal(after.phone,after['billing.phone']);
+ assert.equal(after['shipping.address1'],prev['shipping.address1']);
+});

@@ -979,6 +979,7 @@
  function groupedJigChoices(host,settings){
   const groups=new Map();
   for(const option of settings.options||[]){
+   if(option.id==='phone_florida_random')continue; // Missing phones are filled automatically.
    const [id,label]=jigFamily(option);
    if(!groups.has(id))groups.set(id,{label,ids:[]});
    groups.get(id).ids.push(option.id);
@@ -999,7 +1000,7 @@
   const fields=['address1','address2','city','state','zip','phone'];
   const streetChanged=['address1','address2'].some(k=>row.before[k]!==row.after[k]);
   const postalChanged=['city','state','zip'].some(k=>row.before[k]!==row.after[k]);
-  const phoneChanged=row.before.phone!==row.after.phone;
+  const phoneChanged=row.before.phone!==row.after.phone||row.phoneAutoFilled===true;
   const status=streetChanged?'JIGGED':postalChanged?'CITY / POSTAL ONLY':phoneChanged?'PHONE ONLY':'UNCHANGED';
   const block=d.createElement('section');
   block.style.cssText='padding:10px 12px;border:1px solid #344a5c;border-radius:9px;margin:8px 0;background:#0d1828;white-space:normal';
@@ -1032,7 +1033,7 @@
    info.style.cssText='display:block;margin-top:5px;color:#ffd28c';
    block.append(info);
   }
-  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
+  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id==='phone.auto-fill'?'Automatically completed missing phone fields':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
   if(rules.length){
    const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
    label.style.cssText='display:block;margin-top:5px;color:#8dddd4';block.append(label);
@@ -1060,6 +1061,7 @@
    const info=text('p','All '+chosen.length+' selected profiles will be processed from this one review. You do not need to open them one at a time.');
    const rules=d.createElement('div');rules.className='profileJigRules';
    groupedJigChoices(rules,settings);
+   const autoPhoneNote=text('small','Missing profile, shipping and billing phone fields are filled automatically on Preview and saved only with Apply. Existing phone numbers remain unchanged. Newly generated 555-01xx numbers are sample placeholders, not working SMS numbers.');
    const targetMainLabel=text('label','Target Rejig: start with all saved Main addresses (up to 4 profiles each) before variations'),targetMainToggle=d.createElement('input');
    targetMainLabel.className='check';targetMainLabel.hidden=retailer!=='target';targetMainToggle.type='checkbox';targetMainToggle.checked=retailer==='target';targetMainLabel.prepend(targetMainToggle);
    const targetMainInfo=text('small','This resets the address allocation in the PREVIEW only. Existing Target profiles outside this selection count toward each four-use limit. The Address Bank is never changed. All address changes require Apply.');
@@ -1122,7 +1124,7 @@
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    let changedCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,autoPhoneNote,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    const enforceMainMode=()=>{
     if(!targetMainToggle.checked)return;
@@ -1181,7 +1183,7 @@
      if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;changedCount=result.changed;
       if(result.targetAllocation)review.append(text('p','Target Main-first allocation: '+result.targetAllocation.mainAddresses+' saved Main addresses · '+result.targetAllocation.originalSlots+' selected profiles allocated to original addresses · '+result.targetAllocation.extraVariations+' allocated to additional enabled variations · max 4 per exact Target address.'));
      if(!result.targetAllocation&&result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
-     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
+     review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.phoneAutoFilled?' · '+result.phoneAutoFilled+' profile(s) have missing phone fields completed automatically ('+result.phoneGenerated+' sample number(s) generated)':'')+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      // Keep the review responsive while making EVERY account inspectable.
      const previewRows=d.createElement('section'),previewNav=d.createElement('nav'),previewLabel=text('small','');
@@ -1209,7 +1211,7 @@
       for(const clash of result.duplicateAddresses.slice(0,100))review.append(text('p',clash.email+' → '+clash.address+' · already used by '+clash.matches.map(x=>x.email+' ('+retailName[x.retailer]+')').join(', ')));
      }
      save.disabled=result.changed===0||(duplicateCount>0&&!allowDuplicates.checked);
-     win.status().textContent=result.changed===0?'This batch already uses its first available address slots; there are no edits to apply. Select more profiles or change your jig rules.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
+     win.status().textContent=result.changed===0?'These profiles already have the requested addresses and phone fields; there are no edits to apply.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
     }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{
