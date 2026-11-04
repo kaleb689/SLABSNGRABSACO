@@ -833,9 +833,8 @@
  q('selected-count').textContent=selectedVisible.length+' profile(s) selected on this page';
  const totalRejig=allSavedRetailerProfiles().length;
  rejigAllButton.disabled=busy||totalRejig===0||totalRejig>MAX_BULK_REJIG_PROFILES;
- const incompleteCount=rows.filter(x=>x.retailer===q('retailer').value&&x.stage==='in-progress').length;
  rejigAllButton.textContent='Re-jig all '+retailName[q('retailer').value]+' complete saved profiles ('+totalRejig+')';
- rejigAllButton.title=incompleteCount+' unfinished/draft profiles are separate and not included in complete-profile Rejig. They remain saved and can be completed first.';
+ rejigAllButton.title='Completed saved retailer profiles only. Unfinished drafts remain accessible in Unused for individual completion and Jig.';
  q('jig-selected').disabled=busy||!selectedVisible.length;
  q('jig-selected').textContent=selectedVisible.length?(stage==='unused'?'Jig selected ('+selectedVisible.length+')':'Re-jig selected ('+selectedVisible.length+')'):(stage==='unused'?'Jig selected':'Re-jig selected');
  for(const key of ['bulk-move','bulk-delete'])q(key).disabled=busy||stage==='unused'||!selectedVisible.length;
