@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {parseText,exportAccounts,textTemplate}=require('./retailer-login-formats');
+const {parseText,exportAccounts,textTemplate}=require('../retailer-login-formats');
 const accounts=[
  {email:'First@Example.com',password:'secret,with,comma'},
  {email:'second@example.com',password:'word:semi;colon'}
