@@ -1931,10 +1931,31 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    if(assigned!==reuseCount)throw Error('The chosen address would be used by '+assigned+
     ' selected profiles, not the requested '+reuseCount+'. Change the remaining jig rules or selected profiles and preview again.');
   }
+  // Rejig always fills MISSING phone fields, regardless of phone-rule checkbox
+  // and even in Main-first mode. Never overwrite a saved phone. This runs AFTER
+  // address allocation so the four-use Target address limit remains untouched.
+  const occupiedPhones=new Set();
+  for(const other of all)if(!chosenIds.has(other.id)){
+   const value=D.toValues(other.data);
+   for(const field of ['phone','shipping.phone','billing.phone']){
+    const digits=String(value[field]||'').replace(/\D/g,'');
+    if(digits)occupiedPhones.add(digits);
+   }
+  }
+  for(const row of rows){
+   const filled=C.ensureMissingPhone(row.data,row.profileId||row.email,0,occupiedPhones);
+   row.data=filled.data;
+   row.phoneAutoFilled=filled.changed;
+   row.phoneGenerated=filled.generated;
+   if(filled.changed){
+    row.after=addressView(row.data);
+    row.appliedRuleIds.push('phone.auto-fill');
+   }
+  }
   // Previewing a batch that already occupies the first four preferred
   // variations is useful: show all rows unchanged instead of pretending it
   // must consume an unsafe jig. The Apply button stays disabled for no-ops.
-  if(retailer!=='target'&&rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))
+  if(retailer!=='target'&&rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled))
    throw Error('Every selected profile already has the requested address and no changes would be saved.');
   const duplicateAddresses=jigAddressConflicts(rows,all);
   const token=uuid();
@@ -1946,7 +1967,8 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
   return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitBankReassigned:bankReassigned,
    optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
-   count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)).length,
+   count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)||x.phoneAutoFilled).length,
+   phoneAutoFilled:rows.filter(x=>x.phoneAutoFilled).length,phoneGenerated:rows.filter(x=>x.phoneGenerated).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    targetAllocation,postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
@@ -1956,7 +1978,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const plan=jigPlans.get(p.token);
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
-  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)))throw Error('No profile address changes to apply.');
+  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled))throw Error('No profile address changes or phone additions to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank||plan.targetMainFromBank?await reusableShippingChoices(a,latest):[];
   const latestById=new Map(latest.map(row=>[row.id,row]));
