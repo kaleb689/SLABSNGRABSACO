@@ -803,6 +803,15 @@
   const stageNames={unused:'Unused',new:'New · Not Exported',completed:'Ready for Export',live:'Live Profiles'};
   const draftCount=rows.filter(x=>x.retailer===q('retailer').value&&x.bank!=='live'&&x.stage==='in-progress').length;
   q('current-retailer').textContent=retailName[q('retailer').value]+' · Total saved: '+rows.filter(x=>x.retailer===q('retailer').value).length+' (Live '+rows.filter(x=>x.retailer===q('retailer').value&&x.bank==='live').length+', New '+rows.filter(x=>x.retailer===q('retailer').value&&x.bank!=='live'&&x.needsFirstExport===true).length+', Ready '+rows.filter(x=>x.retailer===q('retailer').value&&x.bank!=='live'&&x.stage==='completed'&&x.needsFirstExport!==true).length+', Draft '+rows.filter(x=>x.retailer===q('retailer').value&&x.bank!=='live'&&x.stage==='in-progress').length+') / '+(stageNames[stage]||stage)+(stage==='unused'?' · '+unusedAccounts.length+' unused accounts · '+draftCount+' saved unfinished drafts':'');
+  // A count from the current retailer is not the total inventory across tabs.
+  // Explain exactly why an owner with 300+ total saved accounts may see a
+  // smaller Re-jig eligibility count, without exposing or changing any draft.
+  const retailerRows=rows.filter(item=>item.retailer===q('retailer').value);
+  const allReady=retailerRows.filter(item=>item.stage!=='in-progress').length;
+  const otherRetailerCount=rows.length-retailerRows.length;
+  q('current-retailer').textContent+=' · Re-jig eligible: '+allReady+'/'+retailerRows.length+
+   ' · Other retailer tabs: '+otherRetailerCount+' · All saved in this vault: '+rows.length+
+   (draftCount?' · '+draftCount+' unfinished drafts must be completed or jigged separately in Unused':'');
   q('search').placeholder=stage==='unused'?'Search unused retailer account emails':'Search profile email, card or address';
   sortToolbar.hidden=stage==='unused';
   q('groups').hidden=false;q('view').closest('label').hidden=stage==='unused';duplicatesButton.hidden=false;
