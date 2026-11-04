@@ -123,3 +123,38 @@ test('Hard Card bulk removal is all-or-nothing if any selected card has multiple
  assert.equal(inventory.find(x=>x.last4==='4242').hardCard,true);
  assert.equal(inventory.find(x=>x.last4==='4444').hardCard,true);
 });
+
+
+test('Newly generated profiles automatically fill missing phone fields without any jig checkbox and preserve existing owner phones',async t=>{
+ const h=await env(t),p=await poolStock(h,h.p,'target',2);
+ await h.profiles.importRows({...h.p,retailer:'target',status:'available',rows:[
+  D.blank('target','shikari',{email:'with-phone@example.test',password:'pw-a',phone:'9547770123'}),
+  D.blank('target','shikari',{email:'without-phone@example.test',password:'pw-b'})
+ ]});
+ const result=await h.service.generate(event,p);
+ assert.equal(result.created,2);
+ const profiles=await h.profiles.fieldSnapshot('personal',null);
+ assert.equal(profiles.length,2);
+ const byMail=new Map(profiles.map(row=>[D.toValues(row.data).email,D.toValues(row.data)]));
+ const withPhone=byMail.get('with-phone@example.test'),missing=byMail.get('without-phone@example.test');
+ assert.equal(withPhone.phone,'9547770123','Existing phone remains unchanged');
+ assert.equal(withPhone['shipping.phone'],'9547770123');
+ assert.equal(withPhone['billing.phone'],'9547770123');
+ assert.match(missing.phone,/^\d{3}55501\d{2}$/,'Auto-generated sample phone');
+ assert.equal(missing['shipping.phone'],missing.phone);
+ assert.equal(missing['billing.phone'],missing.phone);
+ assert.equal(byMail.get('with-phone@example.test').password,'pw-a');
+ assert.equal(byMail.get('without-phone@example.test').password,'pw-b');
+});
+
+test('Manual blank profile creation automatically fills phone without producing a real contact number',async t=>{
+ const h=await env(t);
+ const created=await h.service.create(event,{...h.p,retailer:'target',format:'shikari',fields:{email:'blank-auto-phone@example.test'}});
+ const rows=await h.profiles.fieldSnapshot('personal',null);
+ assert.equal(rows.length,1);
+ const v=D.toValues(rows[0].data);
+ assert.equal(v.email,'blank-auto-phone@example.test');
+ assert.match(v.phone,/^\d{3}55501\d{2}$/);
+ assert.equal(v['shipping.phone'],v.phone);
+ assert.equal(v['billing.phone'],v.phone);
+});
