@@ -1692,7 +1692,7 @@ test('Rejig address picker excludes unchecked 1811 Main, rejects unapproved IDs,
  assert.equal(plan.changed,1);
  assert.equal(JSON.stringify((await h.addresses.listPersonal()).addresses),bankBefore);
  await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[]}),/Select at least one saved address/);
- await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[allowed.id,'bank:foreign-id']}),/not in this vault/);
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[allowed.id,'bank:foreign-id']}),/no longer in this vault/);
  await assert.rejects(h.lib.batchJigPreview(event,{...args,sourceAddressIds:[allowed.id,allowed.id]}),/Choose valid saved Main addresses/);
 });
 
