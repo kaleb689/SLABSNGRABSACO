@@ -1972,7 +1972,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    targetAllocation,postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
-   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
+   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,phoneAutoFilled:x.phoneAutoFilled===true,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
