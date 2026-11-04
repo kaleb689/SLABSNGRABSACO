@@ -197,6 +197,28 @@ function applyFloridaPhone(data,seed,index=0){
  const phone=floridaPhone(seed,index),v=values(data);
  return Draft.manualEdit(data,{...v,phone,'shipping.phone':phone,'billing.phone':phone});
 }
+// Rejig and generated profiles fill missing contact fields automatically.
+// Reserved 555-01xx numbers are SAMPLE placeholders, not reachable phones.
+function ensureMissingPhone(data,seed,index=0,occupied=null){
+ const raw=Draft.toValues(data),fields=['phone','shipping.phone','billing.phone'];
+ const current=fields.map(field=>clean(raw[field]));
+ const existing=current.find(Boolean)||'',used=occupied instanceof Set?occupied:null;
+ let phone=existing;
+ if(!phone){
+  const total=FL_AREA_CODES.length*100;
+  for(let step=0;step<total;step++){
+   const candidate=floridaPhone(seed,index+step);
+   if(!used||!used.has(digits(candidate))){phone=candidate;break;}
+  }
+  if(!phone)throw Error('Reserved sample phone numbers are exhausted. Add verified phone numbers before generating more profiles.');
+ }
+ if(used)used.add(digits(phone));
+ const missing=fields.filter(field=>!clean(raw[field]));
+ if(!missing.length)return {data,phone,generated:false,changed:false};
+ const values={...raw};
+ for(const field of missing)values[field]=phone;
+ return {data:Draft.manualEdit(data,values),phone,generated:!existing,changed:true};
+}
 function syncCardholderToProfile(data){
  let out=clone(data),v=values(out);
  const first=clean(v.first||v['shipping.first']||v['billing.first']),last=clean(v.last||v['shipping.last']||v['billing.last']);
@@ -502,5 +524,5 @@ function existingLiveReconciliation(rows,retailer){
   cardOnlyMatches:candidates.filter(x=>x.reason==='full-card').length,
   blockedCount:blocked.length,blocked,unmatchedCount:unmatched.length,signature};
 }
-module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,TARGET_PRIORITY_SUFFIXES,TARGET_PRIORITY_SUFFIX_RULES,TARGET_451_RULES,TARGET_451_LIMITS,target451UnitInfo,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,syncCardholderToProfile};
+module.exports={existingLiveReconciliation,exactFullCardMatch,profileCode,exportSelectedRows,exportArchiveRows,values,payment,normalized,nameKey,collisions,putCard,randomName,exportRows,format,email,retailer,jig,defaultRules,ruleOptions,ruleById,jigStyle,TARGET_PRIMARY_RULES,TARGET_DIRECTION_RULES,TARGET_PRIORITY_SUFFIXES,TARGET_PRIORITY_SUFFIX_RULES,TARGET_451_RULES,TARGET_451_LIMITS,target451UnitInfo,FL_PHONE_RULE,FL_AREA_CODES,floridaPhone,applyFloridaPhone,ensureMissingPhone,syncCardholderToProfile};
 
