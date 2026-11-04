@@ -55,6 +55,12 @@
  bulkPanel.innerHTML=`<div class="workshopHead"><div><h3>Saved profiles</h3><small id="bulkJigOwner">Select one, multiple, or all saved profiles. The retailer buttons and rule choices above control the jig.</small></div></div>
  <div class="buttons"><button class="btn plain slim" data-select-all type="button">Select all</button><button class="btn plain slim" data-clear type="button">Clear</button></div>
  <div class="workshopPickers"><details open><summary>Profiles to jig</summary><div class="workshopAssetChoices" data-profiles></div></details>
+ <details data-source-details><summary>Allowed saved Main addresses for Re-jig <span data-source-count></span></summary>
+ <small>Only checked addresses are used when Main-first Target or Full-bank Walmart is enabled. Unchecking 1811 excludes that Main address from the batch. Other address banks remain untouched.</small>
+ <label class="workshopCheck"><input data-source-enable type="checkbox" checked> Reassign from checked saved Main addresses (Target Main-first / Walmart full bank)</label>
+ <label>Find address<input type="search" data-source-search placeholder="Street, ZIP, unit or city"></label>
+ <div class="buttons"><button type="button" class="btn secondary slim" data-source-all>Select all</button><button type="button" class="btn secondary slim" data-source-none>Deselect all</button></div>
+ <div data-source-rows style="max-height:220px;overflow:auto"></div></details>
  <label class="workshopCheck"><input data-postal-scan type="checkbox" checked> Scan online ZIP/city crossovers during Jig Profiles preview</label>
  <label class="workshopCheck"><input data-postal-apply type="checkbox" checked> Apply ZIP/state-matched alternate city names when available</label>
  <small>City names come from an online ZIP listing, not a verified USPS street delivery address. Only ZIP is sent online; street, email, cards and personal details stay local.</small>
@@ -71,6 +77,7 @@
  panel.after(bulkPanel);
  const bq=name=>bulkPanel.querySelector('[data-'+name+']');
  let bulkRetailer='target',bulkRows=[],bulkSelected=new Set(),bulkToken=null,bulkOwnerKey='',bulkLoading=false,bulkSettings=null,bulkDuplicateCount=0,activeRetailerPreset='target';
+ let bulkAddressChoices=[],bulkAddressIds=new Set(),bulkAddressContext='',bulkAddressLoading=false;
  const bulkOwner=()=>fallback();
  const bulkKey=p=>p.scope+':'+(p.customerId||'owner');
  let reuseLoadedKey='';
@@ -96,6 +103,40 @@
   }catch(e){reuseLoadedKey='';bq('reuse-toggle').checked=false;bq('reuse-panel').hidden=true;bulkStatus(e.message,true);}
   finally{bq('reuse-choice').disabled=false;}
  }
+
+ function renderBulkAddresses(){
+  const host=bq('source-rows');host.replaceChildren();
+  bq('source-details').hidden=!['target','walmart'].includes(bulkRetailer);
+  bq('source-count').textContent='('+bulkAddressIds.size+' / '+bulkAddressChoices.length+' selected)';
+  const filter=bq('source-search').value.trim().toLowerCase();
+  for(const item of bulkAddressChoices){
+   if(filter&&!String(item.label+' '+item.summary).toLowerCase().includes(filter))continue;
+   const label=d.createElement('label'),checkbox=d.createElement('input');
+   label.className='workshopCheck';checkbox.type='checkbox';checkbox.checked=bulkAddressIds.has(item.id);
+   checkbox.onchange=()=>{checkbox.checked?bulkAddressIds.add(item.id):bulkAddressIds.delete(item.id);invalidateReuse();renderBulkAddresses();};
+   label.append(checkbox,d.createTextNode((item.label||'Saved Main')+' · '+item.summary));host.append(label);
+  }
+  if(!host.children.length)host.textContent='No Main addresses match this filter.';
+ }
+ async function loadBulkAddresses(){
+  const owner=bulkOwner(),key=bulkKey(owner);
+  if(bulkAddressContext===key&&bulkAddressChoices.length){renderBulkAddresses();return;}
+  const originalKey=key;bulkAddressLoading=true;bulkAddressChoices=[];bulkAddressIds.clear();
+  try{
+   const result=await library.reuseChoices(owner);
+   if(bulkKey(bulkOwner())!==originalKey)return;
+   bulkAddressChoices=(result.choices||[]).filter(x=>x.type==='main'&&String(x.id).startsWith('bank:'));
+   bulkAddressIds=new Set(bulkAddressChoices.map(x=>x.id));
+   bulkAddressContext=key;
+   renderBulkAddresses();invalidateReuse();
+  }catch(error){bulkStatus('Unable to load saved Main addresses: '+String(error.message||error),true);}
+  finally{bulkAddressLoading=false;}
+ }
+ bq('source-search').addEventListener('input',renderBulkAddresses);
+ bq('source-enable').addEventListener('change',invalidateReuse);
+ bq('source-all').addEventListener('click',()=>{for(const item of bulkAddressChoices)bulkAddressIds.add(item.id);invalidateReuse();renderBulkAddresses();});
+ bq('source-none').addEventListener('click',()=>{bulkAddressIds.clear();invalidateReuse();renderBulkAddresses();});
+
  function fillDistributionRows(){
    const host=bq('distribution-rows');host.replaceChildren();
    const options=bulkSettings?.options||[],grouped=new Map();
@@ -118,7 +159,7 @@
  bq('reuse-toggle').addEventListener('change',()=>{invalidateReuse();bq('reuse-panel').hidden=!bq('reuse-toggle').checked;if(bq('reuse-toggle').checked)void loadReuseChoices();});
  for(const name of ['reuse-choice','reuse-count'])bq(name).addEventListener('change',invalidateReuse);
  function bulkStatus(message,error=false){const el=bq('status');el.textContent=message;el.classList.toggle('profileBankError',error);}
- function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bq('reuse-toggle').checked&&!bq('optional-unit').checked&&!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean));bq('apply').disabled=bulkLoading||!bulkToken||(bulkDuplicateCount>0&&!bq('allow-duplicate').checked);bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
+ function bulkControls(){const count=bulkSelected.size;bq('preview').disabled=bulkLoading||!count||(!bq('reuse-toggle').checked&&!bq('optional-unit').checked&&!bulkSettings?.selected?.length&&!Object.values(selectedHardCounts()).some(Boolean)&&!(bq('source-enable').checked&&['target','walmart'].includes(bulkRetailer)));bq('apply').disabled=bulkLoading||!bulkToken||(bulkDuplicateCount>0&&!bq('allow-duplicate').checked);bq('preview').textContent=count?'Preview '+count+' selected profile'+(count===1?'':'s'):'Preview selected profiles';bq('apply').textContent=count?'Apply jig to '+count+' selected profile'+(count===1?'':'s'):'Apply jig to selected profiles';}
  function renderBulkProfiles(){
   const box=bq('profiles');box.replaceChildren();
   for(const row of bulkRows.filter(x=>x.retailer===bulkRetailer)){
@@ -150,6 +191,7 @@
    if(settings.legacyMigrated)await library.saveRules({...owner,retailer:bulkRetailer,rules:settings.selected});
    const ownerEl=bulkPanel.querySelector('#bulkJigOwner');if(ownerEl)ownerEl.textContent=ownerText(owner)+' | '+(retail[bulkRetailer]||bulkRetailer)+' preset';
    bulkPanel.hidden=!bulkRows.some(x=>x.retailer===bulkRetailer);
+   if(['target','walmart'].includes(bulkRetailer))await loadBulkAddresses();else renderBulkAddresses();
    bulkStatus('Select the saved profiles to jig. Retailer and rule choices come from the single controls above.');
   }catch(error){bulkRows=[];bulkSettings=null;bulkSelected.clear();renderBulkProfiles();bulkStatus(error.message,true);}finally{bulkLoading=false;bulkControls();}
  }
@@ -163,9 +205,20 @@
    if(bq('reuse-toggle').checked&&(!bq('reuse-choice').value||!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>profileIds.length))
     throw Error('Select an exact Main/Jigged address and a number from 2 to '+profileIds.length+'.');
    const reuse=bq('reuse-toggle').checked?{sourceId:bq('reuse-choice').value,count:reuseCount}:null;
+   const bankMode=bq('source-enable').checked&&['target','walmart'].includes(bulkRetailer);
+   if(bankMode&&(bulkAddressLoading||!bulkAddressChoices.length))
+    throw Error('The saved Main address picker is not ready. No changes have been made.');
+   if(bankMode&&!bulkAddressIds.size)
+    throw Error('Choose at least one saved Main address; unchecked addresses cannot be used.');
+   if(bankMode&&bulkRetailer==='target'&&(optionalUnitCount>0||reuse||bq('distribution-toggle').checked||state.combine))
+    throw Error('Target Main-first requires Optional units, Reuse, weighted distribution and Combine OFF. Select your Main addresses, then preview.');
    bulkStatus(bq('postal-scan').checked?'Checking online ZIP-to-city matches for selected addresses…':'Preparing offline jig preview…');
    const distribution={enabled:bq('distribution-toggle').checked,counts:Object.fromEntries([...bq('distribution-rows').querySelectorAll('[data-style]')].map(x=>[x.dataset.style,Number(x.value)]))};
-    const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,hardCounts:distribution.enabled||!panel.querySelector('[data-enable-hard-counts]').checked?null:selectedHardCounts(),distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
+    const result=await library.batchJigPreview({...owner,retailer:bulkRetailer,profileIds,ruleIds,
+    ...(bankMode?{sourceAddressIds:[...bulkAddressIds]}:{}),
+    targetMainFromBank:bankMode&&bulkRetailer==='target',sourceMainFromBank:bankMode&&bulkRetailer==='walmart',
+    hardCounts:bankMode&&bulkRetailer==='target'?null:distribution.enabled||!panel.querySelector('[data-enable-hard-counts]').checked?null:selectedHardCounts(),
+    distribution,optionalUnitCount,combine:state.combine,billingSameAsShipping:$('workshopMirror').checked,reuse,postalScan:bq('postal-scan').checked,postalApplyCities:bq('postal-scan').checked&&bq('postal-apply').checked});
    bulkToken=result.token;bulkDuplicateCount=(result.duplicateAddresses||[]).length;
    if(optionalUnitCount!==result.optionalUnitAdded)throw Error('The selected unit count did not match the preview; do not apply this batch.');
    const addedNote=d.createElement('p');addedNote.textContent=result.optionalUnitAdded+' unit designation(s) appended to Address Line 1 in preview. Address Line 2 and existing units are unchanged.';
