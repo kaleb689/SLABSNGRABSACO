@@ -88,7 +88,11 @@ function rewriteValorNames(body,names){
  const profiles=Object.values(data);
  if(profiles.length!==names.length||profiles.some(x=>!x||typeof x!=='object'||Array.isArray(x)))
   throw Error('Valor export profile-name count mismatch.');
- for(let i=0;i<profiles.length;i++)profiles[i].name=names[i];
+ for(let i=0;i<profiles.length;i++){
+    profiles[i].name=names[i];
+    if(typeof profiles[i].card?.type==='string')
+      profiles[i].card.type=profiles[i].card.type.toLowerCase();
+  }
  return JSON.stringify(data,null,2);
 }
 function exportRows(rows,r,customerName='Personal',scope='personal',forcedFormat=null){
@@ -97,7 +101,7 @@ function exportRows(rows,r,customerName='Personal',scope='personal',forcedFormat
  const outputFormat=forcedFormat||format(r);
  if(!['shikari','valor'].includes(outputFormat))throw Error('Choose Shikari CSV or Valor JSON for a retailer template.');
  const outputRetailer=outputFormat==='shikari'?'target':(r==='target'||r==='costco'||r==='sams'?'walmart':r);
- const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:c,profileSecurityCode:profileCode(x.data)};});
+ const model=require('./site-model'),profiles=rows.map(x=>{const v=values(x.data),c=payment(x.data),address=role=>({firstName:v[role+'.first'],lastName:v[role+'.last'],phone:v[role+'.phone'],address:v[role+'.address1'],address2:v[role+'.address2'],city:v[role+'.city'],state:v[role+'.state'],zip:v[role+'.zip'],country:v[role+'.country']||'US'});return {email:v.email,phone:v.phone,shipping:address('shipping'),billing:address('billing'),card:{...c,type:c.type.toLowerCase()},profileSecurityCode:profileCode(x.data)};});
  const out=model.exportTemplates(outputRetailer,customerName,profiles,null,{localOwnerCards:profiles.map(x=>({...x.card,expiration:x.card.month+'/'+x.card.year.slice(-2),cvv:x.profileSecurityCode||''}))});
  out.body=outputFormat==='shikari'?rewriteShikariNames(out.body,exportNames):rewriteValorNames(out.body,exportNames);
  out.name=clean(customerName).replace(/[<>:"/\\|?*\x00-\x1f]/g,'').slice(0,70)+' profiles'+(outputFormat==='shikari'?'.csv':'.json');
@@ -131,6 +135,10 @@ function exportArchiveRows(rows,r,owner='Personal',scope='personal'){
  const records=rows.map((row,index)=>{
   const name=exportProfileName(row,index,owner,scope);
   const copy=archiveSafe(row.data);
+  // Normalize only export copies; leave encrypted master profiles untouched.
+  if(typeof copy.cc_type==='string')copy.cc_type=copy.cc_type.toLowerCase();
+  if(copy.card&&typeof copy.card.type==='string')
+   copy.card.type=copy.card.type.toLowerCase();
   // Export-only name aliases for Shikari / Valor. Stored profiles retain
   // their original labels, names, emails and card/security references.
   if(format(r)==='shikari')copy.profile_name=name;
