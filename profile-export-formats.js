@@ -48,7 +48,7 @@ const safeCardMetadata = item => {
   const validMonth = /^(0[1-9]|1[0-2])$/.test(month);
   return { holder, month: validMonth ? month : "", year: validMonth ? year : "",
     expiration: validMonth && year ? month + "/" + year.slice(-2) : "" ,
-    type: String(card.type || card.brand || "") };
+    type: String(card.type || card.brand || "").toLowerCase() };
 };
 
 export function buildSafeRetailerProfileExport(retailer, profiles) {
