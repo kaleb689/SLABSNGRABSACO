@@ -974,6 +974,29 @@ test('Personal Valor exports use account emails as names in all supported retail
   assert.deepEqual(profiles.map(x=>x.name),rows.map(x=>x.email),retailer);
  }
 });
+test('All card types are lowercase in Shikari, Valor and alternate exports without changing saved profiles',()=>{
+ for(const retailer of ['target','walmart','pokemoncenter']){
+  const row={id:'brand-case',retailer,label:'Saved Profile',email:'brand@example.test',
+   data:Object.assign(complete(retailer,'brand@example.test'),{profileSecurityCode:'007'})};
+  if(retailer==='target')row.data.cc_type='ViSa';
+  else row.data.card.type='MaStErCaRd';
+  const before=structuredClone(row);
+  const retailerOut=LC.exportSelectedRows([row],retailer,'Personal','retailer','personal');
+  if(retailer==='target'){
+   const item=Core.parseFile(retailerOut.name,retailerOut.body).records[0];
+   if(Object.hasOwn(item,'cc_type'))assert.equal(item.cc_type,'visa');
+  }else assert.equal(Object.values(JSON.parse(retailerOut.body))[0].card.type,'mastercard');
+  const archived=JSON.parse(LC.exportSelectedRows([row],retailer,'Personal','json','personal').body).profiles[0];
+  if(retailer==='target')assert.equal(archived.data.cc_type,'visa');
+  else assert.equal(archived.data.card.type,'mastercard');
+  for(const choice of ['csv','tsv','txt']){
+   const output=LC.exportSelectedRows([row],retailer,'Personal',choice,'personal').body;
+   assert.doesNotMatch(output,/ViSa|MaStErCaRd/);
+   assert.match(output,retailer==='target'?/visa/:/mastercard/);
+  }
+  assert.deepEqual(row,before,'saved card/profile data must not be modified by exports');
+ }
+});
 test('Customer signup name is numbered from 1 in Shikari and Valor retailer exports',()=>{
  for(const retailer of ['target','pokemoncenter','walmart']){
   const rows=['first','second','third'].map((id,i)=>({
