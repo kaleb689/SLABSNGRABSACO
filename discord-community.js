@@ -2888,9 +2888,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       let menu;
       if (shouldShow) {
         const payload = skuControlPayload(message, products, tonightChannelId, retailerDropLabels);
+        let legacyReplyId = "";
         if (sent[0]) {
           try {
-            menu = await api(`/channels/${message.channel_id}/messages/${sent[0]}`, "PATCH", payload);
+            const existing = await api(`/channels/${message.channel_id}/messages/${sent[0]}`);
+            // Discord cannot detach a reply through PATCH. Replace legacy
+            // reply-style SKU panels once with independent messages instead.
+            if (existing.message_reference?.message_id) legacyReplyId = sent[0];
+            else menu = await api(`/channels/${message.channel_id}/messages/${sent[0]}`, "PATCH", payload);
           } catch (error) {
             if (!/HTTP 404/.test(error.message)) throw error;
           }
@@ -2899,13 +2904,20 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           menu = await sendMessage(message.channel_id, payload.content, {
             embeds: payload.embeds,
             allowed_mentions: payload.allowed_mentions,
-            message_reference: { message_id: message.id, fail_if_not_exists: false },
             components: payload.components
           });
         }
-        // Persist before deleting obsolete pages; retries will update the same panel.
+        // Save the new panel before retiring a legacy reply. Buttons still
+        // target the original SKU source, so saved selections are unchanged.
         menus[message.id] = [menu.id];
         await writeSkuFile(skuMenusFile, menus);
+        if (legacyReplyId && legacyReplyId !== menu.id) {
+          try {
+            await api(`/channels/${message.channel_id}/messages/${legacyReplyId}`, "DELETE");
+          } catch (error) {
+            if (!/HTTP 404/.test(error.message)) console.error("Legacy SKU reply cleanup:", error.message);
+          }
+        }
       }
       for (const id of shouldShow ? sent.filter(id => id !== menu.id) : sent) {
         try { await api(`/channels/${message.channel_id}/messages/${id}`, "PATCH", { components: [] }); }
@@ -2920,12 +2932,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return products.length;
   }
   async function retireReformattedRawSource(channelId,rawId) {
-    // An obsolete raw source must not leave interactive buttons pointing at a
-    // deleted message. Do not touch customer SKU selections or other posts.
+    // Only remove the bot's now-meaningless SKU panels associated with a
+    // deleted raw paste. Keeping them as replies shows Discord's
+    // "Original message was deleted" warning to everyone.
     await withSkuQueue(async()=>{
       const menus=await readSkuFile(skuMenusFile);
       for(const panelId of menus[rawId]||[]) {
-        try {await api("/channels/"+channelId+"/messages/"+panelId,"PATCH",{components:[]});}
+        try {await api("/channels/"+channelId+"/messages/"+panelId,"DELETE");}
         catch(error){if(!/HTTP 404/.test(error.message))console.error("Old raw SKU panel retirement:",error.message);}
       }
       if(menus[rawId]){delete menus[rawId];await writeSkuFile(skuMenusFile,menus);}
@@ -2941,6 +2954,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       for (let page = 0; page < 10; page++) {
         const history = await api(`/channels/${channelId}/messages?limit=100${before ? `&before=${before}` : ""}`);
         for (const message of history) {
+          // Clean up orphaned bot-owned SKU replies left by older releases
+          // after their raw drop source was deleted. Never touch user posts.
+          if (String(message.author?.id || "") === String(appId) &&
+              message.message_reference?.message_id &&
+              message.referenced_message === null &&
+              /^\*\*SKU selection\*\*/.test(String(message.content || ""))) {
+            try { await api(`/channels/${channelId}/messages/${message.id}`, "DELETE"); }
+            catch (error) { if (!/HTTP 404/.test(error.message)) console.error("Orphaned SKU reply cleanup:", error.message); }
+            continue;
+          }
           if (!message.message_reference?.message_id && message.type === 0 &&
               (!message.author?.bot || isFormattedDropPost(message, appId)) &&
               !message.webhook_id && parseDropSkus(message).length) {
