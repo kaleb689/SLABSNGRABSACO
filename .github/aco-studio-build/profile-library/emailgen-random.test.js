@@ -177,55 +177,54 @@ test('Email Gen CSV download requires unlocked owner; export does not edit Cloud
 });
 
 
-test('Email Gen Shikari export exactly matches owner-supplied 24-column Shikari template (index,profile_name...)',()=>{
+test('Shikari Email Gen exactly matches 23-column header in uploaded Shikari export (2).csv for 102 aliases',()=>{
  const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
  const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)};
  vm.createContext(ctx);vm.runInContext(app.slice(start,end),ctx);
- const reference=['index','profile_name','first_name','last_name','email','phone_num',
-  'cc_number','cc_exp_month','cc_exp_year','cc_cvv','shipping_street',
-  'shipping_street_2','shipping_city','shipping_state','shipping_zip_code',
-  'shipping_country','billing_first_name','billing_last_name','billing_street',
-  'billing_street_2','billing_city','billing_state','billing_zip_code','billing_country'];
- assert.equal(reference.length,24);
+ // Hard-coded reference captured from the owner-uploaded current Shikari export,
+ // independent of the app's header variable. This is intentionally 23 fields.
+ const reference=['profile_name','first_name','last_name','email','phone_num',
+ 'cc_number','cc_exp_month','cc_exp_year','cc_cvv','shipping_street',
+ 'shipping_street_2','shipping_city','shipping_state','shipping_zip_code',
+ 'shipping_country','billing_first_name','billing_last_name','billing_street',
+ 'billing_street_2','billing_city','billing_state','billing_zip_code','billing_country'];
+ assert.equal(reference.length,23);
  const aliases=Array.from({length:102},(_,i)=>({alias:'sng'+i+'@sng.sarl'}));
  ctx.data=aliases;
  const shikari=vm.runInContext("buildEmailGenExportCsv(data,'shikari')",ctx);
  const lines=shikari.csv.trim().split('\r\n'),header=lines[0].split(',');
- assert.equal(shikari.csv.charCodeAt(0),'i'.charCodeAt(0),'No BOM before index header');
+ assert.equal(shikari.csv.charCodeAt(0),'p'.charCodeAt(0),'No BOM before profile_name');
  assert.deepEqual(header,reference);
- assert.equal(lines.length,103,'One header plus all 102 Shikari profiles');
- const records=lines.slice(1).map(line=>line.split(','));
- for(let i=0;i<records.length;i++){
-  const record=Object.fromEntries(header.map((field,j)=>[field,records[i][j]]));
-  assert.equal(records[i].length,24,'Exact Shikari column count');
-  assert.equal(record.index,String(i),'Index is a zero-based unquoted number');
-  assert.equal(record.profile_name,'aco gen '+(i+1),'Shikari sees non-empty profile_name on each row');
-  assert.equal(record.email,aliases[i].alias,'Original alias preserved');
-  assert.ok(!Object.hasOwn(record,'password'),'Shikari profile template must not insert a non-template password column');
-  assert.ok(reference.filter(k=>!['index','profile_name','email'].includes(k)).every(k=>record[k]===''),
-   'Unverified name/card/address fields must remain empty');
+ assert.equal(lines.length,103,'Header and 102 exact email profile rows');
+ for(let i=0;i<102;i++){
+  const values=lines[i+1].split(',');
+  const record=Object.fromEntries(header.map((field,j)=>[field,values[j]]));
+  assert.equal(values.length,23,'All fields match the real export');
+  assert.equal(record.profile_name,'aco gen '+(i+1),'Nonempty profile_name for every row');
+  assert.equal(record.email,aliases[i].alias,'Original alias retained');
+  assert.equal(values[0],'aco gen '+(i+1));
+  assert.equal(values[3],aliases[i].alias);
+  assert.ok(!Object.hasOwn(record,'index'),'Original current Shikari export has NO index column');
+  assert.ok(!Object.hasOwn(record,'password'),'Native Shikari profile format has NO password column');
+  assert.ok(reference.filter(key=>!['profile_name','email'].includes(key)).every(k=>record[k]===''),
+   'Never fill unrelated addresses, personal names or payment cards');
  }
- assert.equal(records[0][1],'aco gen 1');
- assert.equal(records[101][1],'aco gen 102');
- assert.equal(records[0][4],'sng0@sng.sarl');
  const basic=vm.runInContext("buildEmailGenExportCsv(data,'basic')",ctx);
  assert.ok(basic.csv.startsWith('profile_name,email,password\r\n'));
  assert.ok(basic.csv.includes('"aco gen 102","sng101@sng.sarl","Freeshit1!"'));
  assert.equal((basic.csv.match(/Freeshit1!/g)||[]).length,102);
  assert.equal((shikari.csv.match(/Freeshit1!/g)||[]).length,0);
- assert.match(html,/Export Shikari profile template CSV/);
- assert.match(html,/Export Shikari TXT/);
- assert.match(app,/new Blob\(\[result\.csv\]/,'No BOM prefix in exported bytes');
+ assert.match(app,/new Blob\(\[result\.csv\]/,'Never write BOM in the import file');
 });
 
-test('Shikari TXT uses exact index then profile_name schema and genuine .txt extension',()=>{
+test('Shikari TXT uses exact 23-column profile_name-first header and real .txt extension',()=>{
  const start=app.indexOf(" const EMAIL_GEN_EXPORT_PASSWORD="),end=app.indexOf(" const unassignedRandom=",start);
  let download='',type='';
  const anchor={click(){},remove(){},set href(v){},set download(v){download=v},hidden:false};
  const ctx={OWNER_DOMAIN:'sng.sarl',validEmail:email=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
   records:[{alias:'one@sng.sarl'}],unlocked:true,requireOwner(){},
   Date,document:{createElement:()=>anchor,body:{appendChild(){}}},
-  Blob:class{constructor(data,opts){type=opts.type;assert.equal(data[0].startsWith('index,profile_name,'),true);}},
+  Blob:class{constructor(data,opts){type=opts.type;assert.equal(data[0].startsWith('profile_name,first_name,last_name,email,'),true);}},
   URL:{createObjectURL:()=>'blob:local',revokeObjectURL(){}},
   setTimeout:fn=>fn()};
  vm.createContext(ctx);vm.runInContext(app.slice(start,end),ctx);
