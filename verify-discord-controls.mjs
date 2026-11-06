@@ -56,6 +56,8 @@ try {
   const upcomingRows=messages.get(menus[chatter.id][0]).components;
   assert.ok(upcomingRows.at(-1).components.some(c=>c.label==="Don't run my profiles for this upcoming drop"));
   assert.ok(!upcomingRows.at(-1).components.some(c=>c.label==='Run all SKUs'));
+  assert.equal(messages.get(menus[nightPost.id][0]).message_reference, undefined,
+    'New public SKU panels must not reply to a source that may be removed');
   const rows=messages.get(menus[nightPost.id][0]).components;
   assert.ok(rows.at(-1).components.some(c=>c.label==="Don't run my profiles tonight"));
   assert.ok(rows.some(row=>row.components.some(c=>c.label==='My selected SKUs')));
@@ -122,6 +124,17 @@ try {
   menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
   assert.equal(menus[nightPost.id].length,1);
   assert.equal(menus[nightPost.id][0],activePanel,'Reuse public panel instead of duplicating it');
+  // Legacy releases posted SKU panels as replies. Those replies leave a
+  // public "Original message was deleted" banner after raw-paste cleanup.
+  const legacyPanel=messages.get(activePanel);
+  legacyPanel.message_reference={message_id:nightPost.id};
+  await controls.ensureSkuControls(nightPost);
+  menus=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-controls.json'),'utf8'));
+  const independentPanelId=menus[nightPost.id][0];
+  assert.notEqual(independentPanelId,activePanel,'Legacy reply must be replaced');
+  assert.equal(messages.has(activePanel),false,'Old legacy reply must be deleted');
+  assert.equal(messages.get(independentPanelId).message_reference,undefined,
+    'Replacement SKU panel must not reply to the soon-to-be-deleted source');
   assert.equal(messages.has(oldPage),true,'Obsolete panels remain until their ten-day expiry');
   assert.deepEqual(messages.get(oldPage).components,[],'Obsolete panel buttons are disabled without erasing the message');
   nightPost.content='No products';await controls.ensureSkuControls(nightPost);
