@@ -62,6 +62,7 @@ test('Website to Studio: linked account updates modify the same customer card an
  let list=await h.lib.list(sender,owner);
  const id=list.profiles[0].id,rev=list.profiles[0].revision;
  assert.equal(list.profiles[0].source,'website-linked-profile');
+ assert.equal(list.profiles[0].bank,'live');
  assert.equal(list.profiles[0].remoteType,'free');
  assert.equal(list.profiles[0].remoteManagedId,'managed-1');
  h.setAddress('240 Changed Street');
@@ -69,7 +70,22 @@ test('Website to Studio: linked account updates modify the same customer card an
  assert.equal(second.created,0);assert.equal(second.updated,1);
  list=await h.lib.list(sender,owner);
  assert.equal(list.profiles.length,1);assert.equal(list.profiles[0].id,id);
+ assert.equal(list.profiles[0].bank,'live');
  assert.ok(list.profiles[0].revision>rev);
+ assert.equal((await h.lib.list(sender,{scope:'personal',customerId:null})).profiles.length,0);
+});
+test('Website sync updates address without clearing an existing independent profile reference',async t=>{
+ const h=await harness(t);await h.lib.syncCustomer(sender,owner);
+ const before=(await h.lib.list(sender,owner)).profiles[0];
+ await h.profiles.libraryTransaction('aco','customer-a',ctx=>{ctx.rows[0].data.profileSecurityCode='012';},()=>{});
+ h.setAddress('260 New Signup Street');
+ const update=await h.lib.syncCustomer(sender,owner);
+ assert.equal(update.updated,1);
+ const after=(await h.lib.list(sender,owner)).profiles[0];
+ assert.equal(after.id,before.id);
+ assert.equal(after.bank,'live');
+ assert.equal(after.data.profileSecurityCode,'012');
+ assert.equal(Draft.toValues(after.data)['shipping.address1'],'260 New Signup Street');
  assert.equal((await h.lib.list(sender,{scope:'personal',customerId:null})).profiles.length,0);
 });
 test('Studio to website: linked edit calls exact website assignment before local commit',async t=>{

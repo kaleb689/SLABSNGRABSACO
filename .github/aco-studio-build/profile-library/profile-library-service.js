@@ -941,6 +941,10 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
    for(const item of active){
     const retailer=C.retailer(item.retailer),key=retailer+'|'+item.assignmentId;keys.add(key);
     const previous=ctx.rows.find(x=>x.remoteKey===key),data=C.normalized(item.data,retailer);
+    // An account/address sync is never permission to erase an existing
+    // independent profile reference stored in the customer vault.
+    if(previous&&C.profileCode(previous.data)&&!C.profileCode(data))
+     data.profileSecurityCode=C.profileCode(previous.data);
     if(C.format(retailer)==='valor'){const hex=crypto.createHash('sha256').update(a.id+'|'+key).digest('hex');data.id=previous?.data?.id||hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20,32);}
     const hash=require('./jig-field-core').hash(data),remoteUpdatedAt=String(item.remoteUpdatedAt||'');
     if(previous){
@@ -952,11 +956,13 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
      if(changed||previous.sourceLinked===false||previous.needsReview||String(previous.remoteUpdatedAt||'')!==remoteUpdatedAt)previous.revision++;
      if(!changed&&previous.needsReview){previous.needsReview=false;delete previous.pendingSourceData;delete previous.pendingSourceHash;delete previous.pendingRemoteUpdatedAt;}
      previous.sourceLinked=true;previous.remoteUpdatedAt=remoteUpdatedAt;previous.remoteManagedId=item.managedAccountId||null;previous.remoteType=item.assignmentType||null;
+     if(previous.bank!=='live'){previous.bank='live';previous.liveSince=previous.liveSince||createdAt;previous.revision++;}
+     previous.status='active';
      if(changed){previous.data=data;previous.email=C.email(data.email);previous.sourceHash=hash;updated++;}
      continue;
     }
     // Never implicitly link an imported record merely because its email matches.
-    ctx.rows.push({id:uuid(),retailer,email:C.email(data.email),label:profileOwnerLabel(source.customer.name)+' '+(ctx.rows.filter(x=>x.source==='website-linked-profile').length+1),group:source.customer.name,source:'website-linked-profile',status:'active',createdAt,revision:0,data,format:C.format(retailer),remoteKey:key,remoteManagedId:item.managedAccountId||null,remoteType:item.assignmentType||null,remoteUpdatedAt,sourceHash:hash,sourceLinked:true,websiteAuthoritative:true,jiggedAt:createdAt,assetRefs:{}});created++;
+    ctx.rows.push({id:uuid(),retailer,email:C.email(data.email),label:profileOwnerLabel(source.customer.name)+' '+(ctx.rows.filter(x=>x.source==='website-linked-profile').length+1),group:source.customer.name,source:'website-linked-profile',status:'active',bank:'live',liveSince:createdAt,createdAt,revision:0,data,format:C.format(retailer),remoteKey:key,remoteManagedId:item.managedAccountId||null,remoteType:item.assignmentType||null,remoteUpdatedAt,sourceHash:hash,sourceLinked:true,websiteAuthoritative:true,jiggedAt:createdAt,assetRefs:{}});created++;
     ctx.audit('linked-profile-created',C.email(data.email),{retailer});
    }
    for(const row of ctx.rows)if(row.source==='website-linked-profile'&&row.sourceLinked!==false&&!keys.has(row.remoteKey)){row.sourceLinked=false;row.revision++;row.status='unlinked';}

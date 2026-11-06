@@ -48,15 +48,16 @@ test('Website address edit is revision-guarded, preserves identity and sends rea
  {expectedRevision:current.revision,address:{...current,address:'8 Stale Road'}});
  assert.equal(stale.statusCode,409);assert.equal(h.account.shippingAddresses[0].address,'99 New Lane');
 });
-test('Website payment edit preserves PAN and removes legacy verification codes',async()=>{
+test('Website payment edit blocks silent removal of legacy verification data',async()=>{
  const h=harness(),current=(await h.snapshot('customer-a')).body.paymentMethods[0];
  const r=await h.invoke('PUT','/api/admin/aco-studio/customers/:id/payment-methods/:paymentId',{id:'customer-a',paymentId:'card-1'},
  {expectedRevision:current.revision,payment:{cardLabel:'Main Visa',cardholder:'Alex Updated',expMonth:'09',expYear:'2033',securityCode:'do-not-save'}});
- assert.equal(r.statusCode,200);assert.equal(h.vault.paymentMethods[0].acoCardNumber,'4242424242424242');
- assert.equal(h.vault.paymentMethods[0].securityCode,undefined);
- assert.equal(h.vault.paymentMethods[0].cardholder,'Alex Updated');
- assert.ok(!JSON.stringify(r.body).includes('4242424242424242'));
- assert.equal(h.events[0],'customer-payment-updated');
+ assert.equal(r.statusCode,409);
+ assert.equal(h.vault.paymentMethods[0].acoCardNumber,'4242424242424242');
+ assert.equal(h.vault.paymentMethods[0].securityCode,'stored-old-secret');
+ assert.equal(h.vault.paymentMethods[0].cardholder,'Alex Example');
+ assert.equal(h.writes.length,0);
+ assert.equal(h.events.length,0);
  const old=await h.invoke('PUT','/api/admin/aco-studio/customers/:id/payment-methods/:paymentId',{id:'customer-a',paymentId:'card-1'},
  {expectedRevision:current.revision,payment:{cardholder:'Old'}});
  assert.equal(old.statusCode,409);

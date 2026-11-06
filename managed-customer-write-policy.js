@@ -31,8 +31,13 @@ export function serializeManagedWrites() {
 }
 export function mergeManagedCard(existing = {}, submitted) {
   const result = {...existing};
-  // Card verification values must never survive a save, including legacy aliases.
-  for (const key of Object.keys(result)) if (/^(cvv2?|cvc2?|cid|cc_cvv|security_?code|accountSecurityCode|custom_?security_?code)$/i.test(key)) delete result[key];
+  // Never silently discard legacy card-verification fields during an unrelated
+  // update. Block the whole edit instead; handle verification data only in a
+  // compliant secure payment flow, never through this Studio bridge.
+  for (const [key,value] of Object.entries(result)) {
+    if (/^(cvv2?|cvc2?|cid|cc_cvv|security_?code|accountSecurityCode|custom_?security_?code)$/i.test(key) && value !== null && value !== undefined && String(value).length)
+      throw Object.assign(new Error('The card contains legacy verification data. Editing was blocked to prevent silent data loss; use the secure payment update flow.'), {status:409});
+  }
   if (!submitted || typeof submitted !== 'object') return result;
   const limits = {cardLabel:100,cardholder:150,acoCardNumber:30,expMonth:2,expYear:4};
   for (const [key, limit] of Object.entries(limits)) {
