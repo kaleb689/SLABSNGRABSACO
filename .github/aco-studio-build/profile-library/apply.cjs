@@ -202,8 +202,17 @@ replace('site-bridge.js','return {open,signIn,hide,reload,bounds,read,adminRead,
   const key=id(customerId);const roster=lastRoster&&Date.now()-lastRosterAt<15000?lastRoster:(await read('roster',{})).customers;
   const member=roster.find(x=>x.id===key&&x.paid&&x.orderId);if(!member)throw Error('Choose a paid customer in the authenticated roster.');
   const [saved,linked]=await Promise.all([api('/api/admin/submissions/'+encodeURIComponent(id(member.orderId))+'/saved-details'),api('/api/admin/submissions/'+encodeURIComponent(id(member.orderId))+'/linked-memberships')]);
-  const identities=await getLinkedAccountEmails();if(!identities.complete)throw Error('Linked account inventory is incomplete. Existing profiles were preserved.');
-  const resolved={memberships:(Array.isArray(linked?.memberships)?linked.memberships:[]).flatMap(m=>identities.records.filter(x=>x.customerId===key&&x.id===String(m.id)).map(x=>({...m,assignmentRetailer:x.retailer,accountEmail:x.email,retailers:{[x.retailer]:{...(m.retailers?.[x.retailer]||m.retailers?.pkc||{}),username:x.email}}})))};
+  // The exact website customer assignment is authoritative. Do not discard
+  // assigned profiles when a separate global pool inventory is incomplete.
+  const resolved={memberships:(Array.isArray(linked?.memberships)?linked.memberships:[]).map(m=>{
+   if(m.customerAccountId&&String(m.customerAccountId)!==key)throw Error('Linked assignment belongs to another customer. No profiles were changed.');
+   const r=String(m.assignmentRetailer||'').toLowerCase(),retailer=r==='pkc'?'pokemoncenter':r;
+   if(!RETAILER.has(retailer))throw Error('Website-linked account is missing an exact retailer. No profiles were changed.');
+   const credentials=m.retailers?.[retailer]||(retailer==='pokemoncenter'?m.retailers?.pkc:null)||{};
+   const email=String(credentials.username||credentials.email||m.accountEmail||'').trim();
+   if(!email)throw Error('Website-linked account has no saved retailer login email. No profiles were changed.');
+   return {...m,customerAccountId:key,assignmentRetailer:retailer,accountEmail:email};
+  })};
   return require('./customer-profile-source').sourceForCustomer(member,saved,resolved);
  }
  async function saveCustomerProfile(customerId,remote,change){

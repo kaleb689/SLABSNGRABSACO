@@ -658,6 +658,10 @@
    return;
   }
   const cards=Array.isArray(bankAssets.cards)?bankAssets.cards:[],pool=Array.isArray(bankAssets.cardPool)?bankAssets.cardPool:[],addresses=Array.isArray(bankAssets.addresses)?bankAssets.addresses:[];
+  // Live website resources are read-only mirrors; they are never added to
+  // reusable local card pools or another customer's encrypted data.
+  const websiteCards=scope==='aco'&&Array.isArray(bankAssets.websiteCards)?bankAssets.websiteCards:[];
+  const websiteAddresses=scope==='aco'&&Array.isArray(bankAssets.websiteAddresses)?bankAssets.websiteAddresses:[];
   const unusedCards=cards.filter(x=>x.unused===true);
   const cardQuery=(q('card-bank-search')?.value||'').trim().toLowerCase();
   const matchingCards=pool.filter(x=>[x.fullNumber,x.last4,x.label,x.status,...(x.linkedAccounts||[]).flatMap(y=>[y.email,retailName[y.retailer]])].filter(Boolean).join(' ').toLowerCase().includes(cardQuery));
@@ -670,8 +674,20 @@
    const chip=(label,value,accent)=>{const c=document.createElement('span');c.style.cssText='display:inline-flex;align-items:baseline;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid '+accent+';font-size:12px';const b=document.createElement('b');b.textContent=String(value);b.style.fontSize='14px';c.append(b,document.createTextNode(label));return c;};
    tracker.replaceChildren(chip('Hard Cards available for '+retailName[retailer],hardOpen,hardOpen?'#3ddc97':'#ff6b8a'),chip('Hard Cards total',hard.length,'#5b6b86'),chip('Regular cards available',regularOpen,'#5b6b86'));
   }}
-  addressCount.textContent='· '+addresses.length+' saved';
-  if(!pool.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
+  addressCount.textContent='· '+addresses.length+' local saved · '+websiteAddresses.length+' website saved';
+  if(scope==='aco'){
+   cardCount.textContent+=' · '+websiteCards.length+' website saved (masked)';
+   for(const c of websiteCards){
+    const last4=String(c.last4||c.maskedNumber||'').replace(/\\D/g,'').slice(-4);
+    const line=[c.cardholder||c.cardLabel||'Saved payment card',last4?'ending '+last4:'card saved',c.expMonth&&c.expYear?'exp '+c.expMonth+'/'+c.expYear:''].filter(Boolean).join(' · ');
+    const row=d.createElement('div');row.className='profileResourceRow';row.append(text('strong','Website saved card'),text('small',line));cardBox.append(row);
+   }
+   for(const a of websiteAddresses){
+    const line=[a.address,a.address2,a.city,a.state,a.zip].filter(Boolean).join(' · ');
+    const row=d.createElement('div');row.className='profileResourceRow';row.append(text('strong','Website saved address'),text('small',line));addressBox.append(row);
+   }
+  }
+  if(!pool.length&&!websiteCards.length)cardBox.append(text('p','No cards found in this '+(scope==='personal'?'Personal':'customer')+' vault or its saved profiles.'));
   // Index exact full-card references once, instead of scanning every profile
   // for every displayed card on each retailer/customer switch.
   const codesByFullNumber=new Map();
@@ -759,7 +775,7 @@
    more.onclick=()=>{visibleCardLimit+=80;drawResourceBanks();};
    cardBox.append(more);
   }
-  if(!addresses.length)addressBox.append(text('p','No addresses saved in this '+(scope==='personal'?'Personal':'customer')+' bank.'));
+  if(!addresses.length&&!websiteAddresses.length)addressBox.append(text('p','No addresses saved in this '+(scope==='personal'?'Personal':'customer')+' bank.'));
   for(const address of addresses){
    const row=d.createElement('article');row.className='profileResourceRow isAvailable profileSelectableCard';row.onclick=e=>{if(!e.target.closest('button'))window.ACOProfileWorkshop?.openVault?.(request(),'addresses');};
    const body=d.createElement('div'),title=text('strong',address.label||'Saved address'),meta=text('small',[address.address1,address.address2,address.city,address.state,address.zip].filter(Boolean).join(' · '));
@@ -772,10 +788,12 @@
   const workshop=window.desktopAPI?.profileWorkshop;
   if(!workshop||owner.scope==='aco'&&!owner.customerId){bankAssets={addresses:[],cards:[]};drawResourceBanks();return;}
   try{
-   const [assets,accounts]=await Promise.all([workshop.assets({...owner,showFullCards:true}),workshop.emails({...owner,retailer:q('retailer').value})]);
+   const [assets,accounts,website]=await Promise.all([workshop.assets({...owner,showFullCards:true}),workshop.emails({...owner,retailer:q('retailer').value}),owner.scope==='aco'?api.websiteSnapshot(owner).catch(()=>null):Promise.resolve(null)]);
    if(ticket!==refreshTicket||ownerEpoch!==epoch||main.hidden)return;
    if(editorBusy()){pendingRefresh=true;return;}
-   bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[],cardPool:Array.isArray(assets?.cardPool)?assets.cardPool:[]};
+   bankAssets={addresses:Array.isArray(assets?.addresses)?assets.addresses:[],cards:Array.isArray(assets?.cards)?assets.cards:[],cardPool:Array.isArray(assets?.cardPool)?assets.cardPool:[],
+     websiteAddresses:Array.isArray(website?.addresses)?website.addresses.map(a=>({address:a.address,address2:a.address2,city:a.city,state:a.state,zip:a.zip})):[],
+     websiteCards:Array.isArray(website?.paymentMethods)?website.paymentMethods.map(c=>({cardLabel:c.cardLabel,cardholder:c.cardholder,last4:c.last4,maskedNumber:c.maskedNumber,expMonth:c.expMonth,expYear:c.expYear})):[]};
    const resourceSignature=JSON.stringify(bankAssets);
    const resourceChanged=resourceSignature!==lastResourceSignature||lastResourceRetailer!==q('retailer').value;
    lastResourceSignature=resourceSignature;lastResourceRetailer=q('retailer').value;

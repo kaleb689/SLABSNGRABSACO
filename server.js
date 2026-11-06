@@ -28858,6 +28858,10 @@ app.get(
           assignmentId:
             assignment.id,
 
+          // Keep the exact website owner and retailer in the Studio feed.
+          customerAccountId,
+          assignmentRetailer: assignment.assignmentRetailer || "",
+
           type:
             "free",
 
@@ -29022,6 +29026,9 @@ app.get(
 
           assignmentId:
             assignment.id,
+
+          customerAccountId,
+          assignmentRetailer: assignment.rentalRetailer || "",
 
           type:
             "rented",

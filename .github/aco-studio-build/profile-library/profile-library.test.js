@@ -253,7 +253,7 @@ test('Owner batch operations refuse connected website profile deletion and prese
  const h=await library(t);
  await h.lib.syncCustomer(event,h.a);
  const row=(await h.lib.list(event,h.a)).profiles[0];
- await assert.rejects(h.lib.bulkManage(event,{...h.a,operation:'delete',retailer:'pokemoncenter',fromBank:'working',profileIds:[row.id],revisions:[row.revision],confirmed:true}),/Linked website/);
+ await assert.rejects(h.lib.bulkManage(event,{...h.a,operation:'delete',retailer:'pokemoncenter',fromBank:'live',profileIds:[row.id],revisions:[row.revision],confirmed:true}),/Linked website/);
  assert.equal((await h.lib.list(event,h.a)).profiles.length,1);
 });
 
@@ -1255,7 +1255,7 @@ test('Delete & Return to Pools unlinks only the exact website assignment, then r
  });
  await lib.syncCustomer(event,h.a);
  const row=(await lib.list(event,h.a)).profiles[0];
- const result=await lib.returnToPools(event,{...h.a,retailer:'walmart',fromBank:'working',
+ const result=await lib.returnToPools(event,{...h.a,retailer:'walmart',fromBank:'live',
   profileIds:[row.id],revisions:[row.revision],confirmed:true});
  assert.equal(result.count,1);assert.equal(result.websiteReturned,1);
  assert.equal(calls.length,1);assert.equal(calls[0].id,'customer-a');
@@ -1280,7 +1280,7 @@ test('Failed or stale website returns do not delete local customer mirrors or mo
  });
  await lib.syncCustomer(event,h.a);
  let row=(await lib.list(event,h.a)).profiles[0];
- const payload={...h.a,retailer:'walmart',fromBank:'working',
+ const payload={...h.a,retailer:'walmart',fromBank:'live',
   profileIds:[row.id],revisions:[row.revision],confirmed:true};
  const failed=await lib.returnToPools(event,payload);
  assert.equal(failed.partial,true);assert.equal(failed.deleted,0);
