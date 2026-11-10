@@ -52,7 +52,7 @@ const SEED = [
 export const INITIAL_TARGET_SKUS = Object.freeze(SEED.map(([sku,name])=>Object.freeze({sku,name})));
 const skuKey = value=>String(value||"").trim().toUpperCase();
 const isSku = value=>/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(value);
-const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replace(/\s+/g," ").trim().slice(0,180);
+const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replaceAll(String.fromCharCode(96)," ").replace(/\s+/g," ").trim().slice(0,180);
 const tick = String.fromCharCode(96);
 const button = (label,id,disabled=false,style=2)=>({type:2,style,label,custom_id:id,disabled});
 
