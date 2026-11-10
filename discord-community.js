@@ -11,7 +11,8 @@ import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 import {
-  TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  TARGET_MASTER_MARKER, findTargetMasterChannel, targetMasterPublicOverwrites, targetMasterPositionPlan,
+  initialTargetMaster, targetMasterItems, targetSkuCandidates,
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
@@ -1171,6 +1172,48 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       name: "slabsngrabsaco", image: `data:image/png;base64,${bytes.toString("base64")}`
     });
   }
+  // Keep the existing Target SKU master under Important, immediately below
+  // Target Drops. All members may read it, but only the owner can manage SKUs.
+  async function placeTargetMasterBelowDrops(targetDropId) {
+    if (!targetSkuListChannelId || !targetDropId) return false;
+    const publicChannels = await api("/guilds/" + guildId + "/channels");
+    const targetDrop = publicChannels.find(channel => String(channel.id) === String(targetDropId));
+    const catalog = publicChannels.find(channel => String(channel.id) === String(targetSkuListChannelId));
+    if (!targetDrop?.parent_id || !catalog) {
+      console.warn("Target SKU master public placement skipped: missing channel or Target Drops parent");
+      return false;
+    }
+    const permissions = targetMasterPublicOverwrites(guildId, appId, ownerId);
+    const topic = "SLABSNGRABSACO Target SKU Master. All members can view. Only the server owner manages SKUs.";
+    if (catalog.parent_id !== targetDrop.parent_id ||
+        !sameOverwrites(catalog.permission_overwrites, permissions) ||
+        catalog.topic !== topic) {
+      await api("/channels/" + catalog.id, "PATCH", {
+        parent_id: targetDrop.parent_id,
+        permission_overwrites: permissions,
+        topic
+      });
+    }
+    const latest = await api("/guilds/" + guildId + "/channels");
+    const placement = targetMasterPositionPlan(latest, targetDropId, targetSkuListChannelId);
+    if (placement.reason) throw new Error(placement.reason);
+    if (placement.changed) {
+      await api("/guilds/" + guildId + "/channels", "PATCH", placement.positions);
+    }
+    const confirmed = await api("/channels/" + catalog.id);
+    const visibleToAll = (confirmed.permission_overwrites || []).some(item =>
+      String(item.id) === String(guildId) && Number(item.type) === 0 &&
+      (BigInt(item.allow || "0") & 1024n) === 1024n &&
+      (BigInt(item.allow || "0") & 65536n) === 65536n &&
+      (BigInt(item.deny || "0") & 1024n) === 0n);
+    const parentMatches = String(confirmed.parent_id) === String(targetDrop.parent_id);
+    if (!visibleToAll || !parentMatches) throw new Error("Channel move or public view permissions were not applied.");
+    console.log("Target SKU master public placement:", JSON.stringify({
+      channelId: catalog.id, targetDropId,
+      parentId: confirmed.parent_id, visibleToAll, positionUpdated: placement.changed
+    }));
+    return true;
+  }
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
@@ -1661,6 +1704,12 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
        }
        discordCommunityStatus.retailerDrops = retailerChannels;
        discordCommunityStatus.retailerDropsReady = retailerChannels.length === 5;
+       const targetDropsChannel = retailerChannels.find(row => normalizeName(row.name) === "targetdrops");
+       if (targetDropsChannel && targetSkuListChannelId) {
+         await placeTargetMasterBelowDrops(targetDropsChannel.id).catch(error => {
+           console.error("Target SKU master public placement:", error.message);
+         });
+       }
        discordCommunityStatus.importantReady = found.every(Boolean);
       if (!discordCommunityStatus.importantReady) {
         importantError = `Important: missing ${names.filter((name, index) => !found[index]).join(", ")}`;
