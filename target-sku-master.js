@@ -182,8 +182,11 @@ export function targetMasterDashboard(master) {
         (items.length>preview.length?"\n\n+"+(items.length-preview.length)+" more - View Full List for all.":"")+
         "\n\nAuto-adds unique Target SKUs from Target Drops and Target-only Upcoming / Dropping Tonight posts.",
       color:0xe74c3c,footer:{text:TARGET_MASTER_MARKER}}],
-    components:[{type:1,components:[button("View Full List","targetmaster:view:0",false,1),
-      button("Manage SKUs (owner)","targetmaster:manage:0")]}]};
+    components:[{type:1,components:[
+      button("Select Target SKUs","targetpick:open",false,3),
+      button("View Full List","targetmaster:view:0",false,1),
+      button("Manage SKUs (owner)","targetmaster:manage:0")
+    ]}]};
 }
 export function targetMasterView(master,page=0) {
   const items=targetMasterItems(master),pages=Math.max(1,Math.ceil(items.length/15));
@@ -196,6 +199,7 @@ export function targetMasterView(master,page=0) {
     components:[{type:1,components:[
       button("Previous","targetmaster:view:"+(chosen-1),chosen===0),
       button("Next","targetmaster:view:"+(chosen+1),chosen===pages-1),
+      button("Select SKUs","targetpick:open",false,3),
       button("Manage (owner)","targetmaster:manage:"+chosen)
     ]}]};
 }
