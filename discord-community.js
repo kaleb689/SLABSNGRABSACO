@@ -601,7 +601,7 @@ export function uniqueSkuSelections(items, groupOf) {
 
 // A retailer copy button sends this single comma-separated line for direct
 // pasting into an ACO module. It never includes another retailer's entries.
-const RETAILER_COPY_LABELS = Object.freeze({
+export const RETAILER_COPY_LABELS = Object.freeze({
   target: "Target", walmart: "Walmart", pokemon: "PKC",
   costco: "Costco", sams: "Sam's"
 });
