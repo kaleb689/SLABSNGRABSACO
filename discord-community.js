@@ -3664,6 +3664,30 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       ]
     };
   }
+  // Add copy buttons to already-published messages without reposting, pinging
+  // members, or erasing the original Added/Removed history in their embeds.
+  async function refreshExistingOwnerCopyButtons() {
+    if (!skuRequestsChannelId) return 0;
+    return withSkuQueue(async () => {
+      const records = await readSkuFile(skuSelectionsFile);
+      let refreshed = 0;
+      for (const [memberId, record] of Object.entries(records)) {
+        if (!/^\d{17,22}$/.test(String(record?.messageId || ""))) continue;
+        const payload = ownerSkuPayload(memberId, record.username || memberId, record.items || [],
+          "Existing selections", record.skipTonightDate, record.skippedUpcomingDrops || []);
+        try {
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH",
+            { components: payload.components, allowed_mentions: { parse: [] } });
+          refreshed++;
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message))
+            console.error("Existing SKU copy controls update:", error.message);
+        }
+      }
+      console.log("SKU retailer copy controls refreshed:", refreshed);
+      return refreshed;
+    });
+  }
   async function skipDrop(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
     if (!dropChannelIds.has(channelId)) throw new Error("This option is only available in a drop channel.");
@@ -4865,6 +4889,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await provision();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
+      await refreshExistingOwnerCopyButtons()
+        .catch(error => console.error("SKU copy controls startup:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
