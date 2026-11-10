@@ -86,7 +86,7 @@ test("Dashboard remains a single summarized message; full list and management pa
   assert.equal(selector.type,3);
   assert.equal(selector.options.length,21);
   assert.ok(selector.options.every(x=>x.label.length<=100 && x.value.length<=80));
-  assert.ok(manage.content.includes("do not automatically"));
+  assert.ok(manage.content.includes("Removed SKUs stay excluded"));
 });
 
 test("Source timestamps are used for ingestion cutoff, including edited messages", () => {
