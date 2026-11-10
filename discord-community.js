@@ -16,6 +16,11 @@ import {
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
+import {
+  newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
+  searchTargetPicks, pasteTargetPicks, targetPickDiff,
+  targetMasterPicker, targetMasterPickReview
+} from "./target-master-picker.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -3128,6 +3133,88 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return drafts[key].items;
     });
   }
+  // A private, per-member Target master picker. Incomplete changes never
+  // appear in the owner's SKU requests until the member confirms.
+  const targetPickerDraftsFile = path.join(dataDir, "discord-target-picker-drafts.json");
+  const targetPickerDraftTtlMs = 24 * 60 * 60 * 1000;
+  async function targetPickerDraft(userId, master, transform = null) {
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(targetPickerDraftsFile);
+      const saved = (await readSkuFile(skuSelectionsFile))[userId]?.items || [];
+      const target = ownerRetailerSkuGroups(saved, ownerSkuGroup).target;
+      const quantity = uniformSkuQuantity(saved) || 1;
+      const previous = drafts[userId];
+      const fresh = !previous || !Array.isArray(previous.selected) ||
+        !Array.isArray(previous.baseline) ||
+        !Number.isFinite(Date.parse(previous.updatedAt)) ||
+        Date.now() - Date.parse(previous.updatedAt) > targetPickerDraftTtlMs;
+      const draft = fresh ? newTargetPickDraft(master, target, quantity) : previous;
+      const updated = transform ? transform(draft) : draft;
+      drafts[userId] = { ...updated, updatedAt: new Date().toISOString() };
+      for (const [id, entry] of Object.entries(drafts)) {
+        if (!entry || Date.now() - Date.parse(entry.updatedAt || 0) > targetPickerDraftTtlMs)
+          delete drafts[id];
+      }
+      await writeSkuFile(targetPickerDraftsFile, drafts);
+      return drafts[userId];
+    });
+  }
+  async function confirmTargetPicker(userId, username) {
+    if (!skuRequestsChannelId) throw new Error("The owner's SKU requests channel is not ready.");
+    // Read the latest master rather than trusting an old picker card.
+    const master = await withTargetMasterQueue(loadTargetMaster);
+    const catalog = new Map(targetMasterItems(master).map(row => [row.sku, row]));
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(targetPickerDraftsFile);
+      const draft = drafts[userId];
+      if (!draft || !Array.isArray(draft.selected) || !Array.isArray(draft.baseline) ||
+          Date.now() - Date.parse(draft.updatedAt || 0) > targetPickerDraftTtlMs)
+        throw new Error("Your Target selection session expired. Reopen Select Target SKUs.");
+      const { added, removed } = targetPickDiff(draft);
+      const unavailable = added.filter(sku => !catalog.has(sku));
+      if (unavailable.length) throw new Error("The Target master changed. These SKUs are no longer available: " +
+        unavailable.slice(0, 10).join(",") + ". Reopen the picker to refresh.");
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { username, messageId: null, items: [] };
+      const current = uniqueSkuSelections(record.items || [], ownerSkuGroup);
+      const removeKeys = new Set(removed.map(sku => "retailer:target\u0000" + sku));
+      const withoutRemoved = current.filter(row => !removeKeys.has(ownerSkuSelectionKey(row, ownerSkuGroup)));
+      const existingKeys = new Set(withoutRemoved.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)));
+      const sourceId = String(master.messageId || "");
+      if (!/^\d{17,22}$/.test(sourceId))
+        throw new Error("The Target master is updating. Reopen the picker and retry.");
+      const additions = added.filter(sku => !existingKeys.has("retailer:target\u0000" + sku))
+        .map(sku => ({ key: targetSkuListChannelId + ":" + sourceId + ":" + sku,
+          retailer: "target", sku, name: catalog.get(sku).name,
+          quantity: draft.quantity === 2 ? 2 : 1 }));
+      const next = setGlobalSkuQuantity(
+        uniqueSkuSelections([...withoutRemoved, ...additions], ownerSkuGroup), draft.quantity === 2 ? 2 : 1);
+      if (next.length > 200) throw new Error("Your selections exceed 200 SKUs across retailers. Remove older selections first.");
+      const oldKeys = current.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)).sort();
+      const newKeys = next.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)).sort();
+      const sameItems = JSON.stringify(oldKeys) === JSON.stringify(newKeys);
+      const sameQty = next.length === 0 || uniformSkuQuantity(current) === draft.quantity;
+      if (sameItems && sameQty) {
+        delete drafts[userId];
+        await writeSkuFile(targetPickerDraftsFile, drafts);
+        return { items: current, unchanged: true };
+      }
+      const payload = ownerSkuPayload(userId, username, next,
+        "Confirmed Target SKU master choices", record.skipTonightDate,
+        record.skippedUpcomingDrops || [], current);
+      const posted = await publishOwnerSkuRecord(record, payload);
+      Object.assign(record, { username, items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
+      selections[userId] = record;
+      await writeSkuFile(skuSelectionsFile, selections);
+      delete drafts[userId];
+      await writeSkuFile(targetPickerDraftsFile, drafts);
+      console.log("Target master selections confirmed:", JSON.stringify({
+        added: additions.length, removed: removed.length, total: next.length
+      }));
+      return { items: next, unchanged: false };
+    });
+  }
+
   // Each change posts a fresh owner message (so it notifies and lands at the
   // bottom of #sku-requests) and then removes the member's previous one,
   // keeping a single current message per member.
@@ -3707,6 +3794,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   function ownerSkuGroup(row) {
     const channelId = String(row?.key || "").split(":")[0];
+    if (channelId === targetSkuListChannelId) return "Target";
     const retailer = retailerDropLabels[channelId];
     if (retailer) return String(retailer).replace(/\s+Drops?$/i, "");
     const where = channelId === tonightChannelId ? "Dropping Tonight" :
