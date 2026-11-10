@@ -1247,7 +1247,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     // presentation of its name (target-skus, Target SKUs, target-sku-list).
     // Do not rename, move, or change the permissions of a channel found here.
     targetSkuListChannelId = channels.find(item => item.type === 0 &&
-      ["targetskus", "targetsku", "targetskulist", "targetskuledger", "targetskuinventory"]
+      ["targetskus", "targetsku", "targetskulist", "targetskumaster", "targetskumasterlist",
+        "targetskuledger", "targetskuinventory", "targetskucatalog"]
         .includes(normalizeName(item.name)))?.id || null;
     if (targetSkuListChannelId) {
       const existingMasterChannel = channels.find(item => item.id === targetSkuListChannelId);
