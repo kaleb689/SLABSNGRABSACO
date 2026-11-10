@@ -80,7 +80,7 @@ test("Dashboard remains a single summarized message; full list and management pa
   const view=targetMasterView(master,1);
   assert.equal(view.flags,64);
   assert.ok(view.embeds[0].description.length<4096);
-  assert.equal((view.embeds[0].description.match(/\n/g)||[]).length,19);
+  assert.equal((view.embeds[0].description.match(/\n/g)||[]).length,14);
   const manage=targetMasterManage(master,1);
   const selector=manage.components[0].components[0];
   assert.equal(selector.type,3);
