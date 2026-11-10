@@ -11,7 +11,7 @@ import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 import {
-  TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster, targetMasterItems, targetSkuCandidates,
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
@@ -1243,9 +1243,16 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
-    targetSkuListChannelId = channels.find(item => item.type === 0 &&
-      normalizeName(item.name) === "targetskulist")?.id || null;
-    if (!targetSkuListChannelId) console.warn("Target master channel #targetskulist not found; catalog will still persist.");
+    // Reuse the owner's existing Target SKUs channel regardless of the
+    // presentation of its name (target-skus, Target SKUs, target-sku-list).
+    // Do not rename, move, or change the permissions of a channel found here.
+    targetSkuListChannelId = findTargetMasterChannel(channels, normalizeName)?.id || null;
+    if (targetSkuListChannelId) {
+      const existingMasterChannel = channels.find(item => item.id === targetSkuListChannelId);
+      console.log("Target SKU master existing channel:", JSON.stringify({
+        name: existingMasterChannel?.name, id: targetSkuListChannelId
+      }));
+    }
     let support = channels.find(item => item.type === 4 && normalizeName(item.name) === "support");
     const supportText = channels.find(item => item.type === 0 && normalizeName(item.name) === "support");
     if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
@@ -1432,6 +1439,24 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         requests = await api(`/channels/${requests.id}`, "PATCH", { permission_overwrites: ownerOnly });
       }
       skuRequestsChannelId = requests.id;
+      if (!targetSkuListChannelId) {
+        // No known Target SKU master channel exists. Create one owner-only
+        // under Users-SKUs instead of silently leaving the master invisible.
+        // Keep every existing channel and its content intact.
+        try {
+          const targetChannel = await api(`/guilds/${guildId}/channels`, "POST", {
+            name: "target-skus", type: 0, parent_id: category.id,
+            permission_overwrites: ownerOnly,
+            topic: "Target SKU Master: automatically updated Target products. Owner manages removals and restores."
+          });
+          targetSkuListChannelId = targetChannel.id;
+          console.log("Target SKU master channel created:", JSON.stringify({
+            name: targetChannel.name, id: targetChannel.id
+          }));
+        } catch (error) {
+          console.error("Target SKU master channel creation:", error.message);
+        }
+      }
     } catch (error) {
       console.error("Discord SKU request channel setup:", error.message);
       discordCommunityStatus.error = `SKU request channel setup: ${error.message}`;

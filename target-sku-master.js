@@ -1,6 +1,17 @@
 import { mentionedRetailers } from "./retailer-alert-roles.js";
 
 export const TARGET_MASTER_MARKER = "SLABSNGRABSACO | Target SKU Master";
+export const TARGET_MASTER_CHANNEL_KEYS = Object.freeze([
+  "targetskus", "targetsku", "targetskulist", "targetskumaster",
+  "targetskumasterlist", "targetskuledger", "targetskuinventory", "targetskucatalog"
+]);
+export function findTargetMasterChannel(channels, normalizeName) {
+  if (typeof normalizeName !== "function") return null;
+  return (Array.isArray(channels) ? channels : []).find(channel =>
+    Number(channel?.type) === 0 &&
+    TARGET_MASTER_CHANNEL_KEYS.includes(normalizeName(channel?.name))) || null;
+}
+
 const SEED = [
   ["1012055696","Pokemon TCG: Prismatic Evolutions Super Premium Collection"],
   ["1011206804","Pokemon TCG: Prismatic Evolutions Elite Trainer Box"],
