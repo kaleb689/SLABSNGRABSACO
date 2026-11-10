@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
 import {mentionedRetailers, retailerAlert} from './retailer-alert-roles.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
@@ -34,7 +34,7 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,appId:'1551070928039845900',
-  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
@@ -107,7 +107,8 @@ try {
   assert.ok(savedBatch.every(item=>item.quantity===2));
   const batchRecord=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
   const adminBatch=messages.get(batchRecord.messageId);
-  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/\(ABC1234, XYZ5678\)/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/\(\*\*ABC1234\*\*, \*\*XYZ5678\*\*\)/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster One added/);
   assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/Qty: 2/);
   assert.doesNotMatch(adminBatch.embeds.map(item=>item.description).join('\n'),/ABC1234 x2|XYZ5678 x2/);
   await assert.rejects(controls.confirmSkuDraft(batchUser,'batch-member',batchPost.id,upcoming),/draft is no longer active/);

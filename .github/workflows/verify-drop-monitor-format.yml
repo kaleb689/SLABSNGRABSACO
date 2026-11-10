@@ -7,6 +7,7 @@ on:
       - 'discord-community.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
+      - 'test/discord-sku-changes.test.mjs'
       - 'verify-discord-controls.mjs'
       - '.github/workflows/verify-drop-monitor-format.yml'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'discord-community.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
+      - 'test/discord-sku-changes.test.mjs'
       - 'verify-discord-controls.mjs'
       - '.github/workflows/verify-drop-monitor-format.yml'
   workflow_dispatch:
@@ -34,5 +36,5 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: node --check drop-monitor-format.js
       - run: node --check discord-community.js
-      - run: node --test test/drop-monitor-format.test.js test/discord-skus.test.js test/drop-sku-alerts.test.mjs
+      - run: node --test test/drop-monitor-format.test.js test/discord-skus.test.js test/discord-sku-changes.test.mjs test/drop-sku-alerts.test.mjs
       - run: node verify-discord-controls.mjs
