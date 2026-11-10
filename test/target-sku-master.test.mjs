@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  INITIAL_TARGET_SKUS, TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster,
+  INITIAL_TARGET_SKUS, TARGET_MASTER_MARKER, findTargetMasterChannel,
+  targetMasterPublicOverwrites, targetMasterPositionPlan, initialTargetMaster,
   targetMasterItems, targetSkuCandidates, targetMasterAdd, targetMasterRemove,
   targetMasterRestore, targetMasterDashboard, targetMasterView, targetMasterManage,
   targetMessageTime
@@ -127,4 +128,59 @@ test("Target master is published immediately for existing or newly created chann
   const errorHandling=source.indexOf("} catch (error) {",creation);
   assert.ok(creation>0 && createdCall>creation && createdCall<errorHandling,
     "new Target SKU channel must receive its card immediately after creation");
+});
+
+
+test("Target SKU channel is public for everyone but read-only for members", () => {
+  const guild = "1551070928039845929", bot = "1553628642372751431", owner = "1551070928039845923";
+  const rules = targetMasterPublicOverwrites(guild, bot, owner);
+  assert.equal(rules.length, 3);
+  const everyone = rules.find(row => row.id === guild);
+  assert.equal(Number(everyone.type), 0);
+  assert.equal((BigInt(everyone.allow) & (1024n | 65536n)), 1024n | 65536n,
+    "everyone must be allowed to view channel and read message history");
+  assert.equal((BigInt(everyone.deny) & 2048n), 2048n,
+    "everyone must not be allowed to send messages");
+  assert.equal((BigInt(everyone.deny) & 1024n), 0n,
+    "everyone must not be denied View Channel");
+  const botRules = rules.find(row => row.id === bot);
+  const ownerRules = rules.find(row => row.id === owner);
+  assert.ok((BigInt(botRules.allow) & 2048n) === 2048n);
+  assert.ok((BigInt(ownerRules.allow) & 2048n) === 2048n);
+});
+
+test("Target master is positioned directly after Target Drops without reordering others", () => {
+  const parent = "important";
+  const rows = [
+    {id:"upcoming", parent_id:parent, type:0, position:0},
+    {id:"target", parent_id:parent, type:0, position:1},
+    {id:"walmart", parent_id:parent, type:0, position:2},
+    {id:"pkc", parent_id:parent, type:0, position:3},
+    {id:"catalog", parent_id:parent, type:0, position:4},
+    {id:"elsewhere", parent_id:"private", type:0, position:1}
+  ];
+  const plan = targetMasterPositionPlan(rows, "target", "catalog");
+  assert.equal(plan.changed, true);
+  assert.equal(plan.parentId, parent);
+  assert.deepEqual(plan.positions.map(item => item.id),
+    ["upcoming", "target", "catalog", "walmart", "pkc"]);
+  const noChange = targetMasterPositionPlan(
+    plan.positions.map(item => ({ ...rows.find(row=>row.id===item.id),position:item.position })),
+    "target","catalog"
+  );
+  assert.equal(noChange.changed,false,"restart must not keep reordering the same channels");
+  const privateCatalog = rows.map(row => row.id === "catalog"
+    ? {...row, parent_id: "private"} : row);
+  assert.equal(targetMasterPositionPlan(privateCatalog,"target","catalog").changed,false,
+    "channel is moved before the ordering plan is applied");
+});
+
+test("Discord provisioning moves existing catalog below Target Drops and verifies public access", () => {
+  const source = readFileSync(new URL("../discord-community.js", import.meta.url),"utf8");
+  assert.match(source, /async function placeTargetMasterBelowDrops\(targetDropId\)/);
+  assert.match(source, /parent_id: targetDrop\.parent_id/);
+  assert.match(source, /permission_overwrites: permissions/);
+  assert.match(source, /await placeTargetMasterBelowDrops\(targetDropsChannel\.id\)/);
+  assert.match(source, /visibleToAll, positionUpdated: placement\.changed/);
+  assert.match(source, /Target SKU master public placement:/);
 });

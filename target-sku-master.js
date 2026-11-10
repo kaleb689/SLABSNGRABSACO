@@ -12,6 +12,43 @@ export function findTargetMasterChannel(channels, normalizeName) {
     TARGET_MASTER_CHANNEL_KEYS.includes(normalizeName(channel?.name))) || null;
 }
 
+// Public, read-only Target SKU catalogue. The guild owner and bot may write,
+// while every member can view the channel and read the message history.
+export function targetMasterPublicOverwrites(guildId, appId, ownerId) {
+  const noPosting = (2048n | 64n | (1n << 35n) | (1n << 36n) | (1n << 38n)).toString();
+  return [
+    { id: guildId, type: 0, allow: "66560", deny: noPosting },
+    { id: appId, type: 1, allow: "68624" },
+    ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
+  ];
+}
+
+// Keep all the other channel positions in their original relative order;
+// insert the existing master immediately after the Target Drops channel.
+export function targetMasterPositionPlan(channels, targetDropId, masterId) {
+  const rows = Array.isArray(channels) ? channels : [];
+  const target = rows.find(row => String(row.id) === String(targetDropId));
+  const master = rows.find(row => String(row.id) === String(masterId));
+  if (!target || !master || !target.parent_id || target.parent_id !== master.parent_id)
+    return { changed: false, positions: [], reason: "Target and master must be sibling channels." };
+  const siblings = rows
+    .filter(row => String(row.parent_id) === String(target.parent_id) && [0, 5].includes(Number(row.type)))
+    .sort((a, b) => (Number(a.position || 0) - Number(b.position || 0)) ||
+      String(a.id).localeCompare(String(b.id)));
+  const before = siblings.map(row => String(row.id));
+  const desired = siblings.filter(row => String(row.id) !== String(masterId));
+  const targetIndex = desired.findIndex(row => String(row.id) === String(targetDropId));
+  if (targetIndex < 0)
+    return { changed: false, positions: [], reason: "Target Drops is not in the channel group." };
+  desired.splice(targetIndex + 1, 0, master);
+  const after = desired.map(row => String(row.id));
+  return {
+    changed: before.join(",") !== after.join(","),
+    positions: desired.map((row, position) => ({ id: row.id, position })),
+    parentId: target.parent_id
+  };
+}
+
 const SEED = [
   ["1012055696","Pokemon TCG: Prismatic Evolutions Super Premium Collection"],
   ["1011206804","Pokemon TCG: Prismatic Evolutions Elite Trainer Box"],
