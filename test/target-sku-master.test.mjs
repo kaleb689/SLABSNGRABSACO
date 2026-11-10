@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   INITIAL_TARGET_SKUS, TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster,
   targetMasterItems, targetSkuCandidates, targetMasterAdd, targetMasterRemove,
@@ -111,4 +112,19 @@ test("reuse the existing Target SKUs channel, regardless of separators, capitali
   }
   assert.equal(findTargetMasterChannel([{id:"category",type:4,name:"target-skus"}],normalizeName),null);
   assert.equal(findTargetMasterChannel([{id:"drops",type:0,name:"target-drops"}],normalizeName),null);
+});
+
+
+test("Target master is published immediately for existing or newly created channels", () => {
+  const source=readFileSync(new URL("../discord-community.js",import.meta.url),"utf8");
+  const discovery=source.indexOf("Target SKU master existing channel:");
+  const existingCall=source.indexOf("await initializeTargetMaster()",discovery);
+  const support=source.indexOf("let support = channels.find",discovery);
+  assert.ok(discovery>0 && existingCall>discovery && existingCall<support,
+    "existing channel must receive the master before slow Discord provisioning");
+  const creation=source.indexOf("Target SKU master channel created:");
+  const createdCall=source.indexOf("await initializeTargetMaster()",creation);
+  const errorHandling=source.indexOf("} catch (error) {",creation);
+  assert.ok(creation>0 && createdCall>creation && createdCall<errorHandling,
+    "new Target SKU channel must receive its card immediately after creation");
 });
