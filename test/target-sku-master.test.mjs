@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  INITIAL_TARGET_SKUS, TARGET_MASTER_MARKER, initialTargetMaster,
+  INITIAL_TARGET_SKUS, TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster,
   targetMasterItems, targetSkuCandidates, targetMasterAdd, targetMasterRemove,
   targetMasterRestore, targetMasterDashboard, targetMasterView, targetMasterManage,
   targetMessageTime
@@ -94,4 +94,21 @@ test("Source timestamps are used for ingestion cutoff, including edited messages
   assert.equal(targetMessageTime({timestamp:"2026-11-01T05:00:00Z",edited_timestamp:"2026-11-10T06:00:00Z"}),
     Date.parse("2026-11-10T06:00:00Z"));
   assert.ok(Number.isNaN(targetMessageTime({id:"not-a-snowflake"})));
+});
+
+
+test("reuse the existing Target SKUs channel, regardless of separators, capitalization or naming variant", () => {
+  const normalizeName = name => String(name || "").split(/[|│┃┊｜]/).pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const examples=[
+    "target-skus", "Target SKUs", "target_sku", "🎯│target-skus",
+    "target-sku-list", "target-sku-master", "target-sku-master-list",
+    "target-sku-inventory", "target-sku-catalog"
+  ];
+  for(const [i, name] of examples.entries()) {
+    const expected={id:String(i+200),type:0,name};
+    const channels=[{id:"123",type:0,name:"target-drops"},expected];
+    assert.equal(findTargetMasterChannel(channels,normalizeName)?.id,expected.id,name);
+  }
+  assert.equal(findTargetMasterChannel([{id:"category",type:4,name:"target-skus"}],normalizeName),null);
+  assert.equal(findTargetMasterChannel([{id:"drops",type:0,name:"target-drops"}],normalizeName),null);
 });
