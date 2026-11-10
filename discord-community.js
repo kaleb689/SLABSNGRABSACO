@@ -429,6 +429,7 @@ export function withoutSupersededSkus(items, channelId, sourceId, skus) {
   });
 }
 export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = []) {
+  draft = uniqueSkuSelections(draft);
   const pages = Math.ceil(products.length / 25);
   if (!pages) throw new Error("No SKUs are available in this drop.");
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
@@ -487,6 +488,7 @@ export function applySkuPageDraft(items, products, sourceId, channelId, requeste
   return setGlobalSkuQuantity(next, quantity);
 }
 export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
+  items = uniqueSkuSelections(items);
   const pages = Math.max(1, Math.ceil(items.length / 25));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const selected = items.slice(page * 25, page * 25 + 25);
@@ -553,17 +555,49 @@ export function uniformSkuQuantity(items) {
 }
 export function setGlobalSkuQuantity(items, quantity) {
   if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
-  return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
+  return uniqueSkuSelections(items).map(row => ({ ...row, quantity: Number(quantity) }));
 }
-// Compare the member's last saved selections with the submitted snapshot.
-// A re-posted source message is not a new product if its channel and SKU match.
-const ownerSkuSelectionKey = row =>
-  String(row?.key || "").split(":")[0] + "\u0000" +
-  String(row?.sku || "").trim().toUpperCase();
+// One logical product per retailer/SKU. A reposted source message must not
+// create a second selection. Unknown retailers remain isolated by channel.
+const skuRetailerIdentity = value => {
+  const label = String(value || "").trim().toLowerCase();
+  if (/^target(?:\b|[\s·-])/.test(label)) return "target";
+  if (/^walmart(?:\b|[\s·-])/.test(label)) return "walmart";
+  if (/^(?:pkc|pok[eé]mon(?:\s+center)?)(?:\b|[\s·-])/.test(label)) return "pokemon";
+  if (/^costco(?:\b|[\s·-])/.test(label)) return "costco";
+  if (/^sam(?:'|’)?s(?:\b|[\s·-])/.test(label)) return "sams";
+  return "";
+};
+const skuChannel = row => String(row?.key || "").split(":")[0];
+const skuSource = row => String(row?.key || "").split(":")[1];
+const ownerSkuSelectionKey = (row, groupOf) => {
+  const label = typeof groupOf === "function" ? groupOf(row) : "";
+  const retailer = skuRetailerIdentity(label) || skuRetailerIdentity(row?.retailer);
+  const scope = retailer ? "retailer:" + retailer : "channel:" + skuChannel(row);
+  return scope + "\u0000" + String(row?.sku || "").trim().toUpperCase();
+};
+export function uniqueSkuSelections(items, groupOf) {
+  const unique = new Map();
+  for (const row of Array.isArray(items) ? items : []) {
+    if (!row || !String(row.sku || "").trim()) continue;
+    const key = ownerSkuSelectionKey(row, groupOf);
+    const existing = unique.get(key);
+    if (existing) {
+      const incomingSource = skuSource(row), existingSource = skuSource(existing);
+      // Prefer the newest actual Discord source post when IDs are snowflakes.
+      if (/^\d{17,22}$/.test(incomingSource) && /^\d{17,22}$/.test(existingSource) &&
+          BigInt(incomingSource) < BigInt(existingSource)) continue;
+      unique.delete(key);
+    }
+    unique.set(key, row);
+  }
+  return [...unique.values()];
+}
 
-export function skuSelectionChanges(previousItems, nextItems) {
-  const index = items => new Map((Array.isArray(items) ? items : [])
-    .map(item => [ownerSkuSelectionKey(item), item]));
+// Compare logical selections, ignoring stale duplicates and repost IDs.
+export function skuSelectionChanges(previousItems, nextItems, groupOf) {
+  const index = items => new Map(uniqueSkuSelections(items, groupOf)
+    .map(item => [ownerSkuSelectionKey(item, groupOf), item]));
   const before = index(previousItems), after = index(nextItems);
   return {
     added: [...after].filter(([key]) => !before.has(key)).map(([, item]) => item),
@@ -604,12 +638,12 @@ function skuOwnerChangeFooter(changes, capacity) {
 // groupOf(row) names the retailer a selection belongs to. With it, the owner
 // breakdown lists SKUs under one heading per retailer; without it, one list.
 export function skuOwnerDetails(items, groupOf, changes = null) {
-  const rows = Array.isArray(items) ? items : [];
+  const rows = uniqueSkuSelections(items, groupOf);
   const changed = Boolean(changes?.added?.length || changes?.removed?.length);
-  const addedKeys = new Set((changes?.added || []).map(ownerSkuSelectionKey));
+  const addedKeys = new Set((changes?.added || []).map(row => ownerSkuSelectionKey(row, groupOf)));
   const displaySku = row => {
     const label = skuSafeText(row.sku).slice(0, 80);
-    return addedKeys.has(ownerSkuSelectionKey(row)) ? "**" + label + "**" : label;
+    return addedKeys.has(ownerSkuSelectionKey(row, groupOf)) ? "**" + label + "**" : label;
   };
   const withFooter = description => changed
     ? description + skuOwnerChangeFooter(changes, 3950 - description.length)
@@ -667,7 +701,7 @@ export function skuOwnerDetails(items, groupOf, changes = null) {
   };
 }
 export function skuCompactNotification(items) {
-  const rows = Array.isArray(items) ? items : [];
+  const rows = uniqueSkuSelections(items);
   const qty = uniformSkuQuantity(rows);
   if (qty === null) throw new Error("Choose one quantity for all selected SKUs before confirming.");
   return {
@@ -677,20 +711,21 @@ export function skuCompactNotification(items) {
 }
 export function changeSkuItems(items, chosen, sourceId, channelId, quantity) {
   if (![0, 1, 2].includes(quantity)) throw new Error("Choose Qty: 1, Qty: 2, or Remove.");
-  const next = (Array.isArray(items) ? items : []).map(item => ({ ...item }));
+  let next = uniqueSkuSelections(items).map(item => ({ ...item }));
   for (const product of chosen) {
-    const key = channelId + ":" + sourceId + ":" + product.sku;
-    const index = next.findIndex(item => item.key === key);
-    if (!quantity) { if (index >= 0) next.splice(index, 1); }
-    else if (index >= 0) Object.assign(next[index], { name: product.name });
-    else next.push({ key, name: product.name, sku: product.sku, quantity });
+    const replacement = { key: channelId + ":" + sourceId + ":" + product.sku,
+      name: product.name, sku: product.sku, quantity };
+    const identity = ownerSkuSelectionKey(replacement);
+    // Remove every stale copy across source posts before replacing a choice.
+    next = next.filter(row => ownerSkuSelectionKey(row) !== identity);
+    if (quantity) next.push(replacement);
   }
+  next = uniqueSkuSelections(next);
   if (next.length > 200) throw new Error("Up to 200 SKUs may be selected across drops.");
-  // Switching Qty for any selection changes all SKUs, never only one.
   return setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
 }
-export function skuSelectionView(items, notice = "", requestedPage = 0) {
-  const rows = Array.isArray(items) ? items : [];
+export function skuSelectionView(items, notice = "", requestedPage = 0, groupOf = null) {
+  const rows = uniqueSkuSelections(items, groupOf);
   const pages = Math.max(1, Math.ceil(rows.length / 30));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const visible = rows.length <= 30 ? rows : rows.slice(page * 30, (page + 1) * 30);
@@ -734,8 +769,8 @@ export function skuSelectionView(items, notice = "", requestedPage = 0) {
     components, allowed_mentions: { parse: [] }
   };
 }
-export function skuAdminReviewPayload(items, userId, requestedPage = 0) {
-  const rows = Array.isArray(items) ? items : [];
+export function skuAdminReviewPayload(items, userId, requestedPage = 0, groupOf = null) {
+  const rows = uniqueSkuSelections(items, groupOf);
   const pages = Math.max(1, Math.ceil(rows.length / 20));
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
   const selected = rows.slice(page * 20, (page + 1) * 20);
@@ -2808,6 +2843,42 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temp, file);
   }
+  // Repair legacy saved records once at startup. Preserve all unique choices,
+  // make a copy of the original JSON before writing, and edit the owner's
+  // existing Discord message in place without sending another notification.
+  async function repairExistingSkuDuplicates() {
+    return withSkuQueue(async () => {
+      const records = await readSkuFile(skuSelectionsFile);
+      const updates = [];
+      for (const [userId, record] of Object.entries(records)) {
+        if (!Array.isArray(record?.items)) continue;
+        const unique = uniqueSkuSelections(record.items, ownerSkuGroup);
+        if (unique.length === record.items.length) continue;
+        updates.push({ userId, record, removed: record.items.length - unique.length });
+        record.items = unique;
+      }
+      if (!updates.length) return { users: 0, removed: 0 };
+      const backup = skuSelectionsFile.replace(/\.json$/, ".backup-before-retailer-dedup-20261110.json");
+      await fs.copyFile(skuSelectionsFile, backup, fs.constants.COPYFILE_EXCL)
+        .catch(error => { if (error.code !== "EEXIST") throw error; });
+      await writeSkuFile(skuSelectionsFile, records);
+      for (const { userId, record } of updates) {
+        if (!skuRequestsChannelId || !/^\d{17,22}$/.test(String(record.messageId || ""))) continue;
+        try {
+          const payload = ownerSkuPayload(userId, record.username || userId, record.items,
+            "Existing duplicate SKU entries removed", record.skipTonightDate, record.skippedUpcomingDrops);
+          // Editing rather than posting avoids pinging the owner or duplicating alerts.
+          payload.allowed_mentions = { parse: [] };
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload);
+        } catch (error) {
+          console.error("Owner SKU duplicate message refresh:", error.message);
+        }
+      }
+      const removed = updates.reduce((total, row) => total + row.removed, 0);
+      console.log("SKU duplicate repair:", JSON.stringify({ users: updates.length, removed }));
+      return { users: updates.length, removed };
+    });
+  }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
   async function hasPaidSkuAccess(userId) {
     // Verified guild ownership is the single testing bypass, not admin/staff roles.
@@ -2868,7 +2939,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const other = withoutSupersededSkus(record.items, channelId, sourceId, validSkus)
         .filter(item => !item.key.startsWith(channelId + ":" + sourceId + ":"));
       const chosenQty = draft.items.length ? uniformSkuQuantity(draft.items) : uniformSkuQuantity(other);
-      const next = setGlobalSkuQuantity([...other, ...tagRetailer(draft.items, channelId, sourceId, source)], chosenQty || 1);
+      const next = setGlobalSkuQuantity(uniqueSkuSelections([...other, ...tagRetailer(draft.items, channelId, sourceId, source)], ownerSkuGroup), chosenQty || 1);
       if (next.length > 200) throw new Error("You can have up to 200 SKUs across drops. Remove older selections first.");
       const skipTonightDate = draft.items.length && channelId === tonightChannelId ? undefined : record.skipTonightDate;
       const skippedUpcomingDrops = draft.items.length && channelId !== tonightChannelId
@@ -3422,7 +3493,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return named ? named + " · " + where : where;
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = [], previousItems = null) {
-    const changes = previousItems === null ? null : skuSelectionChanges(previousItems, items);
+    items = uniqueSkuSelections(items, ownerSkuGroup);
+    const changes = previousItems === null ? null : skuSelectionChanges(previousItems, items, ownerSkuGroup);
     const summary = skuOwnerDetails(items, ownerSkuGroup, changes);
     const skipping = skipTonightDate === tonightDate();
     return {
@@ -3450,7 +3522,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const record = selections[userId] || { username, messageId: null, items: [] };
       const tonight = channelId === tonightChannelId;
       const remaining = record.items.filter(item => !item.key.startsWith(tonight ? `${channelId}:` : `${channelId}:${sourceId}:`));
-      const next = setGlobalSkuQuantity(remaining, uniformSkuQuantity(remaining) || 1);
+      const next = setGlobalSkuQuantity(uniqueSkuSelections(remaining, ownerSkuGroup), uniformSkuQuantity(remaining) || 1);
       const date = tonight ? tonightDate() : record.skipTonightDate;
       const skipped = [...(record.skippedUpcomingDrops || [])];
       if (!tonight && !skipped.some(drop => drop.channelId === channelId && drop.sourceId === sourceId)) {
@@ -3473,8 +3545,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const item = record?.items.find(item => skuItemToken(item.key) === token);
       if (!item) throw new Error("That SKU is no longer selected. Refresh your selections.");
       const next = record.items.map(item => ({ ...item }));
-      if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
-      const normalized = setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
+      if (!quantity) {
+        const identity = ownerSkuSelectionKey(item, ownerSkuGroup);
+        for (let i = next.length - 1; i >= 0; i--)
+          if (ownerSkuSelectionKey(next[i], ownerSkuGroup) === identity) next.splice(i, 1);
+      }
+      const normalized = setGlobalSkuQuantity(uniqueSkuSelections(next, ownerSkuGroup), quantity || uniformSkuQuantity(next) || 1);
       const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops, record.items);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { items: normalized, messageId: posted.id, updatedAt: new Date().toISOString() });
@@ -3489,7 +3565,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId];
       if (!record?.items?.length) throw new Error("Choose SKUs before setting a quantity.");
-      const next = setGlobalSkuQuantity(record.items, quantity);
+      const next = setGlobalSkuQuantity(uniqueSkuSelections(record.items, ownerSkuGroup), quantity);
       const payload = ownerSkuPayload(userId, record.username, next,
         "Set Qty " + quantity + " for ALL " + next.length + " selected SKUs",
         record.skipTonightDate, record.skippedUpcomingDrops, record.items);
@@ -3511,8 +3587,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const record = selections[userId] || { username, messageId: null, items: [] };
       record.username = username;
       const previousItems = record.items;
-      record.items = tagRetailer(changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
-        chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity), channelId, sourceId, source);
+      record.items = uniqueSkuSelections(tagRetailer(changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
+        chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity), channelId, sourceId, source), ownerSkuGroup);
       if (channelId === tonightChannelId && quantity) delete record.skipTonightDate;
       if (channelId !== tonightChannelId && quantity) record.skippedUpcomingDrops =
         (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
@@ -3731,7 +3807,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (d.type === 3 && /^sku:mine:\d{1,3}$/.test(d.data?.custom_id || "")) {
         const selections = await readSkuFile(skuSelectionsFile);
         return await api(callback, "POST", { type: 7, data:
-          skuSelectionView(selections[userId]?.items || [], "", Number(d.data.custom_id.split(":")[2]))
+          skuSelectionView(selections[userId]?.items || [], "", Number(d.data.custom_id.split(":")[2]), ownerSkuGroup)
         });
       }
       if (d.type === 3 && /^sku:admin:\d{17,22}:\d{1,3}$/.test(d.data?.custom_id || "")) {
@@ -3739,14 +3815,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await reply("Only the owner or Support Staff may review another customer's selections.");
         const [, , targetId, pageString] = d.data.custom_id.split(":");
         const selections = await readSkuFile(skuSelectionsFile);
-        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString));
+        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString), ownerSkuGroup);
         const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
         return await api(callback, "POST", { type: ephemeral ? 7 : 4, data: ephemeral ? data : { flags: 64, ...data } });
       }
       if (d.type === 3 && d.data?.custom_id === "sku:view") {
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         const selections = await readSkuFile(skuSelectionsFile);
-        return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || []));
+        return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || [], "", 0, ownerSkuGroup));
       }
       if (d.type === 3 && /^sku:manage:(?:0|15)$/.test(d.data?.custom_id || "")) {
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
@@ -4418,7 +4494,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!await hasPaidSkuAccess(userId)) throw new Error(skuAccessMessage);
     const sources = await webActiveDropSources();
     const saved = (await readSkuFile(skuSelectionsFile))[userId] || {};
-    const items = Array.isArray(saved.items) ? saved.items : [];
+    const items = uniqueSkuSelections(saved.items, ownerSkuGroup);
     return {
       sources, quantity: uniformSkuQuantity(items) || 1,
       // A SKU picked from an older copy of the same drop channel still shows
@@ -4491,7 +4567,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           });
         }
       }
-      const next = setGlobalSkuQuantity([...stillSaved, ...chosen], quantity);
+      const next = setGlobalSkuQuantity(uniqueSkuSelections([...stillSaved, ...chosen], ownerSkuGroup), quantity);
       if (next.length > 200) throw new Error("You can select up to 200 SKUs across drops.");
       const optedTonight = [...submitted.values()].some(row =>
         row.source.channelId === tonightChannelId && row.skip);
@@ -4528,6 +4604,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));

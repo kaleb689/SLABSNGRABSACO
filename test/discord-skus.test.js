@@ -35,9 +35,9 @@ test("SKU quantity is global, removing an item preserves all other drop selectio
   assert.equal(first[0].quantity, 1, "original state is unchanged until saved");
   const nextDrop = changeSkuItems(changed, [products[0]], "post2", "channel", 1);
   assert.ok(nextDrop.every(item => item.quantity === 1), "Qty 1 also changes earlier selected SKUs");
+  assert.equal(nextDrop.length, 2, "a repeated SKU from another post replaces the older copy");
   const removed = changeSkuItems(nextDrop, products, "post1", "channel", 0);
-  assert.equal(removed.length, 1);
-  assert.equal(removed[0].key, "channel:post2:DD1391-100");
+  assert.equal(removed.length, 0, "removing the retailer SKU removes every stale source copy");
   assert.throws(() => changeSkuItems(first, products, "post1", "channel", 3));
 });
 

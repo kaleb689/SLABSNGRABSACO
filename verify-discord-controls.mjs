@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
 import {mentionedRetailers, retailerAlert} from './retailer-alert-roles.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
@@ -34,15 +34,35 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,appId:'1551070928039845900',
-  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
   withoutSupersededSkus,mentionedRetailers,retailerAlert,isFormattedDropPost,inStoreChannelId:'1551070928039845970',
   dropChannelLabel:id=>deps.retailerDropLabels[id]||(id===tonightChannelId?'Dropping Tonight':'Upcoming Drops')};
-const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft};`);
+const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft,repairExistingSkuDuplicates};`);
 const controls=make(deps);
 try {
+  const legacyMember = '1551070928039845998';
+  const legacyOwnerMessage = await api('/channels/private/messages','POST',{content:'Old SKU summary'});
+  const legacyRecords = { [legacyMember]: { username: 'legacy-member',
+    messageId: legacyOwnerMessage.id, items: [
+      {key:tonightChannelId+':old-post:ABC123',sku:'ABC123',name:'Old product',quantity:2},
+      {key:tonightChannelId+':new-post:ABC123',sku:'ABC123',name:'Updated product',quantity:2},
+      {key:tonightChannelId+':other-post:DEF456',sku:'DEF456',name:'Other product',quantity:2}
+    ] } };
+  await fs.writeFile(path.join(dataDir,'discord-sku-selections.json'),JSON.stringify(legacyRecords));
+  const repaired = await controls.repairExistingSkuDuplicates();
+  assert.deepEqual(repaired,{users:1,removed:1});
+  const savedLegacy=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'));
+  assert.deepEqual(savedLegacy[legacyMember].items.map(x=>x.sku),['ABC123','DEF456']);
+  assert.ok(messages.has(legacyOwnerMessage.id),'original owner message should be edited, not replaced');
+  assert.deepEqual(messages.get(legacyOwnerMessage.id).allowed_mentions,{parse:[]},
+    'repair edit must not notify members or owner');
+  assert.match(messages.get(legacyOwnerMessage.id).embeds[0].description,/ABC123, DEF456/);
+  await fs.access(path.join(dataDir,'discord-sku-selections.backup-before-retailer-dedup-20261110.json'));
+  assert.deepEqual(await controls.repairExistingSkuDuplicates(),{users:0,removed:0},
+    'repair must be idempotent');
   assert.equal(dropChannelKind('❗️│upcoming-drop'),'upcomingdrops');
   assert.equal(dropChannelKind('❗️│ｕｐｃｏｍｉｎｇ－ｄｒｏｐｓ'),'upcomingdrops');
   await controls.backfillDropMenus();
