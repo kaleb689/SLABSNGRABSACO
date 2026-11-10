@@ -1252,6 +1252,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       console.log("Target SKU master existing channel:", JSON.stringify({
         name: existingMasterChannel?.name, id: targetSkuListChannelId
       }));
+      // Publish immediately, before the rest of Discord provisioning completes.
+      await initializeTargetMaster()
+        .catch(error => console.error("Target master early publish:", error.message));
     }
     let support = channels.find(item => item.type === 4 && normalizeName(item.name) === "support");
     const supportText = channels.find(item => item.type === 0 && normalizeName(item.name) === "support");
@@ -1453,6 +1456,10 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           console.log("Target SKU master channel created:", JSON.stringify({
             name: targetChannel.name, id: targetChannel.id
           }));
+          // A newly created channel must have its master card right away, even
+          // if slower unrelated Discord setup runs for another minute.
+          await initializeTargetMaster()
+            .catch(error => console.error("Target master early publish:", error.message));
         } catch (error) {
           console.error("Target SKU master channel creation:", error.message);
         }
