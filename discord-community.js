@@ -581,7 +581,7 @@ const skuRetailerIdentity = value => {
 };
 const skuChannel = row => String(row?.key || "").split(":")[0];
 const skuSource = row => String(row?.key || "").split(":")[1];
-const ownerSkuSelectionKey = (row, groupOf) => {
+export const ownerSkuSelectionKey = (row, groupOf) => {
   const label = typeof groupOf === "function" ? groupOf(row) : "";
   const retailer = skuRetailerIdentity(label) || skuRetailerIdentity(row?.retailer);
   const scope = retailer ? "retailer:" + retailer : "channel:" + skuChannel(row);
