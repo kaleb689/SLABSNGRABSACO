@@ -265,8 +265,9 @@ try {
   const originalRecord=JSON.parse(await fs.readFile(
     path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
   assert.equal(originalRecord.items.length,4);
-  pickDraft=await controls.targetPickerDraft(batchUser,await controls.loadTargetMaster(),
-    draft=>toggleTargetPick(await controls.loadTargetMaster(),draft,'1010892076'));
+  const currentMaster=await controls.loadTargetMaster();
+  pickDraft=await controls.targetPickerDraft(batchUser,currentMaster,
+    draft=>toggleTargetPick(currentMaster,draft,'1010892076'));
   // No owner message or customer selection changes before confirmation.
   const beforePick=JSON.parse(await fs.readFile(
     path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
