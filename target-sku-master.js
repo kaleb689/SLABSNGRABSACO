@@ -127,7 +127,7 @@ export function targetMasterRestore(master,sku,name,ownerId="",at=new Date().toI
   return {master:next,created:!existed};
 }
 export function targetMasterDashboard(master) {
-  const items=targetMasterItems(master),preview=items.slice(0,18);
+  const items=targetMasterItems(master),preview=items.slice(0,14);
   return {allowed_mentions:{parse:[]},
     embeds:[{title:"Target SKU Master - "+items.length+" products",
       description:(preview.map(x=>tick+x.sku+tick+" - "+safeName(x.name)).join("\n")||"No Target SKUs saved.")+
@@ -138,9 +138,9 @@ export function targetMasterDashboard(master) {
       button("Manage SKUs (owner)","targetmaster:manage:0")]}]};
 }
 export function targetMasterView(master,page=0) {
-  const items=targetMasterItems(master),pages=Math.max(1,Math.ceil(items.length/20));
+  const items=targetMasterItems(master),pages=Math.max(1,Math.ceil(items.length/15));
   const chosen=Math.max(0,Math.min(Number(page)||0,pages-1));
-  const shown=items.slice(chosen*20,(chosen+1)*20);
+  const shown=items.slice(chosen*15,(chosen+1)*15);
   return {flags:64,allowed_mentions:{parse:[]},
     embeds:[{title:"Target Master - "+items.length+" SKUs - Page "+(chosen+1)+"/"+pages,
       description:shown.map(x=>tick+x.sku+tick+" - "+safeName(x.name)).join("\n")||"No SKUs saved.",
