@@ -112,7 +112,7 @@ test("picker controls require paid access, preserve private draft, and confirm t
   assert.match(handlers,/await hasPaidSkuAccess\(userId\)/);
   assert.match(handlers,/flags: 64/);
   assert.match(handlers,/targetpick:toggle:/);
-  assert.match(handlers,/targetpick:search:submit/);
+  assert.match(handlers,/custom_id: "targetpick:" \+ action \+ ":submit"/);
   assert.match(handlers,/targetPickerDraft\(userId, master/);
   assert.match(handlers,/confirmTargetPicker\(userId/);
   assert.match(source,/const targetPickerDraftsFile = path\.join\(dataDir, "discord-target-picker-drafts\.json"\)/);
