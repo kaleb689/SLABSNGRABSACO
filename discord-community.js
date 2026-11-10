@@ -619,7 +619,7 @@ export function ownerRetailerSkuGroups(items, groupOf) {
   }
   return groups;
 }
-export function ownerRetailerSkuCopyPayload(items, groupOf, retailer, requestedPage = 0) {
+export function ownerRetailerSkuCopyPayload(items, groupOf, retailer, userId, requestedPage = 0) {
   const labels = RETAILER_COPY_LABELS;
   if (!Object.hasOwn(labels, retailer)) throw new Error("Invalid retailer.");
   const skus = ownerRetailerSkuGroups(items, groupOf)[retailer];
@@ -643,8 +643,8 @@ export function ownerRetailerSkuCopyPayload(items, groupOf, retailer, requestedP
     flags: 64, allowed_mentions: { parse: [] }, content,
     ...(parts.length > 1 ? { components: [{
       type: 1, components: [
-        { type: 2, style: 2, label: "Previous", custom_id: "sku:copy:page:" + retailer + ":" + (page - 1), disabled: page === 0 },
-        { type: 2, style: 2, label: "Next", custom_id: "sku:copy:page:" + retailer + ":" + (page + 1), disabled: page === parts.length - 1 }
+        { type: 2, style: 2, label: "Previous", custom_id: "sku:copy:" + userId + ":" + retailer + ":" + (page - 1), disabled: page === 0 },
+        { type: 2, style: 2, label: "Next", custom_id: "sku:copy:" + userId + ":" + retailer + ":" + (page + 1), disabled: page === parts.length - 1 }
       ]
     }] } : {})
   };
@@ -1064,7 +1064,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.json();
   }
   let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, targetSkuListChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
     for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
@@ -1243,6 +1243,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
+    targetSkuListChannelId = channels.find(item => item.type === 0 &&
+      normalizeName(item.name) === "targetskulist")?.id || null;
+    if (!targetSkuListChannelId) console.warn("Target master channel #targetskulist not found; catalog will still persist.");
     let support = channels.find(item => item.type === 4 && normalizeName(item.name) === "support");
     const supportText = channels.find(item => item.type === 0 && normalizeName(item.name) === "support");
     if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
@@ -2860,6 +2863,84 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     skuAlertQueue = queued.catch(() => {});
     return queued;
   };
+  const targetMasterFile = path.join(dataDir, "discord-target-sku-master.json");
+  let targetMasterQueue = Promise.resolve();
+  function withTargetMasterQueue(task) {
+    const queued = targetMasterQueue.then(task);
+    targetMasterQueue = queued.catch(() => {});
+    return queued;
+  }
+  async function loadTargetMaster() {
+    try {
+      const master = JSON.parse(await fs.readFile(targetMasterFile, "utf8"));
+      if (!master || typeof master !== "object" || !master.entries || !master.removed ||
+          !master.startedAt) throw new Error("Target master data is invalid; retained for recovery.");
+      return master;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      // Seed only a missing catalog, never overwrite saved owner removals.
+      const master = initialTargetMaster();
+      await writeSkuFile(targetMasterFile, master);
+      return master;
+    }
+  }
+  async function publishTargetMaster(master) {
+    if (!targetSkuListChannelId) return false;
+    const payload = targetMasterDashboard(master);
+    let posted = null;
+    if (master.messageId) {
+      try {
+        posted = await api("/channels/" + targetSkuListChannelId + "/messages/" + master.messageId, "PATCH", payload);
+      } catch (error) {
+        if (!/HTTP 404/.test(error.message)) throw error;
+      }
+    }
+    if (!posted) {
+      const recent = await api("/channels/" + targetSkuListChannelId + "/messages?limit=100");
+      const prior = recent.find(message => String(message.author?.id || "") === String(appId) &&
+        message.embeds?.some(embed => embed.footer?.text === TARGET_MASTER_MARKER));
+      if (prior) posted = await api("/channels/" + targetSkuListChannelId + "/messages/" + prior.id, "PATCH", payload);
+    }
+    if (!posted) posted = await api("/channels/" + targetSkuListChannelId + "/messages", "POST", payload);
+    if (posted?.id && posted.id !== master.messageId) {
+      master.messageId = posted.id;
+      await writeSkuFile(targetMasterFile, master);
+    }
+    return true;
+  }
+  async function recordTargetMasterPost(message, products) {
+    const channelId = String(message?.channel_id || "");
+    if (!dropChannelIds.has(channelId) || !isNewDropPost(message) || message.webhook_id ||
+        (message.author?.bot && !isFormattedDropPost(message, appId))) return [];
+    const directTarget = retailerFromDropLabel(retailerDropLabels[channelId]) === "target";
+    const generalDrop = channelId === tonightChannelId || channelId === upcomingChannelId;
+    const candidates = targetSkuCandidates(message, products, { directTarget, generalDrop });
+    if (!candidates.length) return [];
+    return withTargetMasterQueue(async () => {
+      const master = await loadTargetMaster();
+      const eventTime = targetMessageTime(message);
+      // Never reconstruct historical posts: only those from the live cutoff.
+      if (!Number.isFinite(eventTime) || eventTime < Date.parse(master.startedAt)) return [];
+      const { master: next, added } = targetMasterAdd(master, candidates, {
+        channelId, messageId: message.id, at: new Date(eventTime).toISOString()
+      });
+      if (!added.length) return [];
+      await writeSkuFile(targetMasterFile, next);
+      await publishTargetMaster(next)
+        .catch(error => console.error("Target master display refresh:", error.message));
+      console.log("Target SKU master added:", JSON.stringify({ count: added.length, total: targetMasterItems(next).length }));
+      return added;
+    });
+  }
+  async function initializeTargetMaster() {
+    return withTargetMasterQueue(async () => {
+      const master = await loadTargetMaster();
+      await publishTargetMaster(master);
+      console.log("Target SKU master ready:", targetMasterItems(master).length);
+      return targetMasterItems(master).length;
+    });
+  }
+
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
   const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   const skuReminderPanelsFile = path.join(dataDir, "discord-sku-reminder-panels.json");
@@ -3073,6 +3154,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!dropChannelIds.has(message.channel_id) ||
         (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     const products = parseDropSkus(message);
+    await recordTargetMasterPost(message, products)
+      .catch(error => console.error("Target SKU master update:", error.message));
     const upcomingWithoutSkus = message.channel_id === upcomingChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
     const shouldShow = products.length > 0 || upcomingWithoutSkus;
@@ -3446,6 +3529,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
       ? parseMonitorDropProducts(d) : [];
+    await recordTargetMasterPost(d, monitored.length ? monitored : parseDropSkus(d))
+      .catch(error => console.error("Target SKU master raw post:", error.message));
     if (monitored.length) {
       try {
         const label = dropChannelLabel(d.channel_id);
@@ -4672,6 +4757,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
