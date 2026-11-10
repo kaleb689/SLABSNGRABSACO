@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, ownerRetailerSkuGroups, ownerRetailerSkuCopyPayload, RETAILER_COPY_LABELS, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, ownerSkuSelectionKey, ownerRetailerSkuGroups, ownerRetailerSkuCopyPayload, RETAILER_COPY_LABELS, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
 import {mentionedRetailers, retailerAlert, retailerFromDropLabel} from './retailer-alert-roles.js';
 import {
   TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
@@ -11,6 +11,10 @@ import {
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from './target-sku-master.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
+import {
+  newTargetPickDraft, toggleTargetPick, setTargetPickQuantity, searchTargetPicks,
+  pasteTargetPicks, targetPickDiff, targetMasterPicker, targetMasterPickReview
+} from './target-master-picker.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
 import {createDropMessageRetention} from './discord-drop-retention.js';
 const source = await fs.readFile('discord-community.js', 'utf8');
@@ -39,15 +43,17 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',targetSkuListChannelId:'targetmaster',ownerId:owner,appId:'1551070928039845900',
-  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,ownerRetailerSkuGroups,ownerRetailerSkuCopyPayload,RETAILER_COPY_LABELS,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,ownerSkuSelectionKey,ownerRetailerSkuGroups,ownerRetailerSkuCopyPayload,RETAILER_COPY_LABELS,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
   withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,
   TARGET_MASTER_MARKER,initialTargetMaster,targetMasterItems,targetSkuCandidates,targetMessageTime,
-  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,inStoreChannelId:'1551070928039845970',
+  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,
+  newTargetPickDraft,toggleTargetPick,setTargetPickQuantity,searchTargetPicks,pasteTargetPicks,targetPickDiff,
+  targetMasterPicker,targetMasterPickReview,inStoreChannelId:'1551070928039845970',
   dropChannelLabel:id=>deps.retailerDropLabels[id]||(id===tonightChannelId?'Dropping Tonight':'Upcoming Drops')};
-const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft,repairExistingSkuDuplicates,ownerSkuPayload,refreshExistingOwnerCopyButtons,initializeTargetMaster,loadTargetMaster,recordTargetMasterPost};`);
+const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft,repairExistingSkuDuplicates,ownerSkuPayload,refreshExistingOwnerCopyButtons,initializeTargetMaster,loadTargetMaster,recordTargetMasterPost,targetPickerDraft,confirmTargetPicker};`);
 const controls=make(deps);
 try {
   const seedCount = await controls.initializeTargetMaster();
@@ -251,6 +257,41 @@ try {
     x.custom_id==='sku:copy:'+batchUser+':pokemon'));
   assert.ok(!groupedPayload.components.flatMap(x=>x.components).some(x=>
     x.custom_id==='sku:copy:'+batchUser+':walmart'));
+
+  // Member Target master picks are saved only after confirmation, and must
+  // preserve existing Target drop and PKC choices without creating duplicates.
+  let pickDraft=await controls.targetPickerDraft(batchUser,await controls.loadTargetMaster());
+  assert.ok(Array.isArray(pickDraft.selected));
+  const originalRecord=JSON.parse(await fs.readFile(
+    path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
+  assert.equal(originalRecord.items.length,4);
+  const currentMaster=await controls.loadTargetMaster();
+  pickDraft=await controls.targetPickerDraft(batchUser,currentMaster,
+    draft=>toggleTargetPick(currentMaster,draft,'1010892076'));
+  // No owner message or customer selection changes before confirmation.
+  const beforePick=JSON.parse(await fs.readFile(
+    path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
+  assert.equal(beforePick.items.length,4);
+  assert.deepEqual(pickDraft.selected,['1010892076']);
+  const first=await controls.confirmTargetPicker(batchUser,'batch-member');
+  assert.equal(first.unchanged,false);
+  assert.equal(first.items.length,5);
+  assert.equal(first.items.filter(x=>x.sku==='1010892076').length,1);
+  assert.equal(first.items.filter(x=>x.retailer==='target').length,1);
+  assert.equal(first.items.filter(x=>x.sku.startsWith('PKC')).length,2);
+  assert.equal(first.items.every(x=>x.quantity===2),true);
+  assert.ok(controls.ownerSkuPayload(batchUser,'batch-member',first.items,'Confirmed').components
+    .flatMap(row=>row.components).some(c=>c.custom_id==='sku:copy:'+batchUser+':target'));
+  // Re-opening reflects existing choices; toggling off removes only that SKU.
+  pickDraft=await controls.targetPickerDraft(batchUser,await controls.loadTargetMaster());
+  assert.deepEqual(pickDraft.selected,['1010892076']);
+  const removeMaster=await controls.loadTargetMaster();
+  await controls.targetPickerDraft(batchUser,removeMaster,
+    draft=>toggleTargetPick(removeMaster,draft,'1010892076'));
+  const second=await controls.confirmTargetPicker(batchUser,'batch-member');
+  assert.equal(second.unchanged,false);
+  assert.equal(second.items.filter(x=>x.sku==='1010892076').length,0);
+  assert.equal(second.items.length,4,'existing nonmaster Target and PKC choices are untouched');
 
   console.log('PASS: PKC channel gets SKU controls despite another channel HTTP 403; saved cross-retailer selections remain');
 

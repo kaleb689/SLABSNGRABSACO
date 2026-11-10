@@ -6,11 +6,13 @@ on:
       - 'drop-monitor-format.js'
       - 'discord-community.js'
       - 'target-sku-master.js'
+      - 'target-master-picker.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
       - 'test/discord-sku-changes.test.mjs'
       - 'test/discord-sku-dedup.test.mjs'
       - 'test/target-sku-master.test.mjs'
+      - 'test/target-master-picker.test.mjs'
       - 'test/discord-owner-retailer-copy.test.mjs'
       - 'verify-discord-controls.mjs'
       - '.github/workflows/verify-drop-monitor-format.yml'
@@ -20,11 +22,13 @@ on:
       - 'drop-monitor-format.js'
       - 'discord-community.js'
       - 'target-sku-master.js'
+      - 'target-master-picker.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
       - 'test/discord-sku-changes.test.mjs'
       - 'test/discord-sku-dedup.test.mjs'
       - 'test/target-sku-master.test.mjs'
+      - 'test/target-master-picker.test.mjs'
       - 'test/discord-owner-retailer-copy.test.mjs'
       - 'verify-discord-controls.mjs'
       - '.github/workflows/verify-drop-monitor-format.yml'
@@ -45,5 +49,6 @@ jobs:
       - run: node --check drop-monitor-format.js
       - run: node --check discord-community.js
       - run: node --check target-sku-master.js
-      - run: node --test test/drop-monitor-format.test.js test/discord-skus.test.js test/discord-sku-changes.test.mjs test/discord-sku-dedup.test.mjs test/target-sku-master.test.mjs test/discord-owner-retailer-copy.test.mjs test/drop-sku-alerts.test.mjs
+      - run: node --check target-master-picker.js
+      - run: node --test test/drop-monitor-format.test.js test/discord-skus.test.js test/discord-sku-changes.test.mjs test/discord-sku-dedup.test.mjs test/target-sku-master.test.mjs test/target-master-picker.test.mjs test/discord-owner-retailer-copy.test.mjs test/drop-sku-alerts.test.mjs
       - run: node verify-discord-controls.mjs

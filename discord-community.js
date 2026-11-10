@@ -16,6 +16,11 @@ import {
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
+import {
+  newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
+  searchTargetPicks, pasteTargetPicks, targetPickDiff,
+  targetMasterPicker, targetMasterPickReview
+} from "./target-master-picker.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -576,7 +581,7 @@ const skuRetailerIdentity = value => {
 };
 const skuChannel = row => String(row?.key || "").split(":")[0];
 const skuSource = row => String(row?.key || "").split(":")[1];
-const ownerSkuSelectionKey = (row, groupOf) => {
+export const ownerSkuSelectionKey = (row, groupOf) => {
   const label = typeof groupOf === "function" ? groupOf(row) : "";
   const retailer = skuRetailerIdentity(label) || skuRetailerIdentity(row?.retailer);
   const scope = retailer ? "retailer:" + retailer : "channel:" + skuChannel(row);
@@ -3128,6 +3133,88 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return drafts[key].items;
     });
   }
+  // A private, per-member Target master picker. Incomplete changes never
+  // appear in the owner's SKU requests until the member confirms.
+  const targetPickerDraftsFile = path.join(dataDir, "discord-target-picker-drafts.json");
+  const targetPickerDraftTtlMs = 24 * 60 * 60 * 1000;
+  async function targetPickerDraft(userId, master, transform = null) {
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(targetPickerDraftsFile);
+      const saved = (await readSkuFile(skuSelectionsFile))[userId]?.items || [];
+      const target = ownerRetailerSkuGroups(saved, ownerSkuGroup).target;
+      const quantity = uniformSkuQuantity(saved) || 1;
+      const previous = drafts[userId];
+      const fresh = !previous || !Array.isArray(previous.selected) ||
+        !Array.isArray(previous.baseline) ||
+        !Number.isFinite(Date.parse(previous.updatedAt)) ||
+        Date.now() - Date.parse(previous.updatedAt) > targetPickerDraftTtlMs;
+      const draft = fresh ? newTargetPickDraft(master, target, quantity) : previous;
+      const updated = transform ? transform(draft) : draft;
+      drafts[userId] = { ...updated, updatedAt: new Date().toISOString() };
+      for (const [id, entry] of Object.entries(drafts)) {
+        if (!entry || Date.now() - Date.parse(entry.updatedAt || 0) > targetPickerDraftTtlMs)
+          delete drafts[id];
+      }
+      await writeSkuFile(targetPickerDraftsFile, drafts);
+      return drafts[userId];
+    });
+  }
+  async function confirmTargetPicker(userId, username) {
+    if (!skuRequestsChannelId) throw new Error("The owner's SKU requests channel is not ready.");
+    // Read the latest master rather than trusting an old picker card.
+    const master = await withTargetMasterQueue(loadTargetMaster);
+    const catalog = new Map(targetMasterItems(master).map(row => [row.sku, row]));
+    return withSkuQueue(async () => {
+      const drafts = await readSkuFile(targetPickerDraftsFile);
+      const draft = drafts[userId];
+      if (!draft || !Array.isArray(draft.selected) || !Array.isArray(draft.baseline) ||
+          Date.now() - Date.parse(draft.updatedAt || 0) > targetPickerDraftTtlMs)
+        throw new Error("Your Target selection session expired. Reopen Select Target SKUs.");
+      const { added, removed } = targetPickDiff(draft);
+      const unavailable = added.filter(sku => !catalog.has(sku));
+      if (unavailable.length) throw new Error("The Target master changed. These SKUs are no longer available: " +
+        unavailable.slice(0, 10).join(",") + ". Reopen the picker to refresh.");
+      const selections = await readSkuFile(skuSelectionsFile);
+      const record = selections[userId] || { username, messageId: null, items: [] };
+      const current = uniqueSkuSelections(record.items || [], ownerSkuGroup);
+      const removeKeys = new Set(removed.map(sku => "retailer:target\u0000" + sku));
+      const withoutRemoved = current.filter(row => !removeKeys.has(ownerSkuSelectionKey(row, ownerSkuGroup)));
+      const existingKeys = new Set(withoutRemoved.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)));
+      const sourceId = String(master.messageId || "");
+      if (!/^\d{17,22}$/.test(sourceId))
+        throw new Error("The Target master is updating. Reopen the picker and retry.");
+      const additions = added.filter(sku => !existingKeys.has("retailer:target\u0000" + sku))
+        .map(sku => ({ key: targetSkuListChannelId + ":" + sourceId + ":" + sku,
+          retailer: "target", sku, name: catalog.get(sku).name,
+          quantity: draft.quantity === 2 ? 2 : 1 }));
+      const next = setGlobalSkuQuantity(
+        uniqueSkuSelections([...withoutRemoved, ...additions], ownerSkuGroup), draft.quantity === 2 ? 2 : 1);
+      if (next.length > 200) throw new Error("Your selections exceed 200 SKUs across retailers. Remove older selections first.");
+      const oldKeys = current.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)).sort();
+      const newKeys = next.map(row => ownerSkuSelectionKey(row, ownerSkuGroup)).sort();
+      const sameItems = JSON.stringify(oldKeys) === JSON.stringify(newKeys);
+      const sameQty = next.length === 0 || uniformSkuQuantity(current) === draft.quantity;
+      if (sameItems && sameQty) {
+        delete drafts[userId];
+        await writeSkuFile(targetPickerDraftsFile, drafts);
+        return { items: current, unchanged: true };
+      }
+      const payload = ownerSkuPayload(userId, username, next,
+        "Confirmed Target SKU master choices", record.skipTonightDate,
+        record.skippedUpcomingDrops || [], current);
+      const posted = await publishOwnerSkuRecord(record, payload);
+      Object.assign(record, { username, items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
+      selections[userId] = record;
+      await writeSkuFile(skuSelectionsFile, selections);
+      delete drafts[userId];
+      await writeSkuFile(targetPickerDraftsFile, drafts);
+      console.log("Target master selections confirmed:", JSON.stringify({
+        added: additions.length, removed: removed.length, total: next.length
+      }));
+      return { items: next, unchanged: false };
+    });
+  }
+
   // Each change posts a fresh owner message (so it notifies and lands at the
   // bottom of #sku-requests) and then removes the member's previous one,
   // keeping a single current message per member.
@@ -3707,6 +3794,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   function ownerSkuGroup(row) {
     const channelId = String(row?.key || "").split(":")[0];
+    if (channelId === targetSkuListChannelId) return "Target";
     const retailer = retailerDropLabels[channelId];
     if (retailer) return String(retailer).replace(/\s+Drops?$/i, "");
     const where = channelId === tonightChannelId ? "Dropping Tonight" :
@@ -3874,6 +3962,110 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      // Target master selection: private five-item picker, search and paste.
+      // Public master remains read-only. Only paid members (or verified owner
+      // test mode) can change their own saved SKU selections.
+      if (d.type === 3 && d.data?.custom_id === "targetpick:open") {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Open Select Target SKUs in #target-skus.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        const master = await withTargetMasterQueue(loadTargetMaster);
+        const draft = await targetPickerDraft(userId, master);
+        return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+          targetMasterPicker(master, draft, draft.page || 0));
+      }
+      if (d.type === 3 && /^(?:targetpick:(?:page|qty|review):\d{1,5}|targetpick:toggle:[A-Z0-9][A-Z0-9._-]{2,79}:\d{1,5}|targetpick:(?:back|clear|search|paste|confirm))$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId ||
+            (Number(d.message?.flags || 0) & 64) !== 64)
+          return await reply("Open the private Target SKU picker using Select Target SKUs.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const action = d.data.custom_id.split(":")[1];
+        if (action === "search" || action === "paste") {
+          return await api(callback, "POST", { type: 9, data: {
+            custom_id: "targetpick:" + action + ":submit",
+            title: action === "search" ? "Search Target Products" : "Paste Target SKU List",
+            components: [{ type: 1, components: [{
+              type: 4, style: action === "paste" ? 2 : 1, required: true,
+              custom_id: action === "paste" ? "skus" : "query",
+              label: action === "paste" ? "Comma-separated Target SKUs" : "Product name or SKU number",
+              placeholder: action === "paste" ? "1010892076,1012422107,1012644665" : "Search by product name or SKU",
+              min_length: 1, max_length: action === "paste" ? 1800 : 100
+            }] }]
+          } });
+        }
+        if (action === "confirm") {
+          await api(callback, "POST", { type: 5, data: { flags: 64 } });
+          try {
+            const result = await confirmTargetPicker(userId,
+              d.member?.user?.global_name || d.member?.user?.username || userId);
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+              skuSelectionView(result.items, result.unchanged ?
+                "No changes to your saved SKU selections." :
+                "Target SKUs confirmed. Your private selections and the owner's request have been updated.",
+                0, ownerSkuGroup));
+          } catch (error) {
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", {
+              content: error.message, embeds: [], components: [], allowed_mentions: { parse: [] }
+            });
+          }
+        }
+        const master = await withTargetMasterQueue(loadTargetMaster);
+        let draft, view = "picker", reviewPage = 0, notice = "";
+        try {
+          if (action === "page") {
+            const page = Number(d.data.custom_id.split(":")[2]);
+            draft = await targetPickerDraft(userId, master, row => ({ ...row, page }));
+          } else if (action === "toggle") {
+            const parts = d.data.custom_id.split(":");
+            const chosen = parts[2], page = Number(parts[3]);
+            draft = await targetPickerDraft(userId, master, row => ({
+              ...toggleTargetPick(master, row, chosen), page
+            }));
+          } else if (action === "qty") {
+            const quantity = Number(d.data.custom_id.split(":")[2]);
+            draft = await targetPickerDraft(userId, master, row => setTargetPickQuantity(row, quantity));
+          } else if (action === "clear") {
+            draft = await targetPickerDraft(userId, master, row => searchTargetPicks(row, ""));
+          } else if (action === "review") {
+            draft = await targetPickerDraft(userId, master);
+            view = "review";
+            reviewPage = Number(d.data.custom_id.split(":")[2]);
+          } else if (action === "back") {
+            draft = await targetPickerDraft(userId, master);
+          } else return await reply("Unknown Target SKU picker control.");
+        } catch (error) {
+          return await reply(error.message || "Unable to update your Target selections.");
+        }
+        return await api(callback, "POST", { type: 7,
+          data: view === "review" ? targetMasterPickReview(master, draft, reviewPage) :
+            targetMasterPicker(master, draft, draft.page || 0, notice)
+        });
+      }
+      if (d.type === 5 && /^targetpick:(search|paste):submit$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Open the Target picker in #target-skus.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const master = await withTargetMasterQueue(loadTargetMaster);
+          const fields = (d.data.components || []).flatMap(row => row.components || []);
+          const action = d.data.custom_id.split(":")[1];
+          const value = String(fields.find(row => row.custom_id === (action === "paste" ? "skus" : "query"))?.value || "");
+          let message = "";
+          const draft = await targetPickerDraft(userId, master, row => {
+            if (action === "search") return searchTargetPicks(row, value);
+            const change = pasteTargetPicks(master, row, value);
+            message = change.added ? "Added " + change.added + " SKU(s) to the draft." : "Those SKUs are already selected.";
+            return change.draft;
+          });
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            targetMasterPicker(master, draft, draft.page || 0, message));
+        } catch (error) {
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", {
+            content: error.message || "Unable to process that input. No SKUs were changed.",
+            allowed_mentions: { parse: [] }, embeds: [], components: []
+          });
+        }
+      }
       // Comma-separated owner-only SKU exports, one retailer at a time.
       if (d.type === 3 && /^sku:copy:\d{17,22}:(target|walmart|pokemon|costco|sams)(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== skuRequestsChannelId || String(userId) !== String(ownerId))
