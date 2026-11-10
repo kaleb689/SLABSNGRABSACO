@@ -555,47 +555,114 @@ export function setGlobalSkuQuantity(items, quantity) {
   if (![1, 2].includes(Number(quantity))) throw new Error("Choose Qty 1 or Qty 2 for all selected SKUs.");
   return (Array.isArray(items) ? items : []).map(row => ({ ...row, quantity: Number(quantity) }));
 }
+// Compare the member's last saved selections with the submitted snapshot.
+// A re-posted source message is not a new product if its channel and SKU match.
+const ownerSkuSelectionKey = row =>
+  String(row?.key || "").split(":")[0] + "\u0000" +
+  String(row?.sku || "").trim().toUpperCase();
+
+export function skuSelectionChanges(previousItems, nextItems) {
+  const index = items => new Map((Array.isArray(items) ? items : [])
+    .map(item => [ownerSkuSelectionKey(item), item]));
+  const before = index(previousItems), after = index(nextItems);
+  return {
+    added: [...after].filter(([key]) => !before.has(key)).map(([, item]) => item),
+    removed: [...before].filter(([key]) => !after.has(key)).map(([, item]) => item)
+  };
+}
+
+// Keep the product-name change log at the bottom of the existing owner card.
+// Discord embeds permit 4,096 characters; report any omitted count explicitly.
+function skuOwnerChangeFooter(changes, capacity) {
+  const buckets = [
+    { title: "Added", verb: "added", rows: changes?.added || [] },
+    { title: "Removed", verb: "removed", rows: changes?.removed || [] }
+  ].filter(bucket => bucket.rows.length);
+  if (!buckets.length || capacity < 100) return "";
+  const heading = "\n\n**SKU changes this update**";
+  let remaining = capacity - heading.length, footer = heading;
+  for (let i = 0; i < buckets.length; i++) {
+    const bucket = buckets[i];
+    const allowance = Math.floor(remaining / (buckets.length - i));
+    const header = "\n**" + bucket.title + " (" + bucket.rows.length + ")**";
+    let section = header, shown = 0;
+    for (const row of bucket.rows) {
+      const sku = skuSafeText(row.sku).slice(0, 65);
+      const name = skuSafeText(row.name).slice(0, 75) || ("SKU " + sku);
+      const line = "\n• **" + name + " " + bucket.verb + "** · SKU " + String.fromCharCode(96) + sku + String.fromCharCode(96);
+      if (section.length + line.length + 40 > allowance) break;
+      section += line;
+      shown++;
+    }
+    if (shown < bucket.rows.length) section += "\n… " + (bucket.rows.length - shown) + " more " + bucket.verb + " (not shown here)";
+    footer += section;
+    remaining -= section.length;
+  }
+  return footer;
+}
+
 // groupOf(row) names the retailer a selection belongs to. With it, the owner
 // breakdown lists SKUs under one heading per retailer; without it, one list.
-export function skuOwnerDetails(items, groupOf) {
+export function skuOwnerDetails(items, groupOf, changes = null) {
   const rows = Array.isArray(items) ? items : [];
-  if (!rows.length) return { title: "New SKU Order", description: "No SKUs selected.", color: 0x41b6e6 };
+  const changed = Boolean(changes?.added?.length || changes?.removed?.length);
+  const addedKeys = new Set((changes?.added || []).map(ownerSkuSelectionKey));
+  const displaySku = row => {
+    const label = skuSafeText(row.sku).slice(0, 80);
+    return addedKeys.has(ownerSkuSelectionKey(row)) ? "**" + label + "**" : label;
+  };
+  const withFooter = description => changed
+    ? description + skuOwnerChangeFooter(changes, 3950 - description.length)
+    : description;
+  if (!rows.length) return {
+    title: "New SKU Order", description: withFooter("No SKUs selected."), color: 0x41b6e6
+  };
   const summary = skuCompactNotification(rows);
   if (typeof groupOf === "function") {
     const groups = new Map();
     for (const row of rows) {
       const name = skuSafeText(groupOf(row) || "Other").slice(0, 60) || "Other";
       if (!groups.has(name)) groups.set(name, []);
-      groups.get(name).push(skuSafeText(row.sku).slice(0, 80));
+      groups.get(name).push(displaySku(row));
     }
+    const budget = changed ? 2200 : 3400;
     let description = "", shown = 0;
     for (const [name, skus] of groups) {
-      const block = "**" + name + "** (" + skus.length + ")\n(" + skus.join(", ") + ")";
-      if (description && description.length + block.length + 2 > 3400) break;
-      description += (description ? "\n\n" : "") + block;
-      shown += skus.length;
+      const separator = description ? "\n\n" : "";
+      const prefix = "**" + name + "** (" + skus.length + ")\n(";
+      const visible = [];
+      for (const sku of skus) {
+        const separatorLength = visible.length ? 2 : 0;
+        const used = description.length + separator.length + prefix.length +
+          visible.join(", ").length + separatorLength + sku.length + 1;
+        if (used > budget) break;
+        visible.push(sku);
+      }
+      if (!visible.length) break;
+      description += separator + prefix + visible.join(", ") + ")";
+      shown += visible.length;
     }
     const more = rows.length - shown;
     return {
       title: "New SKU Order",
-      description: description +
+      description: withFooter(description +
         (more > 0 ? "\n\n+" + more + " more SKUs — choose View all SKUs for the full list." : "") +
-        "\n\n**Qty: " + summary.quantity + " for ALL SKUs**",
+        "\n\n**Qty: " + summary.quantity + " for ALL SKUs**"),
       color: 0xfa9238
     };
   }
-  const skus = rows.map(row => skuSafeText(row.sku).slice(0, 80));
+  const skus = rows.map(displaySku);
   const visible = [];
   for (const sku of skus) {
-    if(visible.length && visible.join(", ").length + sku.length + 3 > 3000) break;
+    if (visible.length && visible.join(", ").length + sku.length + 3 > (changed ? 2150 : 3000)) break;
     visible.push(sku);
   }
   const more = skus.length - visible.length;
   return {
     title: "New SKU Order",
-    description: "**SKUs:**\n(" + visible.join(", ") + ")" +
+    description: withFooter("**SKUs:**\n(" + visible.join(", ") + ")" +
       (more > 0 ? "\n+" + more + " more SKUs — choose View all SKUs for the full list." : "") +
-      "\n**Qty: " + summary.quantity + "**",
+      "\n**Qty: " + summary.quantity + "**"),
     color: 0xfa9238
   };
 }
@@ -2808,7 +2875,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         ? (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId)
         : (record.skippedUpcomingDrops || []);
       const payload = ownerSkuPayload(userId, username, next,
-        "Confirmed " + draft.items.length + " SKU(s) for this drop", skipTonightDate, skippedUpcomingDrops);
+        "Confirmed " + draft.items.length + " SKU(s) for this drop", skipTonightDate, skippedUpcomingDrops, record.items);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, messageId: posted.id, skipTonightDate,
         skippedUpcomingDrops, updatedAt: new Date().toISOString() });
@@ -3354,8 +3421,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const named = retailerAlert(row?.retailer)?.name;
     return named ? named + " · " + where : where;
   }
-  function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = []) {
-    const summary = skuOwnerDetails(items, ownerSkuGroup);
+  function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = [], previousItems = null) {
+    const changes = previousItems === null ? null : skuSelectionChanges(previousItems, items);
+    const summary = skuOwnerDetails(items, ownerSkuGroup, changes);
     const skipping = skipTonightDate === tonightDate();
     return {
       content: `${mention(ownerId)} · ${mention(userId)} (${skuSafeText(username).slice(0, 70)}) ${skipping ? "DO NOT RUN MY PROFILES TONIGHT" : "selected SKUs"}\n${change} · <t:${Math.floor(Date.now() / 1000)}:F>`,
@@ -3390,7 +3458,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         skipped.push({ channelId, sourceId });
       }
       const payload = ownerSkuPayload(userId, username, next,
-        tonight ? "Requested: do not run profiles tonight" : "Requested: do not run profiles for this upcoming drop", date, skipped);
+        tonight ? "Requested: do not run profiles tonight" : "Requested: do not run profiles for this upcoming drop", date, skipped, record.items);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, skipTonightDate: date, skippedUpcomingDrops: skipped, messageId: posted.id, updatedAt: new Date().toISOString() });
       selections[userId] = record;
@@ -3407,7 +3475,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const next = record.items.map(item => ({ ...item }));
       if (!quantity) next.splice(next.findIndex(item => skuItemToken(item.key) === token), 1);
       const normalized = setGlobalSkuQuantity(next, quantity || uniformSkuQuantity(next) || 1);
-      const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops);
+      const payload = ownerSkuPayload(userId, record.username, normalized, quantity ? `Changed ${skuSafeText(item.sku)} to Qty: ${quantity}` : `Removed ${skuSafeText(item.sku)}`, record.skipTonightDate, record.skippedUpcomingDrops, record.items);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { items: normalized, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
@@ -3424,7 +3492,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const next = setGlobalSkuQuantity(record.items, quantity);
       const payload = ownerSkuPayload(userId, record.username, next,
         "Set Qty " + quantity + " for ALL " + next.length + " selected SKUs",
-        record.skipTonightDate, record.skippedUpcomingDrops);
+        record.skipTonightDate, record.skippedUpcomingDrops, record.items);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { items: next, messageId: posted.id, updatedAt: new Date().toISOString() });
       await writeSkuFile(skuSelectionsFile, selections);
@@ -3442,13 +3510,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const selections = await readSkuFile(skuSelectionsFile);
       const record = selections[userId] || { username, messageId: null, items: [] };
       record.username = username;
+      const previousItems = record.items;
       record.items = tagRetailer(changeSkuItems(quantity ? withoutSupersededSkus(record.items, channelId, sourceId,
         chosen.map(item => item.sku)) : record.items, chosen, sourceId, channelId, quantity), channelId, sourceId, source);
       if (channelId === tonightChannelId && quantity) delete record.skipTonightDate;
       if (channelId !== tonightChannelId && quantity) record.skippedUpcomingDrops =
         (record.skippedUpcomingDrops || []).filter(drop => drop.channelId !== channelId || drop.sourceId !== sourceId);
       record.updatedAt = new Date().toISOString();
-      const payload = ownerSkuPayload(userId, username, record.items, quantity ? `Selected ${chosen.length} SKU(s) at Qty: ${quantity}` : `Removed ${chosen.length} SKU(s)`, record.skipTonightDate, record.skippedUpcomingDrops);
+      const payload = ownerSkuPayload(userId, username, record.items, quantity ? `Selected ${chosen.length} SKU(s) at Qty: ${quantity}` : `Removed ${chosen.length} SKU(s)`, record.skipTonightDate, record.skippedUpcomingDrops, previousItems);
       const posted = await publishOwnerSkuRecord(record, payload);
       record.messageId = posted.id;
       selections[userId] = record;
@@ -4445,7 +4514,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (noChange) return { ok: true, unchanged: true, selectedCount: next.length, quantity };
       const payload = ownerSkuPayload(userId, username, next,
         "Submitted " + chosen.length + " active SKU(s) from the customer app",
-        skipTonightDate, skippedUpcomingDrops);
+        skipTonightDate, skippedUpcomingDrops, old);
       const posted = await publishOwnerSkuRecord(record, payload);
       Object.assign(record, { username, items: next, messageId: posted.id,
         skipTonightDate, skippedUpcomingDrops, updatedAt: new Date().toISOString() });
