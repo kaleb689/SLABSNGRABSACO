@@ -561,11 +561,11 @@ export function setGlobalSkuQuantity(items, quantity) {
 // create a second selection. Unknown retailers remain isolated by channel.
 const skuRetailerIdentity = value => {
   const label = String(value || "").trim().toLowerCase();
-  if (/^target(?:\\b|[\\s·-])/.test(label)) return "target";
-  if (/^walmart(?:\\b|[\\s·-])/.test(label)) return "walmart";
-  if (/^(?:pkc|pok[eé]mon(?:\\s+center)?)(?:\\b|[\\s·-])/.test(label)) return "pokemon";
-  if (/^costco(?:\\b|[\\s·-])/.test(label)) return "costco";
-  if (/^sam(?:'|’)?s(?:\\b|[\\s·-])/.test(label)) return "sams";
+  if (/^target(?:\b|[\s·-])/.test(label)) return "target";
+  if (/^walmart(?:\b|[\s·-])/.test(label)) return "walmart";
+  if (/^(?:pkc|pok[eé]mon(?:\s+center)?)(?:\b|[\s·-])/.test(label)) return "pokemon";
+  if (/^costco(?:\b|[\s·-])/.test(label)) return "costco";
+  if (/^sam(?:'|’)?s(?:\b|[\s·-])/.test(label)) return "sams";
   return "";
 };
 const skuChannel = row => String(row?.key || "").split(":")[0];
@@ -585,7 +585,7 @@ export function uniqueSkuSelections(items, groupOf) {
     if (existing) {
       const incomingSource = skuSource(row), existingSource = skuSource(existing);
       // Prefer the newest actual Discord source post when IDs are snowflakes.
-      if (/^\\d{17,22}$/.test(incomingSource) && /^\\d{17,22}$/.test(existingSource) &&
+      if (/^\d{17,22}$/.test(incomingSource) && /^\d{17,22}$/.test(existingSource) &&
           BigInt(incomingSource) < BigInt(existingSource)) continue;
       unique.delete(key);
     }
