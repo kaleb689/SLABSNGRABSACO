@@ -10,6 +10,11 @@ import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js"
 import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
+import {
+  TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
+  targetMasterDashboard, targetMasterView, targetMasterManage
+} from "./target-sku-master.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -592,6 +597,57 @@ export function uniqueSkuSelections(items, groupOf) {
     unique.set(key, row);
   }
   return [...unique.values()];
+}
+
+// A retailer copy button sends this single comma-separated line for direct
+// pasting into an ACO module. It never includes another retailer's entries.
+const RETAILER_COPY_LABELS = Object.freeze({
+  target: "Target", walmart: "Walmart", pokemon: "PKC",
+  costco: "Costco", sams: "Sam's"
+});
+export function ownerRetailerSkuGroups(items, groupOf) {
+  const groups = { target: [], walmart: [], pokemon: [], costco: [], sams: [] };
+  const seen = new Map(Object.keys(groups).map(key => [key, new Set()]));
+  for (const row of uniqueSkuSelections(items, groupOf)) {
+    const label = typeof groupOf === "function" ? groupOf(row) : "";
+    const retailer = skuRetailerIdentity(label) || skuRetailerIdentity(row?.retailer);
+    if (!Object.hasOwn(groups, retailer)) continue;
+    const sku = String(row.sku || "").trim().toUpperCase();
+    if (!sku || seen.get(retailer).has(sku)) continue;
+    seen.get(retailer).add(sku);
+    groups[retailer].push(sku);
+  }
+  return groups;
+}
+export function ownerRetailerSkuCopyPayload(items, groupOf, retailer, requestedPage = 0) {
+  const labels = RETAILER_COPY_LABELS;
+  if (!Object.hasOwn(labels, retailer)) throw new Error("Invalid retailer.");
+  const skus = ownerRetailerSkuGroups(items, groupOf)[retailer];
+  const parts = [];
+  let current = "";
+  for (const sku of skus) {
+    const piece = (current ? "," : "") + sku;
+    if (current && current.length + piece.length > 1550) {
+      parts.push(current); current = sku;
+    } else current += piece;
+  }
+  if (current) parts.push(current);
+  const page = Math.max(0, Math.min(parts.length - 1, Number(requestedPage) || 0));
+  const content = skus.length
+    ? "**Copy " + labels[retailer] + " SKUs (" + skus.length +
+      (parts.length > 1 ? ") · Part " + (page + 1) + "/" + parts.length : ")") +
+      "**\n" + String.fromCharCode(96).repeat(3) + "\n" + parts[page] + "\n" + String.fromCharCode(96).repeat(3) +
+      "\nTap and hold the code block to copy. Only SKU numbers are included."
+    : "No " + labels[retailer] + " SKUs are currently selected.";
+  return {
+    flags: 64, allowed_mentions: { parse: [] }, content,
+    ...(parts.length > 1 ? { components: [{
+      type: 1, components: [
+        { type: 2, style: 2, label: "Previous", custom_id: "sku:copy:page:" + retailer + ":" + (page - 1), disabled: page === 0 },
+        { type: 2, style: 2, label: "Next", custom_id: "sku:copy:page:" + retailer + ":" + (page + 1), disabled: page === parts.length - 1 }
+      ]
+    }] } : {})
+  };
 }
 
 // Compare logical selections, ignoring stale duplicates and repost IDs.
@@ -3506,9 +3562,21 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
         summary
       ],
-      components: items.length > 30 ? [{ type: 1, components: [{
-        type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
-      }] }] : []
+      components: [
+        ...(items.length > 30 ? [{ type: 1, components: [{
+          type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
+        }] }] : []),
+        ...(() => {
+          const groups = ownerRetailerSkuGroups(items, ownerSkuGroup);
+          const copy = Object.entries(RETAILER_COPY_LABELS)
+            .filter(([key]) => groups[key].length)
+            .map(([key, label]) => ({
+              type: 2, style: 2, label: "Copy " + label + " (" + groups[key].length + ")",
+              custom_id: "sku:copy:" + userId + ":" + key
+            }));
+          return copy.length ? [{ type: 1, components: copy }] : [];
+        })()
+      ]
     };
   }
   async function skipDrop(userId, username, sourceId, channelId) {
