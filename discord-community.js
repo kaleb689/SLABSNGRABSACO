@@ -3962,6 +3962,110 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      // Target master selection: private five-item picker, search and paste.
+      // Public master remains read-only. Only paid members (or verified owner
+      // test mode) can change their own saved SKU selections.
+      if (d.type === 3 && d.data?.custom_id === "targetpick:open") {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Open Select Target SKUs in #target-skus.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        const master = await withTargetMasterQueue(loadTargetMaster);
+        const draft = await targetPickerDraft(userId, master);
+        return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+          targetMasterPicker(master, draft, draft.page || 0));
+      }
+      if (d.type === 3 && /^(?:targetpick:(?:page|qty|review):\d{1,5}|targetpick:toggle:[A-Z0-9][A-Z0-9._-]{2,79}:\d{1,5}|targetpick:(?:back|clear|search|paste|confirm))$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId ||
+            (Number(d.message?.flags || 0) & 64) !== 64)
+          return await reply("Open the private Target SKU picker using Select Target SKUs.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        const action = d.data.custom_id.split(":")[1];
+        if (action === "search" || action === "paste") {
+          return await api(callback, "POST", { type: 9, data: {
+            custom_id: "targetpick:" + action + ":submit",
+            title: action === "search" ? "Search Target Products" : "Paste Target SKU List",
+            components: [{ type: 1, components: [{
+              type: 4, style: action === "paste" ? 2 : 1, required: true,
+              custom_id: action === "paste" ? "skus" : "query",
+              label: action === "paste" ? "Comma-separated Target SKUs" : "Product name or SKU number",
+              placeholder: action === "paste" ? "1010892076,1012422107,1012644665" : "Search by product name or SKU",
+              min_length: 1, max_length: action === "paste" ? 1800 : 100
+            }] }]
+          } });
+        }
+        if (action === "confirm") {
+          await api(callback, "POST", { type: 5, data: { flags: 64 } });
+          try {
+            const result = await confirmTargetPicker(userId,
+              d.member?.user?.global_name || d.member?.user?.username || userId);
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+              skuSelectionView(result.items, result.unchanged ?
+                "No changes to your saved SKU selections." :
+                "Target SKUs confirmed. Your private selections and the owner's request have been updated.",
+                0, ownerSkuGroup));
+          } catch (error) {
+            return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", {
+              content: error.message, embeds: [], components: [], allowed_mentions: { parse: [] }
+            });
+          }
+        }
+        const master = await withTargetMasterQueue(loadTargetMaster);
+        let draft, view = "picker", reviewPage = 0, notice = "";
+        try {
+          if (action === "page") {
+            const page = Number(d.data.custom_id.split(":")[2]);
+            draft = await targetPickerDraft(userId, master, row => ({ ...row, page }));
+          } else if (action === "toggle") {
+            const parts = d.data.custom_id.split(":");
+            const chosen = parts[2], page = Number(parts[3]);
+            draft = await targetPickerDraft(userId, master, row => ({
+              ...toggleTargetPick(master, row, chosen), page
+            }));
+          } else if (action === "qty") {
+            const quantity = Number(d.data.custom_id.split(":")[2]);
+            draft = await targetPickerDraft(userId, master, row => setTargetPickQuantity(row, quantity));
+          } else if (action === "clear") {
+            draft = await targetPickerDraft(userId, master, row => searchTargetPicks(row, ""));
+          } else if (action === "review") {
+            draft = await targetPickerDraft(userId, master);
+            view = "review";
+            reviewPage = Number(d.data.custom_id.split(":")[2]);
+          } else if (action === "back") {
+            draft = await targetPickerDraft(userId, master);
+          } else return await reply("Unknown Target SKU picker control.");
+        } catch (error) {
+          return await reply(error.message || "Unable to update your Target selections.");
+        }
+        return await api(callback, "POST", { type: 7,
+          data: view === "review" ? targetMasterPickReview(master, draft, reviewPage) :
+            targetMasterPicker(master, draft, draft.page || 0, notice)
+        });
+      }
+      if (d.type === 5 && /^targetpick:(search|paste):submit$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Open the Target picker in #target-skus.");
+        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        await api(callback, "POST", { type: 5, data: { flags: 64 } });
+        try {
+          const master = await withTargetMasterQueue(loadTargetMaster);
+          const fields = (d.data.components || []).flatMap(row => row.components || []);
+          const action = d.data.custom_id.split(":")[1];
+          const value = String(fields.find(row => row.custom_id === (action === "paste" ? "skus" : "query"))?.value || "");
+          let message = "";
+          const draft = await targetPickerDraft(userId, master, row => {
+            if (action === "search") return searchTargetPicks(row, value);
+            const change = pasteTargetPicks(master, row, value);
+            message = change.added ? "Added " + change.added + " SKU(s) to the draft." : "Those SKUs are already selected.";
+            return change.draft;
+          });
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH",
+            targetMasterPicker(master, draft, draft.page || 0, message));
+        } catch (error) {
+          return await api("/webhooks/" + appId + "/" + d.token + "/messages/@original", "PATCH", {
+            content: error.message || "Unable to process that input. No SKUs were changed.",
+            allowed_mentions: { parse: [] }, embeds: [], components: []
+          });
+        }
+      }
       // Comma-separated owner-only SKU exports, one retailer at a time.
       if (d.type === 3 && /^sku:copy:\d{17,22}:(target|walmart|pokemon|costco|sams)(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== skuRequestsChannelId || String(userId) !== String(ownerId))
