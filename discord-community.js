@@ -2843,6 +2843,42 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
     await fs.rename(temp, file);
   }
+  // Repair legacy saved records once at startup. Preserve all unique choices,
+  // make a copy of the original JSON before writing, and edit the owner's
+  // existing Discord message in place without sending another notification.
+  async function repairExistingSkuDuplicates() {
+    return withSkuQueue(async () => {
+      const records = await readSkuFile(skuSelectionsFile);
+      const updates = [];
+      for (const [userId, record] of Object.entries(records)) {
+        if (!Array.isArray(record?.items)) continue;
+        const unique = uniqueSkuSelections(record.items, ownerSkuGroup);
+        if (unique.length === record.items.length) continue;
+        updates.push({ userId, record, removed: record.items.length - unique.length });
+        record.items = unique;
+      }
+      if (!updates.length) return { users: 0, removed: 0 };
+      const backup = skuSelectionsFile.replace(/\.json$/, ".backup-before-retailer-dedup-20261110.json");
+      await fs.copyFile(skuSelectionsFile, backup, fs.constants.COPYFILE_EXCL)
+        .catch(error => { if (error.code !== "EEXIST") throw error; });
+      await writeSkuFile(skuSelectionsFile, records);
+      for (const { userId, record } of updates) {
+        if (!skuRequestsChannelId || !/^\d{17,22}$/.test(String(record.messageId || ""))) continue;
+        try {
+          const payload = ownerSkuPayload(userId, record.username || userId, record.items,
+            "Existing duplicate SKU entries removed", record.skipTonightDate, record.skippedUpcomingDrops);
+          // Editing rather than posting avoids pinging the owner or duplicating alerts.
+          payload.allowed_mentions = { parse: [] };
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH", payload);
+        } catch (error) {
+          console.error("Owner SKU duplicate message refresh:", error.message);
+        }
+      }
+      const removed = updates.reduce((total, row) => total + row.removed, 0);
+      console.log("SKU duplicate repair:", JSON.stringify({ users: updates.length, removed }));
+      return { users: updates.length, removed };
+    });
+  }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
   async function hasPaidSkuAccess(userId) {
     // Verified guild ownership is the single testing bypass, not admin/staff roles.
@@ -3771,7 +3807,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       if (d.type === 3 && /^sku:mine:\d{1,3}$/.test(d.data?.custom_id || "")) {
         const selections = await readSkuFile(skuSelectionsFile);
         return await api(callback, "POST", { type: 7, data:
-          skuSelectionView(selections[userId]?.items || [], "", Number(d.data.custom_id.split(":")[2]))
+          skuSelectionView(selections[userId]?.items || [], "", Number(d.data.custom_id.split(":")[2]), ownerSkuGroup)
         });
       }
       if (d.type === 3 && /^sku:admin:\d{17,22}:\d{1,3}$/.test(d.data?.custom_id || "")) {
@@ -3779,14 +3815,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           return await reply("Only the owner or Support Staff may review another customer's selections.");
         const [, , targetId, pageString] = d.data.custom_id.split(":");
         const selections = await readSkuFile(skuSelectionsFile);
-        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString));
+        const data = skuAdminReviewPayload(selections[targetId]?.items || [], targetId, Number(pageString), ownerSkuGroup);
         const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
         return await api(callback, "POST", { type: ephemeral ? 7 : 4, data: ephemeral ? data : { flags: 64, ...data } });
       }
       if (d.type === 3 && d.data?.custom_id === "sku:view") {
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         const selections = await readSkuFile(skuSelectionsFile);
-        return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || []));
+        return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || [], "", 0, ownerSkuGroup));
       }
       if (d.type === 3 && /^sku:manage:(?:0|15)$/.test(d.data?.custom_id || "")) {
         if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
@@ -4568,6 +4604,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
