@@ -3769,6 +3769,112 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      // Comma-separated owner-only SKU exports, one retailer at a time.
+      if (d.type === 3 && /^sku:copy:\d{17,22}:(target|walmart|pokemon|costco|sams)(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== skuRequestsChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can copy a customer's SKUs in #sku-requests.");
+        const parts = d.data.custom_id.split(":");
+        const customerId = parts[2], retailer = parts[3], page = Number(parts[4] || 0);
+        const record = (await readSkuFile(skuSelectionsFile))[customerId];
+        if (!record) return await reply("That user has no saved SKU selections.");
+        if (parts.length === 4 && String(d.message?.id || "") !== String(record.messageId || ""))
+          return await reply("This selection message was replaced. Use the newest message.");
+        const data = ownerRetailerSkuCopyPayload(record.items, ownerSkuGroup, retailer, customerId, page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:view:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Use this button in #targetskulist.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        const data = targetMasterView(await withTargetMasterQueue(loadTargetMaster), page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:manage:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can manage Target master SKUs.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        const data = targetMasterManage(await withTargetMasterQueue(loadTargetMaster), page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:choose:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can remove Target master SKUs.");
+        const sku = String(d.data.values?.[0] || "");
+        const row = (await withTargetMasterQueue(loadTargetMaster)).entries?.[sku];
+        if (!row) return await reply("That SKU is no longer on the master. Reopen Manage SKUs.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        return await api(callback, "POST", { type: 7, data: {
+          flags: 64, allowed_mentions: { parse: [] },
+          content: "Remove **" + skuSafeText(row.name) + "** (" + sku + ") from Target Master?\n" +
+            "This does not remove customers' existing selections. A repost will not automatically restore it.",
+          components: [{ type: 1, components: [
+            { type: 2, style: 4, label: "Confirm Removal", custom_id: "targetmaster:remove:" + sku },
+            { type: 2, style: 2, label: "Cancel", custom_id: "targetmaster:manage:" + page }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^targetmaster:remove:[A-Z0-9][A-Z0-9._-]{2,79}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can remove Target master SKUs.");
+        const sku = d.data.custom_id.slice("targetmaster:remove:".length);
+        const result = await withTargetMasterQueue(async () => {
+          const master = await loadTargetMaster();
+          const next = targetMasterRemove(master, sku, userId);
+          if (!next.removed) return { removed: false, refreshed: true };
+          await writeSkuFile(targetMasterFile, next.master);
+          let refreshed = true;
+          try { await publishTargetMaster(next.master); }
+          catch (error) { refreshed = false; console.error("Target master removal display:", error.message); }
+          return { removed: true, refreshed };
+        });
+        const msg = !result.removed
+          ? "SKU " + sku + " is not on the master list."
+          : "Removed " + sku + " from Target Master. Future posts will not automatically restore it." +
+            (result.refreshed ? "" : " Saved successfully, but the Discord card did not refresh.");
+        return await api(callback, "POST", { type: 7, data: {
+          flags: 64, allowed_mentions: { parse: [] }, content: msg, components: []
+        } });
+      }
+      if (d.type === 3 && d.data?.custom_id === "targetmaster:add") {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can add or restore a Target master SKU.");
+        return await api(callback, "POST", { type: 9, data: {
+          custom_id: "targetmaster:add:submit", title: "Add / Restore Target SKU",
+          components: [
+            { type: 1, components: [{ type: 4, style: 1, custom_id: "sku",
+              label: "Target SKU / TCIN", placeholder: "1012345678",
+              min_length: 3, max_length: 79, required: true }] },
+            { type: 1, components: [{ type: 4, style: 1, custom_id: "product_name",
+              label: "Product Name", min_length: 3, max_length: 180, required: true }] }
+          ]
+        } });
+      }
+      if (d.type === 5 && d.data?.custom_id === "targetmaster:add:submit") {
+        if (String(userId) !== String(ownerId))
+          return await reply("Only the owner can add or restore a Target master SKU.");
+        const fields = (d.data.components || []).flatMap(row => row.components || []);
+        const sku = String(fields.find(x => x.custom_id === "sku")?.value || "");
+        const name = String(fields.find(x => x.custom_id === "product_name")?.value || "");
+        let result;
+        try {
+          result = await withTargetMasterQueue(async () => {
+            const saved = await loadTargetMaster();
+            const next = targetMasterRestore(saved, sku, name, userId);
+            await writeSkuFile(targetMasterFile, next.master);
+            let refreshed = true;
+            try { await publishTargetMaster(next.master); }
+            catch (error) { refreshed = false; console.error("Target master add display:", error.message); }
+            return { ...next, refreshed };
+          });
+        } catch (error) {
+          return await reply(error.message || "Unable to save that Target SKU.");
+        }
+        return await reply((result.created ? "Added " : "Updated/restored ") +
+          "Target SKU " + String(sku).trim().toUpperCase() + "." +
+          (result.refreshed ? "" : " Saved, but the public Discord card did not refresh."));
+      }
 
       if(d.type===3&&d.data?.custom_id==="instore:role"){
         if(d.channel_id!==serverRolesChannelId)return await reply("Use the buttons in #server-roles.");
