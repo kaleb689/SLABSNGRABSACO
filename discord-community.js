@@ -10,6 +10,11 @@ import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js"
 import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
+import {
+  TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
+  targetMasterDashboard, targetMasterView, targetMasterManage
+} from "./target-sku-master.js";
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
@@ -594,6 +599,57 @@ export function uniqueSkuSelections(items, groupOf) {
   return [...unique.values()];
 }
 
+// A retailer copy button sends this single comma-separated line for direct
+// pasting into an ACO module. It never includes another retailer's entries.
+export const RETAILER_COPY_LABELS = Object.freeze({
+  target: "Target", walmart: "Walmart", pokemon: "PKC",
+  costco: "Costco", sams: "Sam's"
+});
+export function ownerRetailerSkuGroups(items, groupOf) {
+  const groups = { target: [], walmart: [], pokemon: [], costco: [], sams: [] };
+  const seen = new Map(Object.keys(groups).map(key => [key, new Set()]));
+  for (const row of uniqueSkuSelections(items, groupOf)) {
+    const label = typeof groupOf === "function" ? groupOf(row) : "";
+    const retailer = skuRetailerIdentity(label) || skuRetailerIdentity(row?.retailer);
+    if (!Object.hasOwn(groups, retailer)) continue;
+    const sku = String(row.sku || "").trim().toUpperCase();
+    if (!sku || seen.get(retailer).has(sku)) continue;
+    seen.get(retailer).add(sku);
+    groups[retailer].push(sku);
+  }
+  return groups;
+}
+export function ownerRetailerSkuCopyPayload(items, groupOf, retailer, userId, requestedPage = 0) {
+  const labels = RETAILER_COPY_LABELS;
+  if (!Object.hasOwn(labels, retailer)) throw new Error("Invalid retailer.");
+  const skus = ownerRetailerSkuGroups(items, groupOf)[retailer];
+  const parts = [];
+  let current = "";
+  for (const sku of skus) {
+    const piece = (current ? "," : "") + sku;
+    if (current && current.length + piece.length > 1550) {
+      parts.push(current); current = sku;
+    } else current += piece;
+  }
+  if (current) parts.push(current);
+  const page = Math.max(0, Math.min(parts.length - 1, Number(requestedPage) || 0));
+  const content = skus.length
+    ? "**Copy " + labels[retailer] + " SKUs (" + skus.length +
+      (parts.length > 1 ? ") · Part " + (page + 1) + "/" + parts.length : ")") +
+      "**\n" + String.fromCharCode(96).repeat(3) + "\n" + parts[page] + "\n" + String.fromCharCode(96).repeat(3) +
+      "\nTap and hold the code block to copy. Only SKU numbers are included."
+    : "No " + labels[retailer] + " SKUs are currently selected.";
+  return {
+    flags: 64, allowed_mentions: { parse: [] }, content,
+    ...(parts.length > 1 ? { components: [{
+      type: 1, components: [
+        { type: 2, style: 2, label: "Previous", custom_id: "sku:copy:" + userId + ":" + retailer + ":" + (page - 1), disabled: page === 0 },
+        { type: 2, style: 2, label: "Next", custom_id: "sku:copy:" + userId + ":" + retailer + ":" + (page + 1), disabled: page === parts.length - 1 }
+      ]
+    }] } : {})
+  };
+}
+
 // Compare logical selections, ignoring stale duplicates and repost IDs.
 export function skuSelectionChanges(previousItems, nextItems, groupOf) {
   const index = items => new Map(uniqueSkuSelections(items, groupOf)
@@ -1008,7 +1064,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.json();
   }
   let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, targetSkuListChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
     for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
@@ -1187,6 +1243,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
+    targetSkuListChannelId = channels.find(item => item.type === 0 &&
+      normalizeName(item.name) === "targetskulist")?.id || null;
+    if (!targetSkuListChannelId) console.warn("Target master channel #targetskulist not found; catalog will still persist.");
     let support = channels.find(item => item.type === 4 && normalizeName(item.name) === "support");
     const supportText = channels.find(item => item.type === 0 && normalizeName(item.name) === "support");
     if (!support && supportText?.parent_id) support = channels.find(item => item.id === supportText.parent_id && item.type === 4);
@@ -2804,6 +2863,84 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     skuAlertQueue = queued.catch(() => {});
     return queued;
   };
+  const targetMasterFile = path.join(dataDir, "discord-target-sku-master.json");
+  let targetMasterQueue = Promise.resolve();
+  function withTargetMasterQueue(task) {
+    const queued = targetMasterQueue.then(task);
+    targetMasterQueue = queued.catch(() => {});
+    return queued;
+  }
+  async function loadTargetMaster() {
+    try {
+      const master = JSON.parse(await fs.readFile(targetMasterFile, "utf8"));
+      if (!master || typeof master !== "object" || !master.entries || !master.removed ||
+          !master.startedAt) throw new Error("Target master data is invalid; retained for recovery.");
+      return master;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      // Seed only a missing catalog, never overwrite saved owner removals.
+      const master = initialTargetMaster();
+      await writeSkuFile(targetMasterFile, master);
+      return master;
+    }
+  }
+  async function publishTargetMaster(master) {
+    if (!targetSkuListChannelId) return false;
+    const payload = targetMasterDashboard(master);
+    let posted = null;
+    if (master.messageId) {
+      try {
+        posted = await api("/channels/" + targetSkuListChannelId + "/messages/" + master.messageId, "PATCH", payload);
+      } catch (error) {
+        if (!/HTTP 404/.test(error.message)) throw error;
+      }
+    }
+    if (!posted) {
+      const recent = await api("/channels/" + targetSkuListChannelId + "/messages?limit=100");
+      const prior = recent.find(message => String(message.author?.id || "") === String(appId) &&
+        message.embeds?.some(embed => embed.footer?.text === TARGET_MASTER_MARKER));
+      if (prior) posted = await api("/channels/" + targetSkuListChannelId + "/messages/" + prior.id, "PATCH", payload);
+    }
+    if (!posted) posted = await api("/channels/" + targetSkuListChannelId + "/messages", "POST", payload);
+    if (posted?.id && posted.id !== master.messageId) {
+      master.messageId = posted.id;
+      await writeSkuFile(targetMasterFile, master);
+    }
+    return true;
+  }
+  async function recordTargetMasterPost(message, products) {
+    const channelId = String(message?.channel_id || "");
+    if (!dropChannelIds.has(channelId) || !isNewDropPost(message) || message.webhook_id ||
+        (message.author?.bot && !isFormattedDropPost(message, appId))) return [];
+    const directTarget = retailerFromDropLabel(retailerDropLabels[channelId]) === "target";
+    const generalDrop = channelId === tonightChannelId || channelId === upcomingChannelId;
+    const candidates = targetSkuCandidates(message, products, { directTarget, generalDrop });
+    if (!candidates.length) return [];
+    return withTargetMasterQueue(async () => {
+      const master = await loadTargetMaster();
+      const eventTime = targetMessageTime(message);
+      // Never reconstruct historical posts: only those from the live cutoff.
+      if (!Number.isFinite(eventTime) || eventTime < Date.parse(master.startedAt)) return [];
+      const { master: next, added } = targetMasterAdd(master, candidates, {
+        channelId, messageId: message.id, at: new Date(eventTime).toISOString()
+      });
+      if (!added.length) return [];
+      await writeSkuFile(targetMasterFile, next);
+      await publishTargetMaster(next)
+        .catch(error => console.error("Target master display refresh:", error.message));
+      console.log("Target SKU master added:", JSON.stringify({ count: added.length, total: targetMasterItems(next).length }));
+      return added;
+    });
+  }
+  async function initializeTargetMaster() {
+    return withTargetMasterQueue(async () => {
+      const master = await loadTargetMaster();
+      await publishTargetMaster(master);
+      console.log("Target SKU master ready:", targetMasterItems(master).length);
+      return targetMasterItems(master).length;
+    });
+  }
+
   const skuSelectionsFile = path.join(dataDir, "discord-sku-selections.json");
   const skuDraftsFile = path.join(dataDir, "discord-sku-drafts.json");
   const skuReminderPanelsFile = path.join(dataDir, "discord-sku-reminder-panels.json");
@@ -3017,6 +3154,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     if (!dropChannelIds.has(message.channel_id) ||
         (message.author?.bot && !isFormattedDropPost(message, appId)) || message.webhook_id) return;
     const products = parseDropSkus(message);
+    await recordTargetMasterPost(message, products)
+      .catch(error => console.error("Target SKU master update:", error.message));
     const upcomingWithoutSkus = message.channel_id === upcomingChannelId &&
       isNewDropPost(message) && (message.type ?? 0) === 0;
     const shouldShow = products.length > 0 || upcomingWithoutSkus;
@@ -3390,6 +3529,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // staff drop posts and free-form messages keep their existing behavior.
     const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
       ? parseMonitorDropProducts(d) : [];
+    await recordTargetMasterPost(d, monitored.length ? monitored : parseDropSkus(d))
+      .catch(error => console.error("Target SKU master raw post:", error.message));
     if (monitored.length) {
       try {
         const label = dropChannelLabel(d.channel_id);
@@ -3506,10 +3647,46 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           description: skippedUpcomingDrops.map(drop => `[Upcoming drop](https://discord.com/channels/${guildId}/${drop.channelId}/${drop.sourceId})`).join("\n"), color: 0xe74c3c }] : []),
         summary
       ],
-      components: items.length > 30 ? [{ type: 1, components: [{
-        type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
-      }] }] : []
+      components: [
+        ...(items.length > 30 ? [{ type: 1, components: [{
+          type: 2, style: 1, label: "View all " + items.length + " SKUs", custom_id: "sku:admin:" + userId + ":0"
+        }] }] : []),
+        ...(() => {
+          const groups = ownerRetailerSkuGroups(items, ownerSkuGroup);
+          const copy = Object.entries(RETAILER_COPY_LABELS)
+            .filter(([key]) => groups[key].length)
+            .map(([key, label]) => ({
+              type: 2, style: 2, label: "Copy " + label + " (" + groups[key].length + ")",
+              custom_id: "sku:copy:" + userId + ":" + key
+            }));
+          return copy.length ? [{ type: 1, components: copy }] : [];
+        })()
+      ]
     };
+  }
+  // Add copy buttons to already-published messages without reposting, pinging
+  // members, or erasing the original Added/Removed history in their embeds.
+  async function refreshExistingOwnerCopyButtons() {
+    if (!skuRequestsChannelId) return 0;
+    return withSkuQueue(async () => {
+      const records = await readSkuFile(skuSelectionsFile);
+      let refreshed = 0;
+      for (const [memberId, record] of Object.entries(records)) {
+        if (!/^\d{17,22}$/.test(String(record?.messageId || ""))) continue;
+        const payload = ownerSkuPayload(memberId, record.username || memberId, record.items || [],
+          "Existing selections", record.skipTonightDate, record.skippedUpcomingDrops || []);
+        try {
+          await api("/channels/" + skuRequestsChannelId + "/messages/" + record.messageId, "PATCH",
+            { components: payload.components, allowed_mentions: { parse: [] } });
+          refreshed++;
+        } catch (error) {
+          if (!/HTTP 404/.test(error.message))
+            console.error("Existing SKU copy controls update:", error.message);
+        }
+      }
+      console.log("SKU retailer copy controls refreshed:", refreshed);
+      return refreshed;
+    });
   }
   async function skipDrop(userId, username, sourceId, channelId) {
     if (!skuRequestsChannelId) throw new Error("The private SKU requests channel is not ready.");
@@ -3616,6 +3793,112 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      // Comma-separated owner-only SKU exports, one retailer at a time.
+      if (d.type === 3 && /^sku:copy:\d{17,22}:(target|walmart|pokemon|costco|sams)(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== skuRequestsChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can copy a customer's SKUs in #sku-requests.");
+        const parts = d.data.custom_id.split(":");
+        const customerId = parts[2], retailer = parts[3], page = Number(parts[4] || 0);
+        const record = (await readSkuFile(skuSelectionsFile))[customerId];
+        if (!record) return await reply("That user has no saved SKU selections.");
+        if (parts.length === 4 && String(d.message?.id || "") !== String(record.messageId || ""))
+          return await reply("This selection message was replaced. Use the newest message.");
+        const data = ownerRetailerSkuCopyPayload(record.items, ownerSkuGroup, retailer, customerId, page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:view:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId) return await reply("Use this button in #targetskulist.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        const data = targetMasterView(await withTargetMasterQueue(loadTargetMaster), page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:manage:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can manage Target master SKUs.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        const data = targetMasterManage(await withTargetMasterQueue(loadTargetMaster), page);
+        const ephemeral = (Number(d.message?.flags || 0) & 64) === 64;
+        return await api(callback, "POST", { type: ephemeral ? 7 : 4, data });
+      }
+      if (d.type === 3 && /^targetmaster:choose:\d{1,4}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can remove Target master SKUs.");
+        const sku = String(d.data.values?.[0] || "");
+        const row = (await withTargetMasterQueue(loadTargetMaster)).entries?.[sku];
+        if (!row) return await reply("That SKU is no longer on the master. Reopen Manage SKUs.");
+        const page = Number(d.data.custom_id.split(":")[2]);
+        return await api(callback, "POST", { type: 7, data: {
+          flags: 64, allowed_mentions: { parse: [] },
+          content: "Remove **" + skuSafeText(row.name) + "** (" + sku + ") from Target Master?\n" +
+            "This does not remove customers' existing selections. A repost will not automatically restore it.",
+          components: [{ type: 1, components: [
+            { type: 2, style: 4, label: "Confirm Removal", custom_id: "targetmaster:remove:" + sku },
+            { type: 2, style: 2, label: "Cancel", custom_id: "targetmaster:manage:" + page }
+          ] }]
+        } });
+      }
+      if (d.type === 3 && /^targetmaster:remove:[A-Z0-9][A-Z0-9._-]{2,79}$/.test(d.data?.custom_id || "")) {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can remove Target master SKUs.");
+        const sku = d.data.custom_id.slice("targetmaster:remove:".length);
+        const result = await withTargetMasterQueue(async () => {
+          const master = await loadTargetMaster();
+          const next = targetMasterRemove(master, sku, userId);
+          if (!next.removed) return { removed: false, refreshed: true };
+          await writeSkuFile(targetMasterFile, next.master);
+          let refreshed = true;
+          try { await publishTargetMaster(next.master); }
+          catch (error) { refreshed = false; console.error("Target master removal display:", error.message); }
+          return { removed: true, refreshed };
+        });
+        const msg = !result.removed
+          ? "SKU " + sku + " is not on the master list."
+          : "Removed " + sku + " from Target Master. Future posts will not automatically restore it." +
+            (result.refreshed ? "" : " Saved successfully, but the Discord card did not refresh.");
+        return await api(callback, "POST", { type: 7, data: {
+          flags: 64, allowed_mentions: { parse: [] }, content: msg, components: []
+        } });
+      }
+      if (d.type === 3 && d.data?.custom_id === "targetmaster:add") {
+        if (d.channel_id !== targetSkuListChannelId || String(userId) !== String(ownerId))
+          return await reply("Only the owner can add or restore a Target master SKU.");
+        return await api(callback, "POST", { type: 9, data: {
+          custom_id: "targetmaster:add:submit", title: "Add / Restore Target SKU",
+          components: [
+            { type: 1, components: [{ type: 4, style: 1, custom_id: "sku",
+              label: "Target SKU / TCIN", placeholder: "1012345678",
+              min_length: 3, max_length: 79, required: true }] },
+            { type: 1, components: [{ type: 4, style: 1, custom_id: "product_name",
+              label: "Product Name", min_length: 3, max_length: 180, required: true }] }
+          ]
+        } });
+      }
+      if (d.type === 5 && d.data?.custom_id === "targetmaster:add:submit") {
+        if (String(userId) !== String(ownerId))
+          return await reply("Only the owner can add or restore a Target master SKU.");
+        const fields = (d.data.components || []).flatMap(row => row.components || []);
+        const sku = String(fields.find(x => x.custom_id === "sku")?.value || "");
+        const name = String(fields.find(x => x.custom_id === "product_name")?.value || "");
+        let result;
+        try {
+          result = await withTargetMasterQueue(async () => {
+            const saved = await loadTargetMaster();
+            const next = targetMasterRestore(saved, sku, name, userId);
+            await writeSkuFile(targetMasterFile, next.master);
+            let refreshed = true;
+            try { await publishTargetMaster(next.master); }
+            catch (error) { refreshed = false; console.error("Target master add display:", error.message); }
+            return { ...next, refreshed };
+          });
+        } catch (error) {
+          return await reply(error.message || "Unable to save that Target SKU.");
+        }
+        return await reply((result.created ? "Added " : "Updated/restored ") +
+          "Target SKU " + String(sku).trim().toUpperCase() + "." +
+          (result.refreshed ? "" : " Saved, but the public Discord card did not refresh."));
+      }
 
       if(d.type===3&&d.data?.custom_id==="instore:role"){
         if(d.channel_id!==serverRolesChannelId)return await reply("Use the buttons in #server-roles.");
@@ -4604,7 +4887,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
+      await refreshExistingOwnerCopyButtons()
+        .catch(error => console.error("SKU copy controls startup:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));

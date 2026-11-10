@@ -60,6 +60,7 @@ test("successful monitor paste cleanup removes only the raw source after posting
   const context={guildId:"guild",ownerId:"owner",appId:"bot",dropChannelIds:new Set(["drop"]),retailerDropLabels:{drop:"Target"},
     inStoreChannelId:"instore",dropChannelLabel:()=>"Target",
     isNewDropPost:()=>true,parseMonitorDropProducts:()=>[{name:"Box",sku:"12345"}],
+    parseDropSkus:()=>[],recordTargetMasterPost:async()=>[],
     formattedDropPayloads:()=>[{content:"formatted",embeds:[]}],
     api:async(path,method)=>{calls.push(method);return {id:"formatted"};},
     ensureSkuControls:async()=>{},notifyRetailerSkuChange:async()=>{},notifyUpcomingRetailerAnnouncement:async()=>{},console};
