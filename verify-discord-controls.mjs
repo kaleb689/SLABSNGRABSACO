@@ -3,8 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
-import {mentionedRetailers, retailerAlert} from './retailer-alert-roles.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, ownerRetailerSkuGroups, ownerRetailerSkuCopyPayload, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
+import {mentionedRetailers, retailerAlert, retailerFromDropLabel} from './retailer-alert-roles.js';
+import {
+  TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
+  targetMasterDashboard, targetMasterView, targetMasterManage
+} from './target-sku-master.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
 import {skuReminderOwnerPanel} from './sku-reminders.js';
 import {createDropMessageRetention} from './discord-drop-retention.js';
@@ -33,16 +38,49 @@ async function api(route, method='GET', payload) {
   if (method==='PATCH') { Object.assign(existing,payload);changes.push(existing); }
   return existing;
 }
-const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',ownerId:owner,appId:'1551070928039845900',
-  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',targetSkuListChannelId:'targetmaster',ownerId:owner,appId:'1551070928039845900',
+  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,ownerRetailerSkuGroups,ownerRetailerSkuCopyPayload,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
-  withoutSupersededSkus,mentionedRetailers,retailerAlert,isFormattedDropPost,inStoreChannelId:'1551070928039845970',
+  withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,
+  TARGET_MASTER_MARKER,initialTargetMaster,targetMasterItems,targetSkuCandidates,targetMessageTime,
+  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,inStoreChannelId:'1551070928039845970',
   dropChannelLabel:id=>deps.retailerDropLabels[id]||(id===tonightChannelId?'Dropping Tonight':'Upcoming Drops')};
-const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft,repairExistingSkuDuplicates};`);
+const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; ${block};return {ensureSkuControls,backfillDropMenus,skipDrop,recordSkuSelection,manageSkuSelection,mutateSkuDraft,confirmSkuDraft,repairExistingSkuDuplicates,ownerSkuPayload,refreshExistingOwnerCopyButtons,initializeTargetMaster,loadTargetMaster,recordTargetMasterPost};`);
 const controls=make(deps);
 try {
+  const seedCount = await controls.initializeTargetMaster();
+  assert.equal(seedCount,46,"Owner's approved initial Target master has 46 items");
+  const masterOriginal = JSON.parse(await fs.readFile(
+    path.join(dataDir,'discord-target-sku-master.json'),'utf8'));
+  assert.ok(messages.has(masterOriginal.messageId),"Target master dashboard is published in targetskulist");
+  assert.equal(messages.get(masterOriginal.messageId).embeds[0].footer.text,TARGET_MASTER_MARKER);
+  const targetId='1551070928039845980';
+  deps.dropChannelIds.add(targetId);
+  deps.retailerDropLabels[targetId]='Target Drops';
+  const targetPost=post('1551070928039845981',targetId,'New Target Product\nSKU: FRESH999');
+  targetPost.timestamp=new Date(Date.now()+15000).toISOString();
+  assert.deepEqual(await controls.recordTargetMasterPost(targetPost,parseDropSkus(targetPost)),['FRESH999']);
+  assert.deepEqual(await controls.recordTargetMasterPost(targetPost,parseDropSkus(targetPost)),[],
+    'repeated Discord events do not create duplicate master SKUs');
+  const targetGeneral=post('1551070928039845982',upcoming,'Target upcoming product\nSKU: FRESH998');
+  targetGeneral.timestamp=new Date(Date.now()+15000).toISOString();
+  assert.deepEqual(await controls.recordTargetMasterPost(targetGeneral,parseDropSkus(targetGeneral)),['FRESH998']);
+  const ambiguous=post('1551070928039845983',upcoming,'Target and Walmart Product\nSKU: NOTTARGET99');
+  ambiguous.timestamp=new Date(Date.now()+15000).toISOString();
+  assert.deepEqual(await controls.recordTargetMasterPost(ambiguous,parseDropSkus(ambiguous)),[],
+    'mixed retailers must not contaminate the Target master');
+  let masterAfter = await controls.loadTargetMaster();
+  assert.equal(targetMasterItems(masterAfter).length,48);
+  assert.equal(masterAfter.messageId,masterOriginal.messageId,
+    'owner master dashboard must be edited, never duplicated');
+  // An owner removal remains excluded even when the same post is reprocessed.
+  masterAfter=targetMasterRemove(masterAfter,'FRESH999',owner).master;
+  await fs.writeFile(path.join(dataDir,'discord-target-sku-master.json'),JSON.stringify(masterAfter));
+  assert.deepEqual(await controls.recordTargetMasterPost(targetPost,parseDropSkus(targetPost)),[]);
+  assert.equal((await controls.loadTargetMaster()).entries.FRESH999,undefined);
+
   const legacyMember = '1551070928039845998';
   const legacyOwnerMessage = await api('/channels/private/messages','POST',{content:'Old SKU summary'});
   const legacyRecords = { [legacyMember]: { username: 'legacy-member',
@@ -201,6 +239,19 @@ try {
   assert.ok(menus[olderTarget.id],'Older retailer drop must receive usable SKU controls');
   assert.ok(menus[newerTarget.id],'Newer retailer drop must receive usable SKU controls');
   assert.equal(menus[ordinaryRetailerChatter.id],undefined,'Chatter without product SKUs must not create a retailer selection/skip panel');
+  const groupedPayload=controls.ownerSkuPayload(batchUser,'batch-member',[
+    { key:targetId+':source1:TCIN123',sku:'TCIN123',name:'Target One',quantity:2 },
+    { key:targetId+':source2:TCIN123',sku:'TCIN123',name:'Reposted Target One',quantity:2 },
+    { key:targetId+':source2:TCIN124',sku:'TCIN124',name:'Target Two',quantity:2 },
+    { key:pkcId+':source3:PKC123',sku:'PKC123',name:'PKC product',quantity:2 }
+  ],"Confirmed 3 SKUs");
+  assert.ok(groupedPayload.components.flatMap(x=>x.components).some(x=>
+    x.custom_id==='sku:copy:'+batchUser+':target'));
+  assert.ok(groupedPayload.components.flatMap(x=>x.components).some(x=>
+    x.custom_id==='sku:copy:'+batchUser+':pokemon'));
+  assert.ok(!groupedPayload.components.flatMap(x=>x.components).some(x=>
+    x.custom_id==='sku:copy:'+batchUser+':walmart'));
+
   console.log('PASS: PKC channel gets SKU controls despite another channel HTTP 403; saved cross-retailer selections remain');
 
   console.log('PASS: channel aliases, existing Upcoming controls, tonight and per-post Upcoming opt-out/reversal, no-SKU opt-out, owner notifications, preserved other-drop selections, idempotency, menu growth and stale-control cleanup');
