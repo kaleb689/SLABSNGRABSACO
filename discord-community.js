@@ -11,7 +11,7 @@ import { createDropMessageRetention } from "./discord-drop-retention.js";
 import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 import {
-  TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  TARGET_MASTER_MARKER, findTargetMasterChannel, initialTargetMaster, targetMasterItems, targetSkuCandidates,
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
@@ -1246,10 +1246,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     // Reuse the owner's existing Target SKUs channel regardless of the
     // presentation of its name (target-skus, Target SKUs, target-sku-list).
     // Do not rename, move, or change the permissions of a channel found here.
-    targetSkuListChannelId = channels.find(item => item.type === 0 &&
-      ["targetskus", "targetsku", "targetskulist", "targetskumaster", "targetskumasterlist",
-        "targetskuledger", "targetskuinventory", "targetskucatalog"]
-        .includes(normalizeName(item.name)))?.id || null;
+    targetSkuListChannelId = findTargetMasterChannel(channels, normalizeName)?.id || null;
     if (targetSkuListChannelId) {
       const existingMasterChannel = channels.find(item => item.id === targetSkuListChannelId);
       console.log("Target SKU master existing channel:", JSON.stringify({
