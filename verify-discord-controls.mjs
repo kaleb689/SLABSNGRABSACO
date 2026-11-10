@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, ownerRetailerSkuGroups, ownerRetailerSkuCopyPayload, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
+import {parseDropSkus, dropChannelKind, changeSkuItems, skuSelectionView, skuOwnerDetails, skuSelectionChanges, uniqueSkuSelections, ownerRetailerSkuGroups, ownerRetailerSkuCopyPayload, RETAILER_COPY_LABELS, uniformSkuQuantity, setGlobalSkuQuantity, isNewDropPost, skuControlPayload, isSelectableSkuSource, isCoveredRawMonitorPost, withoutSupersededSkus} from './discord-community.js';
 import {mentionedRetailers, retailerAlert, retailerFromDropLabel} from './retailer-alert-roles.js';
 import {
   TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
@@ -39,7 +39,7 @@ async function api(route, method='GET', payload) {
   return existing;
 }
 const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,retailerDropLabels:{},dropChannelIds:new Set([upcoming,tonightChannelId]),guildId:'guild',skuRequestsChannelId:'private',targetSkuListChannelId:'targetmaster',ownerId:owner,appId:'1551070928039845900',
-  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,ownerRetailerSkuGroups,ownerRetailerSkuCopyPayload,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
+  parseDropSkus,isSelectableSkuSource,isCoveredRawMonitorPost,changeSkuItems,skuSelectionView,skuOwnerDetails,skuSelectionChanges,uniqueSkuSelections,ownerRetailerSkuGroups,ownerRetailerSkuCopyPayload,RETAILER_COPY_LABELS,uniformSkuQuantity,setGlobalSkuQuantity,isNewDropPost,skuControlPayload,api,
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
