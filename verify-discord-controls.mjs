@@ -107,7 +107,8 @@ try {
   assert.ok(savedBatch.every(item=>item.quantity===2));
   const batchRecord=JSON.parse(await fs.readFile(path.join(dataDir,'discord-sku-selections.json'),'utf8'))[batchUser];
   const adminBatch=messages.get(batchRecord.messageId);
-  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/\(ABC1234, XYZ5678\)/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/\(\*\*ABC1234\*\*, \*\*XYZ5678\*\*\)/);
+  assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/TCG Booster One added/);
   assert.match(adminBatch.embeds.map(item=>item.description).join('\n'),/Qty: 2/);
   assert.doesNotMatch(adminBatch.embeds.map(item=>item.description).join('\n'),/ABC1234 x2|XYZ5678 x2/);
   await assert.rejects(controls.confirmSkuDraft(batchUser,'batch-member',batchPost.id,upcoming),/draft is no longer active/);
