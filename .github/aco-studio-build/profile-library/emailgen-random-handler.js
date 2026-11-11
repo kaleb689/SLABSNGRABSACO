@@ -9,12 +9,11 @@
  // Forwarding aliases are not mailboxes: this password never authenticates
  // to Cloudflare, IMAP, SMTP, or the encrypted Personal email vault.
  const EMAIL_GEN_EXPORT_PASSWORD='Freeshit1!';
- // Use the 24-column schema from the owner's REAL Shikari export, not
- // the different ACO Studio internal Target export. Shikari's saved CSV has
- // index first and profile_name SECOND. Do not insert non-template fields.
- // Aliases are not verified retailer accounts; all non-alias fields stay blank.
+ // Exact 23-column header from owner's uploaded Shikari export (2).csv.
+ // No index and no password column: profile_name is FIRST; email is FOURTH.
+ // Do not fabricate unrelated names, payment details, phone numbers or addresses.
  const SHIKARI_SEED_COLUMNS=Object.freeze([
-  'index','profile_name','first_name','last_name','email','phone_num',
+  'profile_name','first_name','last_name','email','phone_num',
   'cc_number','cc_exp_month','cc_exp_year','cc_cvv',
   'shipping_street','shipping_street_2','shipping_city','shipping_state',
   'shipping_zip_code','shipping_country','billing_first_name','billing_last_name',
@@ -35,15 +34,14 @@
   const headers=mode==='shikari'?SHIKARI_SEED_COLUMNS:['profile_name','email','password'];
   const cell=value=>'"'+String(value).replace(/"/g,'""')+'"';
   const csv=headers.join(',')+'\r\n'+owned.map((row,index)=>{
-   const values={index:String(index),profile_name:'aco gen '+(index+1),
+   const values={profile_name:'aco gen '+(index+1),
     email:row.alias,password:EMAIL_GEN_EXPORT_PASSWORD};
-   // Match the owner's exported Shikari CSV: index is an unquoted number,
-   // profile_name is the second column, and there is no password field in
-   // the native Shikari profile layout. Keep passwords in Basic Email Gen CSV.
+   // Shikari format must match reference exactly: profile_name, first_name,...
+   // Native Shikari has no password column; leave that in the basic export.
    return mode==='shikari'?headers.map(key=>String(values[key]??'')).join(','):
     headers.map(key=>cell(values[key]??'')).join(',');
   }).join('\r\n')+'\r\n';
-  const expectedStart=mode==='shikari'?'index,profile_name,':'profile_name,email,password';
+  const expectedStart=mode==='shikari'?'profile_name,first_name,last_name,email,':'profile_name,email,password';
   if(!csv.startsWith(expectedStart)||csv.charCodeAt(0)===65279)
    throw Error('Shikari export header does not match its selected template.');
   return {count:owned.length,csv};
@@ -54,7 +52,7 @@
   if(!unlocked)throw Error('Unlock your encrypted owner Email Gen bank to export its aliases.');
   const result=buildEmailGenExportCsv(records,mode);
   if(!result.count)throw Error('Create emails in Email Gen before exporting.');
-  // No UTF-8 BOM before index (Shikari) or profile_name (basic).
+  // No UTF-8 BOM before profile_name in either export.
   // Some importers treat BOM as part of the field name.
   const blob=new Blob([result.csv],{type:extension==='txt'?'text/plain;charset=utf-8':'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
@@ -284,7 +282,7 @@
    try{
     const count=downloadEmailGenExport(mode,extension);
     randomNotice('Downloaded '+count+' Email Gen row(s). '+(mode==='shikari'?
-     'The actual Shikari reference layout is index,profile_name,... (24 columns), with aco gen 1 through aco gen '+count+'; all unprovided card/address fields remain empty. Shikari profile exports do NOT have a password column.':
+     'Matches the uploaded 23-column Shikari template with profile_name first and email fourth; aco gen 1 through aco gen '+count+'; unrelated card/address fields remain empty. Shikari profile exports do NOT have a password column.':
      'Basic Email Gen CSV has profile_name,email,password with aco gen 1 through aco gen '+count+' and the requested export-only password.'),true);
    }catch(error){randomNotice(String(error?.message||error));}
   });
