@@ -3,8 +3,9 @@
  // emails never cause a synchronous renderer repaint for every test result.
  const MAIL_TEST_CATCHALL_PREF='aco.emailgen.catchall.preferences.v1';
  const AUTO_TEST_GROUP_SIZE=25;
+ const AUTO_TEST_PREFLIGHT_SIZE=3;
  const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
-  loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,
+  loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
   paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0};
  let mailProgressTimer=null;
  const mailUIElement=id=>$e(id);
@@ -87,20 +88,22 @@
   }finally{mailTestState.loadingProfiles=false;}
  }
  function renderAutoTestProgress(){
-  const total=Math.max(0,mailTestState.total),done=mailTestState.done,pass=mailTestState.passed,fail=mailTestState.failed;
+  const total=Math.max(0,mailTestState.total),done=mailTestState.done,pass=mailTestState.passed,fail=mailTestState.failed,unknown=mailTestState.unconfirmed;
   const node=(id,text)=>{const el=mailUIElement(id);if(el)el.textContent=String(text);};
   node('randomTestProgress',done+'/'+total);
   node('randomTestPassed',pass);
   node('randomTestFailed',fail);
+  node('randomTestUnconfirmed',unknown);
   const denominator=Math.max(1,total);
-  const green=mailUIElement('randomTestGreenBar'),red=mailUIElement('randomTestRedBar');
+  const green=mailUIElement('randomTestGreenBar'),red=mailUIElement('randomTestRedBar'),amber=mailUIElement('randomTestAmberBar');
   if(green)green.style.width=(100*pass/denominator).toFixed(2)+'%';
   if(red)red.style.width=(100*fail/denominator).toFixed(2)+'%';
+  if(amber)amber.style.width=(100*unknown/denominator).toFixed(2)+'%';
   const recent=mailUIElement('randomTestRecent');
   if(recent){
    recent.replaceChildren();
    for(const item of mailTestState.recent.slice(-8).reverse()){
-    const p=document.createElement('p');p.style.color=item.status==='delivered'?'#40db99':'#ff858a';
+    const p=document.createElement('p');p.style.color=item.status==='delivered'?'#40db99':item.status==='unconfirmed'?'#ffc36f':'#ff858a';
     p.style.margin='2px 0';p.textContent=item.alias+' — '+(item.status==='delivered'?'PASSED':item.status==='unconfirmed'?'NOT CONFIRMED':'FAILED');
     recent.appendChild(p);
    }
@@ -119,13 +122,16 @@
   if(previous===status)return;
   if(finished.has(previous)){
    if(previous==='delivered')mailTestState.passed=Math.max(0,mailTestState.passed-1);
+   else if(previous==='unconfirmed')mailTestState.unconfirmed=Math.max(0,mailTestState.unconfirmed-1);
    else mailTestState.failed=Math.max(0,mailTestState.failed-1);
    mailTestState.done=Math.max(0,mailTestState.done-1);
   }
   mailTestState.statuses.set(key,status);
   if(finished.has(status)){
    mailTestState.done++;
-   if(status==='delivered')mailTestState.passed++;else mailTestState.failed++;
+   if(status==='delivered')mailTestState.passed++;
+   else if(status==='unconfirmed')mailTestState.unconfirmed++;
+   else mailTestState.failed++;
    mailTestState.recent.push({alias:key,status});
    if(mailTestState.recent.length>30)mailTestState.recent.shift();
   }
@@ -228,20 +234,22 @@
   }
   mailTestState.statuses=new Map();
   mailTestState.runId=createTestRunId();mailTestState.recent=[];
-  mailTestState.total=total;mailTestState.done=0;mailTestState.passed=0;mailTestState.failed=0;
+  mailTestState.total=total;mailTestState.done=0;mailTestState.passed=0;mailTestState.failed=0;mailTestState.unconfirmed=0;
   mailTestState.paused=false;mailTestState.cleanupPending=0;
   for(const bucket of profileBuckets.values())for(const row of bucket.rows)mailTestState.statuses.set(String(row.alias).toLowerCase(),'pending');
   const status=mailUIElement('randomTestStatus'),stop=mailUIElement('randomAliasTestStop');
-  stop.hidden=false;status.textContent='Testing '+total+' addresses automatically. Each confirmed delivery becomes green; missing or failed deliveries become red. Keep ACO Studio open while this runs.';
+  stop.hidden=false;status.textContent='Testing '+total+' addresses automatically. Confirmed receipts are green; SMTP send errors are red; messages not found in Inbox are amber. A short preflight checks routing before bulk testing.';
   renderAutoTestProgress();
   const stopTest=()=>mailTestState.cancel=true;
   try{
    for(const bucket of profileBuckets.values()){
     if(mailTestState.cancel||mailTestState.paused)break;
     const profile=bucket.profile,rows=bucket.rows;
-    for(let start=0;start<rows.length;start+=AUTO_TEST_GROUP_SIZE){
+    for(let start=0;start<rows.length;){
      if(mailTestState.cancel||mailTestState.paused)break;
-     const set=rows.slice(start,start+AUTO_TEST_GROUP_SIZE);
+     const preflight=start===0&&catchallForMailbox(profile.mailbox);
+     const set=rows.slice(start,start+(preflight?AUTO_TEST_PREFLIGHT_SIZE:AUTO_TEST_GROUP_SIZE));
+     start+=set.length;
      status.textContent='Checking '+profile.mailbox+' using sender '+profile.sender+' — '+mailTestState.done+'/'+total+' completed. Tests move into Trash after confirmed receipt.';
      const response=await api().testForwarding({
       mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:set.map(r=>r.alias)
@@ -265,6 +273,13 @@
      if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
      // Persist after each 25; do not rebuild the 10,000-row bank table on each result.
      refreshEmailBatchUI();
+     if(preflight&&Number(response.delivered||0)===0&&Number(response.sentButUnconfirmed||0)>0){
+      mailTestState.paused=true;
+      status.textContent='Paused after '+set.length+' preflight messages: NONE reached '+profile.mailbox+' Inbox. '+
+       'Check Cloudflare catch-all is Active, with Send to an email and destination '+profile.mailbox+'. '+
+       'Check Gmail Spam/All Mail too: the verifier currently searches Inbox only. The remaining addresses were not tested.';
+      break;
+     }
      if(response.rateLimited){
       mailTestState.paused=true;
       status.textContent='Email provider limit reached. Paused after '+mailTestState.done+'/'+total+' results; remaining addresses stay unverified. Try again when the provider allows more messages.';
@@ -277,7 +292,7 @@
    const pending=total-mailTestState.done;
    if(!mailTestState.paused){
     status.textContent=(mailTestState.cancel?'Stopped after current group. ':'Finished automated testing. ')+
-      mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' failed, '+pending+' not checked.'+
+      mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
       (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
