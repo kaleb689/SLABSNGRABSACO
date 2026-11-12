@@ -11,7 +11,11 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  assert.ok(html.indexOf('id="randomAliasCreate"')<html.indexOf('id="randomAliasPoolChooser"'));
  assert.match(html,/verified external IMAP inbox entered above/);
  assert.match(html,/id="randomAliasCount" min="1" max="10000"/);
- assert.match(html,/Cloudflare currently supports up to 200 standard Email Routing rules per domain/);
+ assert.match(html,/No retailer pool is required/);
+ assert.match(html,/id="randomAliasActivate"/);
+ assert.match(html,/id="randomAliasForwardStatus"/);
+ assert.match(html,/id="randomAliasCreate">Generate Only/);
+ assert.match(html,/Cloudflare standard Email Routing has a finite per-domain rules limit/);
 });
 test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
  const start=app.indexOf(' const RANDOM_FIRST_NAMES='),end=app.indexOf(' // CSV export values',start);
@@ -37,6 +41,19 @@ test('Encrypted Email Bank retains pool assignment and delivery test provenance 
  assert.match(app,/if\(!await store\(\)\)/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=retailer/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=null/);
+});
+test('Saved aliases can turn on forwarding without a retailer pool',()=>{
+ assert.match(app,/const unassignedRandom=\(\)=>records\.filter\(r=>r\.randomGenerated===true&&!r\.poolTarget\)/);
+ const start=app.indexOf(' async function activateUnassignedForwarding(){');
+ const end=app.indexOf(' async function publishRandomAndSync(){',start);
+ assert.ok(start>=0&&end>start);
+ const source=app.slice(start,end);
+ assert.match(source,/unassignedRandom\(\)\.filter/);
+ assert.match(source,/batch\.map\(\(\{alias,target\}\)=>\(\{alias,target\}\)\)/);
+ assert.match(source,/index\+=100/);
+ assert.doesNotMatch(source,/poolTarget\s*=/);
+ assert.doesNotMatch(source,/importLiveRandom\(\)/);
+ assert.match(app,/activate\.addEventListener\('click'/);
 });
 test('Cloudflare live AND exact mailbox receipt are mandatory before Personal unused-pool import',()=>{
  assert.match(app,/unsyncedRandom\(\)\.filter\(r=>r\.status==='live'&&r\.forwardingTestedAt&&r\.forwardingTestTarget===r\.target\)/);
