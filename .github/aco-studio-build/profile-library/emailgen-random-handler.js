@@ -1,9 +1,15 @@
  // Owner-only random Email Gen, injected inside the encrypted Email Bank closure.
  const RANDOM_RETAILERS=Object.freeze({target:'Target',walmart:'Walmart',pokemoncenter:'Pokemon Center',costco:'Costco',sams:"Sam's"});
  let randomGenBusy=false;
+ // Realistic, short name-style email aliases (10 characters maximum including digits).
+ // Keep secure randomness and let the creation loop reject existing aliases.
+ const RANDOM_FIRST_NAMES=Object.freeze(['ava','mia','zoe','ella','emma','lily','nina','maya','luna','ruby','clara','olive','hazel','alice','sarah','grace','naomi','chloe','sadie','molly','bella','cora','lucy','iris','ivy','jane','lena','anna','aria','noah','liam','levi','owen','jack','milo','ezra','theo','luca','cole','ryan','adam','finn','jude','nate','alex','ethan','mason','logan','caleb','henry','isaac','elias','jason','dylan','felix','troy','kyle','brady','eric','max']);
+ const RANDOM_LAST_NAMES=Object.freeze(['reed','ford','cole','hale','lane','hart','gray','west','park','ross','hill','king','bell','shaw','ward','ray','snow','dale','long','cook','fox','oak','rose','webb','cox','love','dean','hunt','pace','fry','rice','page','kerr','moss','tate','york','faye','dunn','moon','bush']);
  function randomLocal(){
-  const bytes=crypto.getRandomValues(new Uint8Array(12));
-  return 'sng'+Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  const bytes=crypto.getRandomValues(new Uint8Array(5));
+  const name=RANDOM_FIRST_NAMES[bytes[0]%RANDOM_FIRST_NAMES.length]+RANDOM_LAST_NAMES[bytes[1]%RANDOM_LAST_NAMES.length];
+  const twoDigits=name.length<=8&&bytes[2]%2===0;
+  return name+String(bytes[3]%10)+(twoDigits?String(bytes[4]%10):'');
  }
  // CSV export values are an owner-requested template for external imports.
  // Forwarding aliases are not mailboxes: this password never authenticates
