@@ -11,17 +11,22 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  assert.ok(html.indexOf('id="randomAliasCreate"')<html.indexOf('id="randomAliasPoolChooser"'));
  assert.match(html,/verified external IMAP inbox entered above/);
 });
-test('Random local parts use secure randomness; duplicates are checked without requesting names',()=>{
- const start=app.indexOf(' function randomLocal(){'),end=app.indexOf(' const unassignedRandom=',start);
+test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
+ const start=app.indexOf(' const RANDOM_FIRST_NAMES='),end=app.indexOf(' // CSV export values',start);
  assert.ok(start>=0&&end>start);
  const script=app.slice(start,end);
- const crypt={getRandomValues:array=>{for(let i=0;i<array.length;i++)array[i]=i;return array;}};
- const value=vm.runInNewContext(script+'\nrandomLocal()', {crypto:crypt,Uint8Array,Array});
- assert.equal(value,'sng000102030405060708090a0b');
- assert.match(app,/new Set\(records\.map\(r=>r\.alias\)\)/);
- assert.match(app,/if\(\+\+attempts>100\)/);
- assert.match(app,/count<1\|\|count>100/);
- assert.match(app,/makeAlias\('Random '\+local,local,target,currentDomain\(\)\)/);
+ let seed=0;
+ const crypt={getRandomValues:array=>{for(let i=0;i<array.length;i++)array[i]=(seed+i*29)%256;seed++;return array;}};
+ const ctx=vm.createContext({crypto:crypt,Uint8Array,Array,Object,String});
+ vm.runInContext(script,ctx);
+ const results=Array.from({length:500},()=>vm.runInContext('randomLocal()',ctx));
+ assert.ok(results.every(name=>/^[a-z]{5,9}[0-9]{1,2}$/.test(name)&&name.length<=10),results.find(name=>name.length>10));
+ assert.ok(new Set(results).size>200,'random aliases should have varied names');
+ assert.ok(results.every(name=>!name.startsWith('sng')),'Do not use the old sng plus hex alias format');
+ assert.match(app,/new Set\\(records\\.map\\(r=>r\\.alias\\)\\)/);
+ assert.match(app,/if\\(\\+\\+attempts>100\\)/);
+ assert.match(app,/count<1\\|\\|count>100/);
+ assert.match(app,/makeAlias\\('Random '\\+local,local,target,currentDomain\\(\\)\\)/);
 });
 test('Encrypted Email Bank retains pool assignment and delivery test provenance across reload',()=>{
  for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:'])assert.ok(app.includes(field),field);
