@@ -3885,12 +3885,24 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const id=String(message?.author?.id||"");
     if(!id || message.author?.bot || message.webhook_id) return false;
     if(id===String(ownerId||"")) return true;
-    if(!staffRoleId) return false;
-    if((message.member?.roles||[]).includes(String(staffRoleId))) return true;
-    // A history fetch may omit the guild member object.
+    let memberRoles=Array.isArray(message.member?.roles)?message.member.roles:[];
+    if(staffRoleId && memberRoles.includes(String(staffRoleId))) return true;
     try {
-      const member=await api("/guilds/"+guildId+"/members/"+id);
-      return Array.isArray(member?.roles) && member.roles.includes(String(staffRoleId));
+      // A message-history response often lacks guild role information.
+      if(!memberRoles.length) {
+        const member=await api("/guilds/"+guildId+"/members/"+id);
+        memberRoles=Array.isArray(member?.roles)?member.roles:[];
+      }
+      if(staffRoleId && memberRoles.includes(String(staffRoleId))) return true;
+      // Allow trusted guild moderators/admins even when their Discord account
+      // isn't the server owner's ID or in the dedicated support-staff role.
+      const guildRoles=await api("/guilds/"+guildId+"/roles");
+      let permissions=0n;
+      for(const role of guildRoles) {
+        if(memberRoles.includes(String(role.id)) || String(role.id)===String(guildId))
+          permissions|=BigInt(role.permissions||"0");
+      }
+      return (permissions & (8n | 8192n))!==0n; // Administrator / Manage Messages
     } catch { return false; }
   }
   async function hasSavedDropReferences(channelId, sourceId) {
@@ -3903,6 +3915,14 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return Object.keys(drafts).some(key=>key.endsWith(":"+sourceId));
   }
   async function onDropPost(d) {
+    if(d?.channel_id === upcomingChannelId && !d?.author?.bot) {
+      console.log("Discord Upcoming Drops pasted message:",JSON.stringify({
+        id:d.id,type:d.type,webhook:Boolean(d.webhook_id),
+        contentCharacters:String(d.content||"").length,
+        attachmentCount:(d.attachments||[]).length,
+        embedCount:(d.embeds||[]).length
+      }));
+    }
     if (d.channel_id && d.channel_id === inStoreChannelId) return onInStorePost(d);
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
