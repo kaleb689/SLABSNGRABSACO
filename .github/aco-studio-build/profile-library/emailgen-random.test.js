@@ -9,7 +9,7 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  for(const retailer of ['target','walmart','pokemoncenter','costco','sams'])
   assert.match(html,new RegExp('<option value="'+retailer+'">'));
  assert.ok(html.indexOf('id="randomAliasCreate"')<html.indexOf('id="randomAliasPoolChooser"'));
- assert.match(html,/verified external IMAP inbox entered above/);
+ assert.match(html,/Choose your inbox/);
  assert.match(html,/id="randomAliasCount" min="1" max="10000"/);
  assert.match(html,/No retailer pool is required/);
  assert.match(html,/id="randomAliasActivate"/);
