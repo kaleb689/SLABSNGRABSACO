@@ -3512,43 +3512,68 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   // An existing formatted card near it is evidence that it was already
   // converted, so don't double-post. SKU-bearing posts and saved selections
   // are left alone to preserve all existing button source IDs.
+  const upcomingRepairFile=path.join(dataDir,"discord-upcoming-format-repairs.json");
   async function repairUpcomingMainText() {
-    if (!upcomingChannelId || !ownerId) return;
-    const history = await api("/channels/" + upcomingChannelId + "/messages?limit=60");
-    if (!Array.isArray(history)) return;
-    const selections = await readSkuFile(skuSelectionsFile);
-    const candidate = history.find(message => {
-      if (message.author?.bot || message.webhook_id || message.pinned ||
-          ![0,19].includes(message.type ?? 0) ||
-          String(message.author?.id) !== String(ownerId) ||
-          parseDropSkus(message).length || !isNewDropPost(message)) return false;
-      const payload = upcomingAnnouncementPayload(message);
-      if (!payload) return false;
-      const sourceMs=Date.parse(message.timestamp || "");
-      if (!Number.isFinite(sourceMs)) return false;
-      const alreadyFormatted = history.some(other =>
-        isFormattedDropPost(other, appId) &&
-        Date.parse(other.timestamp || "") >= sourceMs &&
-        Date.parse(other.timestamp || "") - sourceMs <= 10 * 60_000);
-      if (alreadyFormatted) return false;
-      const selected = Object.values(selections).some(record =>
-        (record?.skippedUpcomingDrops || []).some(row =>
-          String(row.channelId)===String(upcomingChannelId) && String(row.sourceId)===String(message.id)));
-      return !selected;
-    });
-    if (!candidate) return;
-    const payload = upcomingAnnouncementPayload(candidate);
-    const card = await api("/channels/" + upcomingChannelId + "/messages", "POST", payload);
-    const formatted={...card,channel_id:upcomingChannelId,guild_id:guildId,
-      content:"", embeds:payload.embeds,type:0,author:card.author || {id:appId,bot:true}};
-    await ensureSkuControls(formatted);
-    // Original is removed only after formatting succeeds; its text is
-    // retained verbatim inside the new styled card.
-    await api("/channels/" + upcomingChannelId + "/messages/" + candidate.id, "DELETE");
-    await retireReformattedRawSource(upcomingChannelId,candidate.id);
-    console.log("Discord repaired Upcoming Drops main text:",JSON.stringify({
-      sourceId:candidate.id,formattedId:card.id
-    }));
+    if(!upcomingChannelId || !ownerId)return;
+    const history=await api("/channels/"+upcomingChannelId+"/messages?limit=100");
+    if(!Array.isArray(history))return;
+    const state=await readSkuFile(upcomingRepairFile);
+    let repaired=0;
+    // Focus on the latest unformatted pastes and never touch old pinned posts.
+    for(const source of [...history].reverse()) {
+      if(repaired>=4)break;
+      if(state[source.id] || source.author?.bot || source.webhook_id ||
+          source.pinned || !isNewDropPost(source) ||
+          ![0,19].includes(source.type??0))continue;
+      if(!await isTrustedDropPublisher(source))continue;
+      const rawText=String(source.content||"");
+      // Only repair the newest week; the channel's older message history must
+      // not be rewritten on every server restart.
+      const sourceAt=Date.parse(source.timestamp||"");
+      if(!Number.isFinite(sourceAt) || sourceAt<Date.now()-7*86400000)continue;
+      const monitored=parseMonitorDropProducts(source);
+      const structured=monitored.length?formattedDropPayloads(monitored,"Upcoming Drops"):
+        dropNewsPayloads(parseDropNews(source),"Upcoming Drops",rawText);
+      const payloads=structured.length?structured:upcomingAnnouncementPayloads(source);
+      if(!payloads.length)continue;
+      const ids=new Set(parseDropSkus(source).map(item=>item.sku));
+      const converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      // Reject incomplete conversion; never lose a SKU that somebody pasted.
+      if([...ids].some(id=>!converted.has(id))) {
+        console.warn("Upcoming Drops repair skipped incomplete SKU parse:",JSON.stringify({sourceId:source.id,sourceSkus:ids.size,renderedSkus:converted.size}));
+        continue;
+      }
+      const hasExistingCard=history.some(other=>{
+        if(!isFormattedDropPost(other,appId))return false;
+        const time=Date.parse(other.timestamp||"");
+        if(!Number.isFinite(time)||time<sourceAt||time-sourceAt>3*60000)return false;
+        const otherText=[other.content,...(other.embeds||[]).flatMap(e=>[e.title,e.description])].filter(Boolean).join("\n");
+        const first=rawText.split(/\r?\n/).find(Boolean)?.trim().slice(0,45)||"";
+        return first.length>=8 && otherText.includes(first);
+      });
+      if(hasExistingCard)continue;
+      try {
+        const posted=[];
+        for(const payload of payloads) {
+          const card=await api("/channels/"+upcomingChannelId+"/messages","POST",payload);
+          posted.push(card.id);
+          await ensureSkuControls({...card,channel_id:upcomingChannelId,guild_id:guildId,
+            content:payload.content||"",embeds:payload.embeds,type:0,
+            author:card.author||{id:appId,bot:true}});
+        }
+        state[source.id]={cards:posted,at:new Date().toISOString()};
+        await writeSkuFile(upcomingRepairFile,state);
+        const referenced=await hasSavedDropReferences(upcomingChannelId,source.id);
+        if(!referenced){
+          await api("/channels/"+upcomingChannelId+"/messages/"+source.id,"DELETE");
+          await retireReformattedRawSource(upcomingChannelId,source.id);
+        }
+        console.log("Discord repaired Upcoming Drops main text:",JSON.stringify({
+          sourceId:source.id,posted:posted.length,skus:ids.size,retailer:upcomingDropRetailer(source),keptOriginal:referenced
+        }));
+        repaired++;
+      }catch(error){console.error("Discord Upcoming Drops historical formatting failed:",error.message);}
+    }
   }
 
   async function backfillDropMenus() {
