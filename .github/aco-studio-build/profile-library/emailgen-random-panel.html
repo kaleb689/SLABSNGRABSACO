@@ -1,11 +1,11 @@
 <section class="panel section" id="randomEmailGenSection">
  <h2>2. Email Gen — Quick Start</h2>
- <p class="sectionHelp"><strong>No retailer pool is required.</strong> Follow these steps whenever you want new emails:</p>
+ <p class="sectionHelp"><strong>Generate here; watch testing, save mail accounts, export and manage batches on the right.</strong> No retailer pool is required.</p>
  <ol class="sectionHelp">
   <li><strong>Choose your inbox.</strong> Enter the Gmail (or other) address where you want messages delivered in the forwarding destination field above. Complete Cloudflare's one-time verification if requested.</li>
   <li><strong>Generate emails.</strong> Choose a quantity below and click Generate Only. Your new addresses are safely saved, without any retailer assignment or live forwarding rule.</li>
   <li><strong>Set up forwarding.</strong> For large batches, use one verified Cloudflare catch-all destination instead of making an individual rule for every email.</li>
-  <li><strong>Check delivery.</strong> Use Test Email Delivery. An address is verified only after a real message reaches the selected inbox.</li>
+  <li><strong>Automatic verification.</strong> Your newly generated batch appears in the large Email Bank on the right. If a saved sending/receiving account pair matches the destination, testing starts automatically, with live passed/failed counts.</li>
  </ol>
  <p class="sectionHelp">You can stop after Step 2 and export saved addresses. Adding them to Target, Walmart, Pokémon Center, Costco or Sam's Club is entirely optional.</p>
  <label>Step 2 — Number of emails to generate (1–10,000; based on available bank space)<input type="number" id="randomAliasCount" min="1" max="10000" value="10" step="1" inputmode="numeric" required></label>
@@ -62,21 +62,6 @@
   </section>
   <p id="randomDestinationStatus" class="tiny" role="status" aria-live="polite"></p>
  </details>
- <div class="fieldStack" id="randomAliasTestArea">
-  <h3>Step 4 — Test Email Delivery</h3>
-  <p class="sectionHelp">Use a separate sending email account to verify a real message reaches your forwarding inbox. Only receipt-confirmed addresses are marked working. In catch-all mode, test up to 25 unverified saved addresses per click to avoid overwhelming your email provider.</p>
-   <label class="check"><input type="checkbox" id="randomAliasCatchAllTest"> I enabled Cloudflare catch-all to this same verified inbox and want to verify my saved addresses without individual rules (up to 25 per click).</label>
-  <label>Separate sending email account<input id="randomTestSender" type="email" autocomplete="off" spellcheck="false" placeholder="A different mailbox from your forwarding inbox"></label>
-  <label>Sending account app password (test session only; never saved)<input id="randomTestSenderPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Separate sender's app password"></label>
-  <details><summary>Advanced mail settings (Gmail defaults)</summary>
-  <label>Sending SMTP server (encrypted TLS, port 465)<input id="randomTestSmtp" value="smtp.gmail.com" autocomplete="off" spellcheck="false"></label>
-  <label>IMAP server (encrypted TLS, port 993)<input id="randomTestImap" value="imap.gmail.com" autocomplete="off" spellcheck="false"></label>
-  </details>
-  <label>Mail app password for the forwarding inbox (test session only; never saved)<input id="randomTestPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Your verified inbox app password"></label>
-  <div class="buttons"><button type="button" class="btn secondary" id="randomAliasTestAll">Test Email Delivery</button></div>
-  <p id="randomTestStatus" class="tiny" aria-live="polite"></p>
-  <small>The app reports PASSED only when a unique test message is found in your verified IMAP INBOX. SMTP accepted, pending verification, undelivered, or untested are not a pass. Both test passwords are cleared after each run.</small>
- </div>
  <p id="randomAliasStatus" class="tiny" aria-live="polite"></p>
  <small>All generated emails remain in your encrypted Email Bank until you decide otherwise. Forwarding is optional, and retailer pool assignment is optional. Only Cloudflare-confirmed live addresses with a successful inbox delivery test can enter the Personal retailer Unused email pool. Existing manual aliases are not changed.</small>
 </section>

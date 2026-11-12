@@ -225,13 +225,74 @@
    refreshEmailBatchUI();
   }finally{randomGenBusy=false;button.disabled=false;}
  }
+
+ // Deleting a batch is local-only: no Cloudflare rule or retailer pool changes.
+ // Automatically preserve the original ENCRYPTED Email Bank before mutation.
+ let emailBatchDeletePlan=null;
+ function cancelEmailBatchDeletion(){
+  emailBatchDeletePlan=null;
+  const box=batchElement('emailBatchDeleteConfirmArea');if(box)box.hidden=true;
+  const ack=batchElement('emailBatchDeleteAcknowledge');if(ack)ack.checked=false;
+  const input=batchElement('emailBatchDeleteTyped');if(input)input.value='';
+ }
+ function reviewEmailBatchDeletion(){
+  requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
+  if(mailTestState.active||randomGenBusy)throw Error('Wait until the active email generation or verification run finishes before deleting batches.');
+  const group=emailBatchCurrentGroup();cancelEmailBatchDeletion();
+  if(!group||!group.rows.length)throw Error('Choose a generated batch to delete.');
+  const poolUsed=group.rows.filter(r=>Boolean(r.poolTarget)||Boolean(r.poolImportedAt));
+  if(poolUsed.length)throw Error('This batch has '+poolUsed.length+' email(s) assigned or imported into retailer pools. Unlink those profiles first; ACO Studio will not silently remove live retailer accounts.');
+  const published=group.rows.filter(r=>r.remoteId||r.status==='live'||r.status==='pending').length;
+  const aliases=group.rows.map(r=>String(r.alias).toLowerCase()).sort();
+  if(new Set(aliases).size!==aliases.length)throw Error('Duplicate addresses in batch; review before deletion.');
+  emailBatchDeletePlan={key:group.key,count:group.rows.length,aliases,published};
+  batchElement('emailBatchDeleteSummary').textContent='Delete exactly '+group.name+' ('+group.rows.length+' emails)? '+published+
+   ' addresses may have existing Cloudflare routing rules. This deletes only local records; Cloudflare routing rules remain active. An encrypted pre-delete snapshot is saved automatically.';
+  batchElement('emailBatchDeleteConfirmArea').hidden=false;
+  emailBatchStatus('Review the exact batch count and Cloudflare warning. Type DELETE and confirm to proceed; nothing has changed yet.');
+ }
+ async function confirmEmailBatchDeletion(){
+  requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
+  if(mailTestState.active||randomGenBusy)throw Error('Stop or finish verification before deleting a batch.');
+  const plan=emailBatchDeletePlan,group=emailBatchCurrentGroup();
+  if(!plan||!group||plan.key!==group.key)throw Error('Batch changed. Review its deletion again.');
+  if(batchElement('emailBatchDeleteTyped').value.trim()!=='DELETE'||batchElement('emailBatchDeleteAcknowledge').checked!==true)
+   throw Error('Type DELETE and check the local-only / Cloudflare warning to confirm.');
+  const fresh=group.rows.map(r=>String(r.alias).toLowerCase()).sort();
+  if(fresh.length!==plan.count||JSON.stringify(fresh)!==JSON.stringify(plan.aliases)||
+     group.rows.some(r=>r.poolTarget||r.poolImportedAt))
+   throw Error('Batch contents or profile assignment changed. Review again. Nothing deleted.');
+  const previous=localStorage.getItem(KEY);
+  if(!previous)throw Error('The encrypted Email Bank is unavailable. No emails deleted.');
+  const entropy=crypto.getRandomValues(new Uint8Array(8));
+  const backupKey=KEY+'.batch-delete-backup.'+Date.now()+'.'+Array.from(entropy,b=>b.toString(16).padStart(2,'0')).join('');
+  if(localStorage.getItem(backupKey)!==null)throw Error('Encrypted snapshot name collision; no emails deleted.');
+  localStorage.setItem(backupKey,previous);
+  if(localStorage.getItem(backupKey)!==previous)throw Error('Could not verify encrypted pre-delete backup; no emails deleted.');
+  randomGenBusy=true;
+  const before=records.slice(),selected=new Set(fresh);
+  const keep=records.filter(r=>!selected.has(String(r.alias).toLowerCase()));
+  try{
+   records.splice(0,records.length,...keep);
+   if(!await store())throw Error('Encrypted Email Bank save failed.');
+  }catch(error){
+   records.splice(0,records.length,...before);
+   try{if(localStorage.getItem(KEY)!==previous)localStorage.setItem(KEY,previous);}catch{}
+   throw Error('Batch deletion did not complete. Original encrypted snapshot remains: '+String(error?.message||error));
+  }finally{randomGenBusy=false;}
+  const deleted=plan.count,published=plan.published;
+  cancelEmailBatchDeletion();emailBatchState.selected.clear();emailBatchState.key='';
+  emailBatchStatus('Deleted '+deleted+' locally saved emails. Verified encrypted backup retained. '+published+
+   ' may still have Cloudflare routing rules and must be removed in Cloudflare separately if you no longer want forwarding. Other batches and retailer pools were unchanged.');
+  refreshEmailBatchUI();
+ }
  function setupEmailBatchUI(){
   const picker=batchElement('emailBatchSelect');
   if(!picker)throw Error('Email Bank batch manager is missing from the right panel.');
   if(picker.dataset.bound==='1')return;
   picker.dataset.bound='1';
   picker.addEventListener('change',value=>{
-   emailBatchState.key=picker.value;emailBatchState.selected.clear();emailBatchState.page=0;emailBatchResetPreview();refreshEmailBatchUI();
+   emailBatchState.key=picker.value;emailBatchState.selected.clear();emailBatchState.page=0;emailBatchResetPreview();cancelEmailBatchDeletion();refreshEmailBatchUI();
   });
   batchElement('emailBatchSearch').addEventListener('input',()=>{
    emailBatchState.query=batchElement('emailBatchSearch').value;emailBatchState.page=0;refreshEmailBatchUI();
@@ -272,6 +333,15 @@
   });
   batchElement('emailBatchPoolCancel').addEventListener('click',()=>{
    emailBatchResetPreview();emailBatchStatus('Cancelled. No email pool was changed.');
+  });
+  batchElement('emailBatchDeleteReview').addEventListener('click',()=>{
+   try{reviewEmailBatchDeletion();}catch(error){emailBatchStatus(String(error?.message||error));}
+  });
+  batchElement('emailBatchDeleteConfirm').addEventListener('click',async()=>{
+   try{await confirmEmailBatchDeletion();}catch(error){emailBatchStatus(String(error?.message||error));}
+  });
+  batchElement('emailBatchDeleteCancel').addEventListener('click',()=>{
+   cancelEmailBatchDeletion();emailBatchStatus('Batch deletion cancelled. No records removed.');
   });
   refreshEmailBatchUI();
  }

@@ -1,5 +1,70 @@
+<style>
+/* The Email Bank is the main workspace, not a narrow sidebar. */
+@media(min-width:1150px){#emailPage .workspace{grid-template-columns:minmax(265px,0.7fr) minmax(560px,1.7fr)!important}}
+@media(min-width:780px) and (max-width:1149px){#emailPage .workspace{grid-template-columns:minmax(210px,.72fr) minmax(410px,1.45fr)!important}}
+@media(max-width:779px){#emailPage .workspace{grid-template-columns:minmax(0,1fr)!important}}
+#emailPage .rightpane{min-width:0!important}
+#emailBatchRows{max-height:420px!important}
+#emailBatchManager .test-metric{border:1px solid #35475f;border-radius:8px;padding:9px;background:#192e40;min-width:0}
+#emailBatchManager .test-metric strong{display:block;font-size:24px}
+#emailBatchManager .test-controls{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+#emailBatchManager .test-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;padding-top:10px}
+#emailBatchManager .test-form label{font-size:12px;display:flex;flex-direction:column;gap:5px;min-width:0}
+#emailBatchManager .test-form input,#emailBatchManager .test-form select{width:100%}
+#emailBatchManager .batch-progress-rail{height:9px;overflow:hidden;border-radius:10px;background:#243446;display:flex;margin-top:9px}
+#emailBatchManager .batch-progress-pass{height:100%;background:#2ac877;width:0%;transition:width .2s}
+#emailBatchManager .batch-progress-fail{height:100%;background:#ed5f5d;width:0%;transition:width .2s}
+#emailBatchManager #emailBatchManagerStatus{white-space:pre-line}
+</style>
 
 <div id="emailBatchManager" class="emailBatchManager" aria-label="Email generation batches" style="margin:12px 0 16px;padding:13px;border:1px solid #3b6072;border-radius:12px;background:#102236">
+
+ <section id="randomAliasTestArea" style="border:1px solid #3d6881;border-radius:12px;padding:14px;background:#102c3a;margin-bottom:14px">
+  <h3 style="font-size:16px;margin:0 0 5px;color:#b5fdf3">Automatic email testing</h3>
+  <p class="tiny">After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified retries every eligible saved address, in groups of 25. Live counters update after each confirmed receipt or failure.</p>
+  <div class="test-controls">
+   <button type="button" class="btn primary" id="randomAliasTestAll">Test All Unverified</button>
+   <button type="button" class="btn secondary" id="randomAliasTestBatch">Test Selected Batch</button>
+   <button type="button" class="btn danger" id="randomAliasTestStop" hidden>Stop after this group</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:11px">
+   <div class="test-metric"><span class="tiny">Progress</span><strong id="randomTestProgress" style="color:#fff">0/0</strong></div>
+   <div class="test-metric"><span class="tiny">Passed</span><strong id="randomTestPassed" style="color:#38d88f">0</strong></div>
+   <div class="test-metric"><span class="tiny">Failed</span><strong id="randomTestFailed" style="color:#fc7378">0</strong></div>
+  </div>
+  <div class="batch-progress-rail" aria-hidden="true"><div id="randomTestGreenBar" class="batch-progress-pass"></div><div id="randomTestRedBar" class="batch-progress-fail"></div></div>
+  <p id="randomTestStatus" class="tiny" role="status" aria-live="polite" style="margin:9px 0">Automatic testing starts after each generated batch when matching secure mail credentials are saved.</p>
+  <div id="randomTestRecent" class="tiny" style="max-height:120px;overflow:auto" aria-label="Recent test results"></div>
+  <details id="randomTestSettings" style="margin-top:12px;padding:11px;border:1px solid #365168;border-radius:10px">
+   <summary style="cursor:pointer;font-weight:700">Mail accounts &amp; forwarding settings (securely remembered)</summary>
+   <p class="tiny" style="margin:8px 0">Save sender and receiver app passwords once. You can store multiple pairs and swap them without replacing existing credentials. Test messages are moved to Trash in both inbox and Sent when confirmed delivered. No other mail is touched.</p>
+   <label class="tiny">Saved sender / receiver configurations
+    <select id="randomMailPreset" aria-label="Saved sending and receiving email pairs" style="width:100%;margin:5px 0 8px"><option value="">New sender / forwarding inbox pair</option></select>
+   </label>
+   <div class="test-form">
+    <label>Forwarding receiver (IMAP inbox to check)<input id="randomTestReceiver" type="email" autocomplete="off" spellcheck="false" placeholder="slabsngrabs@gmail.com"></label>
+    <label>Separate sending email<input id="randomTestSender" type="email" autocomplete="off" spellcheck="false" placeholder="other@gmail.com"></label>
+    <label>Sending account app password<input id="randomTestSenderPassword" type="password" autocomplete="new-password" placeholder="Enter once to save securely"></label>
+    <label>Receiving inbox app password<input id="randomTestPassword" type="password" autocomplete="new-password" placeholder="Enter once to save securely"></label>
+   </div>
+   <details style="margin-top:10px"><summary>Advanced email server settings</summary>
+    <div class="test-form">
+     <label>Sending SMTP server<input id="randomTestSmtp" value="smtp.gmail.com" autocomplete="off" spellcheck="false"></label>
+     <label>Receiving IMAP server<input id="randomTestImap" value="imap.gmail.com" autocomplete="off" spellcheck="false"></label>
+     <label>Sending account IMAP (cleanup of Sent messages)<input id="randomTestSenderImap" value="imap.gmail.com" autocomplete="off" spellcheck="false"></label>
+    </div>
+   </details>
+   <div class="test-controls">
+    <button type="button" class="btn primary" id="randomMailCredentialsSave">Verify &amp; Save Mail Accounts</button>
+    <button type="button" class="btn plain" id="randomMailCredentialsForget">Remove Selected Saved Pair</button>
+   </div>
+   <p id="randomMailCredentialsStatus" class="tiny" aria-live="polite" style="margin:8px 0"></p>
+   <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
+    <input type="checkbox" id="randomAliasCatchAllTest">
+    <span class="tiny">I configured the Cloudflare catch-all to forward unmatched addresses to the receiver shown above. Test generated addresses even when they have no individual Cloudflare rule. This does not change Cloudflare routing rules.</span>
+   </label>
+  </details>
+ </section>
  <h3 style="margin:0 0 9px;font-size:15px;color:#b5fdf3">Email Bank totals &amp; batches</h3>
  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 11px">
   <div class="tiny" style="padding:8px;background:#192c40;border-radius:8px">All saved <strong id="emailBankTotalCount" style="display:block;font-size:20px;color:#fff">0</strong></div>
@@ -58,6 +123,22 @@
    <button type="button" class="btn slim plain" id="emailBatchPoolCancel">Cancel</button>
   </div>
  </div>
+
+ <section id="emailBatchDeleteArea" style="margin-top:14px;padding:12px;border:1px solid #705358;border-radius:10px">
+  <div class="buttons" style="justify-content:space-between;align-items:center"><strong style="font-size:13px">Remove a generated batch</strong><button type="button" class="btn slim danger" id="emailBatchDeleteReview">Delete Selected Batch...</button></div>
+  <p class="tiny" style="margin-top:6px">Delete acts on the selected batch only. It never deletes other batches or retailer profiles. Address-specific Cloudflare rules are not deleted remotely. Batches already imported into retailer pools must be unlinked there first.</p>
+  <div id="emailBatchDeleteConfirmArea" hidden style="margin-top:9px;border:1px solid #cf7569;padding:11px;border-radius:8px">
+   <p id="emailBatchDeleteSummary" class="tiny" style="margin-bottom:8px;color:#ffb6b4"></p>
+   <label class="tiny" style="display:block;margin:6px 0">Type DELETE to confirm
+    <input type="text" id="emailBatchDeleteTyped" autocomplete="off" placeholder="DELETE" style="width:100%">
+   </label>
+   <label class="check" style="display:flex;gap:7px;align-items:flex-start"><input id="emailBatchDeleteAcknowledge" type="checkbox"><span class="tiny">I understand that this removes the selected batch from my local encrypted Email Bank. Any published Cloudflare forwarding rules are left unchanged.</span></label>
+   <div class="test-controls" style="display:flex;gap:7px;margin-top:9px">
+    <button type="button" class="btn slim danger" id="emailBatchDeleteConfirm">Delete This Exact Batch</button>
+    <button type="button" class="btn slim plain" id="emailBatchDeleteCancel">Cancel</button>
+   </div>
+  </div>
+ </section>
  <p id="emailBatchActionStatus" class="tiny" aria-live="polite" role="status" style="margin-top:8px"></p>
  <p class="tiny" style="margin-top:5px">Older generated emails are grouped by saved creation timestamps when they lack a batch ID. Manual aliases remain available in the Email Bank table below.</p>
 </div>

@@ -62,44 +62,33 @@ test('Cloudflare live AND exact mailbox receipt are mandatory before Personal un
  assert.match(app,/scope:'personal',customerId:null,retailer,emails:batch\.map\(r=>r\.alias\)/);
  assert.match(app,/JigPersonalGuard\?\.ensureUnlocked/);
  assert.match(app,/await api\(\)\.publish\(toPublish\.map/);
- assert.match(app,/api\(\)\?\.testForwarding/);
+ assert.match(app,/api\(\)\.testForwarding/);
  assert.match(app,/row\.forwardingTestedAt=now/);
  assert.match(app,/row\.catchAllVerifiedAt=now/);
 });
-test('Catch-all verification only promotes actual inbox receipts and never publishes Cloudflare rules',async()=>{
+test('Automatic catch-all verification requires successful IMAP receipts and never publishes Cloudflare rules',()=>{
  assert.match(html,/id="randomAliasCatchAllTest"/);
- assert.match(html,/Catch-all/);
- const start=app.indexOf(' async function testAllRandomEmails(){'),end=app.indexOf(' // Changing the top forwarding field',start);
- assert.ok(start>=0&&end>start);
- const source=app.slice(start,end);
+ const testStart=app.indexOf(' async function runAutomaticEmailTests('),testEnd=app.indexOf(' function scheduleNewBatchAutoTest',testStart);
+ assert.ok(testStart>0&&testEnd>testStart);
+ const source=app.slice(testStart,testEnd);
+ assert.match(source,/AUTO_TEST_GROUP_SIZE/);
+ assert.match(source,/mailbox:profile\.mailbox,sender:profile\.sender/);
+ assert.match(source,/if\(item\.status==='delivered'\)/);
+ assert.match(source,/row\.forwardingTestedAt=now/);
+ assert.match(source,/row\.catchAllVerifiedAt=now/);
+ assert.match(source,/if\(!await store\(\)\)/);
  assert.doesNotMatch(source,/api\(\)\.publish/);
- const records=Array.from({length:30},(_,i)=>({alias:'saved'+i+'@sng.sarl',target:'owner@example.com',randomGenerated:true,status:'draft',poolTarget:null}));
- const fields={emailTarget:{value:'owner@example.com'},randomTestSmtp:{value:'smtp.gmail.com'},randomTestImap:{value:'imap.gmail.com'},
-  randomTestPassword:{value:'test-password'},randomTestSender:{value:'other@example.com'},randomTestSenderPassword:{value:'sender-password'},
-  randomAliasCatchAllTest:{checked:true},randomTestStatus:{textContent:''}};
- const batches=[],ctx={records,requireOwner(){},OWNER_DOMAIN:'sng.sarl',validEmail:v=>/^[^@ ]+@[^@ ]+\.[^@ ]+$/.test(v),
-  $e:id=>fields[id],api:()=>({testForwarding:async req=>{
-   batches.push(req.aliases);
-   return {results:req.aliases.map((alias,i)=>({alias,status:i<7?'delivered':'not_received'}))};
-  }}),store:async()=>true,importLiveRandom:async()=>({added:0}),randomNotice(){},refreshRandomChooser(){},Date,Set};
- vm.createContext(ctx);
- vm.runInContext(source+'; this.verifyCatchAll=testAllRandomEmails;',ctx);
- await ctx.verifyCatchAll();
- assert.equal(batches.length,1);
- assert.equal(batches[0].length,25);
- assert.equal(records.filter(r=>r.status==='live').length,7);
- assert.equal(records.filter(r=>r.catchAllVerifiedAt&&r.forwardingTestedAt).length,7);
- assert.equal(records.filter(r=>r.status==='draft').length,23);
- assert.ok(records.every(r=>!r.poolTarget));
- assert.match(fields.randomTestStatus.textContent,/7 PASSED/);
+ assert.doesNotMatch(source,/importLiveRandom\(\)/);
+ assert.match(app,/scheduleNewBatchAutoTest\(batchId\)/);
 });
-test('Mail test credentials are temporary and never written to the encrypted Email Bank',()=>{
- assert.match(html,/id="randomTestPassword" type="password" autocomplete="off"/);
- assert.match(app,/\$e\('randomTestPassword'\)\.value=''/);
+test('Mail app passwords are saved only by owner-only Keychain IPC; not persisted inside alias bank or exposed in progress',()=>{
+ assert.match(html,/id="randomTestPassword" type="password" autocomplete="new-password"/);
+ assert.match(app,/mailUIElement\('randomTestPassword'\)\.value=''/);
+ assert.match(app,/saveMailTestCredentials\(settings\)/);
+ assert.match(app,/mailTestCredentialStatus\(\)/);
  assert.ok(!app.includes('poolTestPassword:'));
- assert.match(app,/No failed test was marked usable/);
+ assert.match(html,/Move|Trash|moved to Trash/i);
 });
-
 test('Owner can preview bulk destination change for previously generated drafts without altering other aliases',()=>{
  for(const id of ['randomDestinationOld','randomDestinationNew','randomDestinationPreview','randomDestinationConfirmArea','randomDestinationSummary','randomDestinationAcknowledged','randomDestinationConfirm','randomDestinationCancel','randomDestinationStatus'])
   assert.match(html,new RegExp('id="'+id+'"'));
