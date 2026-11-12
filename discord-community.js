@@ -3557,6 +3557,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       });
       if(hasExistingCard)continue;
       try {
+        if(upcomingDropRetailer(source)==="target") {
+          await recordTargetMasterPost(source,parseDropSkus(source))
+            .catch(error=>console.error("Upcoming Target master backfill:",error.message));
+        }
         const posted=[];
         for(const payload of payloads) {
           const card=await api("/channels/"+upcomingChannelId+"/messages","POST",payload);
@@ -4090,6 +4094,63 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   // Add copy buttons to already-published messages without reposting, pinging
   // members, or erasing the original Added/Removed history in their embeds.
+  // Keep source IDs unchanged; classify Target-branded Upcoming selections
+  // under Target in the member's private SKU summary/copy options.
+  async function repairUpcomingTargetSelections() {
+    if(!upcomingChannelId || !skuRequestsChannelId)return 0;
+    return withSkuQueue(async()=>{
+      const records=await readSkuFile(skuSelectionsFile),sourceIds=new Set();
+      for(const record of Object.values(records))for(const item of record?.items||[]) {
+        const [channel,id]=String(item.key||"").split(":");
+        if(channel===String(upcomingChannelId)&&id)sourceIds.add(id);
+      }
+      const sources=new Map();
+      for(const id of [...sourceIds].slice(0,150)) {
+        try {
+          const source=await api("/channels/"+upcomingChannelId+"/messages/"+id);
+          sources.set(id,sourceRetailerKey(source));
+        }catch{/* Unavailable sources must not be classified by guessing. */}
+      }
+      let updated=0;
+      for(const [userId,record] of Object.entries(records)) {
+        let changed=false;
+        record.items=(record.items||[]).map(item=>{
+          const [channel,id]=String(item.key||"").split(":");
+          if(channel!==String(upcomingChannelId)||sources.get(id)!=="target"||
+             item.retailer==="target")return item;
+          changed=true;
+          return {...item,retailer:"target"};
+        });
+        if(!changed)continue;
+        updated++;
+        if(/^\d{17,22}$/.test(String(record.messageId||""))) {
+          try {
+            const old=await api("/channels/"+skuRequestsChannelId+"/messages/"+record.messageId);
+            const updatedCard=ownerSkuPayload(userId,record.username||userId,record.items,
+              "Existing selections",record.skipTonightDate,record.skippedUpcomingDrops||[]);
+            const embeds=[...(old.embeds||[])];
+            if(embeds.length) {
+              const original=String(embeds.at(-1)?.description||"");
+              const idx=original.indexOf("**SKU changes this update**");
+              const history=idx>=0?original.slice(idx):"";
+              const summary={...updatedCard.embeds.at(-1)};
+              if(history && summary.description.length+history.length<3950)
+                summary.description+="\n\n"+history;
+              embeds[embeds.length-1]=summary;
+            }
+            await api("/channels/"+skuRequestsChannelId+"/messages/"+record.messageId,"PATCH",{
+              ...(embeds.length?{embeds}:{}),
+              components:updatedCard.components,allowed_mentions:{parse:[]}
+            });
+          }catch(error){console.error("Target Upcoming selection display refresh:",error.message);}
+        }
+      }
+      if(updated)await writeSkuFile(skuSelectionsFile,records);
+      console.log("Upcoming Target SKU selections categorized:",JSON.stringify({updated,sources:sources.size}));
+      return updated;
+    });
+  }
+
   async function refreshExistingOwnerCopyButtons() {
     if (!skuRequestsChannelId) return 0;
     return withSkuQueue(async () => {
@@ -5417,6 +5478,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await provision();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
+      await repairUpcomingTargetSelections()
+        .catch(error => console.error("Discord Target Upcoming SKU migration:", error.message));
       await refreshExistingOwnerCopyButtons()
         .catch(error => console.error("SKU copy controls startup:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
