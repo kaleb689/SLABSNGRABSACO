@@ -227,7 +227,7 @@
     !(r.forwardingTestedAt&&r.forwardingTestTarget===mailbox)).length:0;
   $e('randomTestStatus').textContent='Delivery tests: '+passed+' PASSED (received in IMAP), '+failed+
    ' failed/unconfirmed, '+noRule+' not confirmed live, '+added.added+' verified emails imported to unused retailer pools.'+
-   (catchAllMode?' Catch-all test covers up to 25 unverified saved emails per click; '+unverified+' remain untested.':'')+
+   (catchAllMode?' Catch-all test covers up to 25 unverified saved emails per click; '+unverified+' still need a successful delivery receipt.':'')+
    ' No failed test was marked usable.';
   randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0&&unverified===0);
   refreshRandomChooser();
