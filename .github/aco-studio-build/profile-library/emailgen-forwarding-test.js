@@ -123,12 +123,12 @@ async function cleanSentCopies(cfg,tests,{IMAP,now,started}){
  }
 }
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('imapflow').ImapFlow,delay=sleep,now=Date.now}={}){
+async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('imapflow').ImapFlow,delay=sleep,now=Date.now,onProgress=()=>{}}={}){
  const cfg=validate(input),started=now();
  const transporter=transport(mail,cfg);
  const imap=imapClient(IMAP,cfg.imapHost,cfg.mailbox,cfg.pass);
  const tests=cfg.aliases.map(alias=>({alias,marker:PREFIX+crypto.randomBytes(12).toString('hex'),sent:false,received:false}));
- let connected=false,lock=null,receiverMoved=0;
+ let connected=false,lock=null,receiverMoved=0,rateLimited=false;
  try{
   await imap.connect();connected=true;
   lock=await imap.getMailboxLock('INBOX');
@@ -137,7 +137,13 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
     await transporter.sendMail({from:cfg.sender,to:item.alias,subject:item.marker,
      text:'Owner-requested ACO Studio forwarding test. Unique test ID: '+item.marker});
     item.sent=true;
-   }catch{item.sent=false;}
+    try{onProgress({alias:item.alias,status:'sent'});}catch{}
+   }catch(error){
+    item.sent=false;
+    if(/\b(421|429|450|451|452|454|4\.7\.|5\.4\.5|quota|rate.?limit|too many|daily limit|temporar)/i.test(String(error?.responseCode||'')+' '+String(error?.code||'')+' '+String(error?.response||'')+' '+String(error?.message||'')))rateLimited=true;
+    try{onProgress({alias:item.alias,status:'send_failed'});}catch{}
+    if(rateLimited)break; // Stop on provider quotas rather than flooding retries.
+   }
   }
   const sent=tests.filter(t=>t.sent);
   if(sent.length){
@@ -150,12 +156,18 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
       const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
       if(!Number.isFinite(stamp)||stamp<started-30000)continue;
       const subject=String(message.envelope?.subject||'');
-      for(const item of sent)if(!item.received&&subject===item.marker)item.received=true;
+      for(const item of sent)if(!item.received&&subject===item.marker){
+       item.received=true;
+       try{onProgress({alias:item.alias,status:'delivered'});}catch{}
+      }
      }
     }
     if(sent.every(x=>x.received)||now()>=deadline)break;
     await delay(4000);
    }while(true);
+  }
+  for(const item of tests)if(item.sent&&!item.received){
+   try{onProgress({alias:item.alias,status:'unconfirmed'});}catch{}
   }
   // Move only the exact delivered test nonces out of INBOX to Trash.
   // If Trash is unavailable, leave mail alone and report incomplete cleanup.
@@ -171,7 +183,7 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
  const received=tests.filter(t=>t.received).length;
  return {total:tests.length,delivered:received,receiverMovedToTrash:receiverMoved,
   senderMovedToTrash:sentCleanup.moved,senderCleanupAvailable:sentCleanup.available,
-  cleanupPending:Math.max(0,received-receiverMoved),
+  cleanupPending:Math.max(0,received-receiverMoved),rateLimited,
   sentButUnconfirmed:tests.filter(t=>t.sent&&!t.received).length,
   sendFailed:tests.filter(t=>!t.sent).length,
   results:tests.map(t=>({alias:t.alias,status:t.received?'delivered':t.sent?'unconfirmed':'send_failed'}))};
@@ -210,7 +222,12 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
   if(!config)throw Error('Save your two mail app passwords securely before testing.');
   if(String(request?.mailbox||'').trim().toLowerCase()!==config.mailbox)
    throw Error('Saved mail credentials belong to a different forwarding inbox. Save the current accounts before testing.');
-  return testForwarding({...config,aliases:request.aliases});
+  const runId=typeof request.runId==='string'&&/^[a-z0-9-]{8,90}$/i.test(request.runId)?request.runId:null;
+  return testForwarding({...config,aliases:request.aliases},{
+   onProgress:progress=>{
+    if(runId&&!event.sender.isDestroyed?.())event.sender.send('email:test:progress',{runId,...progress});
+   }
+  });
  });
  return {store};
 }
