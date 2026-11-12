@@ -73,7 +73,7 @@ test('Reviewed pool import refuses any unverified selected email; imports only c
 });
 test('Export only uses explicit selection; no Cloudflare publish or silent pool action',()=>{
  const source=app.slice(start,app.indexOf(' function setupEmailBatchUI(){',start));
- assert.match(source,/const chosen=emailBatchSelectedRows\(group\)/);
+ assert.match(source,/chosen=emailBatchSelectedRows\(group\)/);
  assert.match(source,/buildEmailGenExportCsv\(chosen,mode\)/);
  assert.match(source,/emailBatchReviewPool\(\)/);
  assert.match(source,/emailBatchConfirmPool\(\)/);
