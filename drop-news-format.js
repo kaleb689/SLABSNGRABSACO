@@ -264,6 +264,42 @@ export function dropNewsPayloads(parsed, label, rawText = "") {
   }));
 }
 
+// Prefer an explicit drop heading to incidental retailer names in links.
+export function upcomingDropRetailer(input) {
+  const text = typeof input === "string" ? input :
+    [input?.content,...(input?.embeds || []).flatMap(e=>[e.title,e.description,...(e.fields||[]).flatMap(f=>[f.name,f.value])])].filter(Boolean).join("\n");
+  const heading = text.split(/\r?\n/).slice(0,10).join("\n");
+  if (/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|restocks?|releases?)\s*(?:at|on|for|from)\s*target\b/i.test(heading)) return "target";
+  const found=mentionedRetailers(text);
+  return found.length===1 ? found[0] : "";
+}
+// A freeform paste may be too long for one Discord embed. It should still
+// format without dropping products or changing the SKU strings.
+export function upcomingAnnouncementPayloads(input) {
+  const original=sourceText(input).trim();
+  if (!original || /<@!?\d+>|@everyone|@here/i.test(original)) return [];
+  if (original.length <= 3400) {
+    const result=upcomingAnnouncementPayload(input);
+    return result ? [result] : [];
+  }
+  const parts=[];let chunk="";
+  for(const line of original.split(/\r?\n/)) {
+    if(line.length>3000) return [];
+    if(chunk && chunk.length+line.length+1>3000){parts.push(chunk);chunk="";}
+    chunk+=(chunk?"\n":"")+line;
+  }
+  if(chunk) parts.push(chunk);
+  if(parts.length>8) return [];
+  const retailer=upcomingDropRetailer(input);
+  return parts.map((part,index)=>{
+    const payload=upcomingAnnouncementPayload(part);
+    if(!payload)return null;
+    payload.embeds[0].title="📅 Upcoming Drops"+(retailer==="target"?" · Target":"")+
+      " ("+(index+1)+"/"+parts.length+")";
+    return payload;
+  }).filter(Boolean);
+}
+
 // Fallback for the owner's free-form Upcoming Drops announcement. Previously
 // these posts fell through the structured news parser and stayed unformatted.
 // Preserve the exact words, SKUs and URLs; only improve presentation. A long
@@ -279,7 +315,7 @@ export function upcomingAnnouncementPayload(input) {
     return null;
   // Leave existing formatted bot cards and standalone URLs untouched.
   if (meaningful.length === 1 && isUrl(meaningful[0])) return null;
-  const title = "📅 Upcoming Drops";
+  const title = "📅 Upcoming Drops" + (upcomingDropRetailer(input) === "target" ? " · Target" : "");
   const body = [];
   let first = true;
   for (const line of lines) {
