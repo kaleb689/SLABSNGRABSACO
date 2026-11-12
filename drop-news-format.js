@@ -269,7 +269,7 @@ export function upcomingDropRetailer(input) {
   const text = typeof input === "string" ? input :
     [input?.content,...(input?.embeds || []).flatMap(e=>[e.title,e.description,...(e.fields||[]).flatMap(f=>[f.name,f.value])])].filter(Boolean).join("\n");
   const heading = text.split(/\r?\n/).slice(0,10).join("\n");
-  if (/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|restocks?|releases?)\s*(?:at|on|for|from)\s*target\b/i.test(heading)) return "target";
+  if (/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|restocks?|releases?)\s*(?:at|on|for|from)\s*target\b|\bupcoming\s+(?:drops?\s*)?[·:|—-]\s*target\b|\bupcoming\s+target\s+drop\b/i.test(heading)) return "target";
   const found=mentionedRetailers(text);
   return found.length===1 ? found[0] : "";
 }
