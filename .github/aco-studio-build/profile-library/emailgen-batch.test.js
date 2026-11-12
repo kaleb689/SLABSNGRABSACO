@@ -100,7 +100,7 @@ test('Only the exact chosen batch is deleted after typed confirmation and verifi
   $e:get,refreshEmailBatchUI:()=>{},RANDOM_RETAILERS:{target:'Target'},store:async()=>{storage.set('email.bank','new-encrypted-bank');return true;}};
  vm.createContext(ctx);
  const end=app.indexOf(' function setupEmailBatchUI(){',start);
- vm.runInContext(app.slice(start,end)+";emailBatchState.key='batch:batch-delete';this.review=reviewEmailBatchDeletion;this.deleteBatch=confirmEmailBatchDeletion;",ctx);
+ vm.runInContext(app.slice(start,end)+";refreshEmailBatchUI=()=>{};emailBatchState.key='batch:batch-delete';this.review=reviewEmailBatchDeletion;this.deleteBatch=confirmEmailBatchDeletion;",ctx);
  ctx.review();
  assert.equal(get('emailBatchDeleteConfirmArea').hidden,false);
  assert.match(get('emailBatchDeleteSummary').textContent,/Cloudflare/);
