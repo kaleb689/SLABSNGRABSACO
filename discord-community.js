@@ -295,7 +295,7 @@ export function parseDropSkus(message) {
       if(!line)continue;
       // A Target product URL contains its TCIN even when a pasted card
       // contains no separate SKU label.
-      const targetLink=/https?:\\/\\/(?:www\\.)?target\\.com\\/[^\\s<>]*?\\/A-(\\d{7,12})(?:[?#\\s]|$)/i.exec(line);
+      const targetLink=/https?:\/\/(?:www\.)?target\.com\/[^\s<>]*?\/A-(\d{7,12})(?:[?#\s]|$)/i.exec(line);
       if(targetLink) { addSku(targetLink[1],title); continue; }
       if(pendingId){
         pendingId=false;
