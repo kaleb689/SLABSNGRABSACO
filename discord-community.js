@@ -1563,16 +1563,66 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     let importantError = null;
     try {
       const names = ["upcomingdrops", "droppingtonight", "announcements"];
+      const slugs = ["upcoming-drops", "dropping-tonight", "announcements"];
       const found = names.map(name => channels.find(item => [0, 5].includes(item.type) && dropChannelKind(item.name) === name));
+      let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
+      if (!important) {
+        important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
+        channels.push(important);
+      }
+      // Reconcile the two primary drop channels BEFORE binding their IDs.
+      // Previously a missing or misplaced #upcoming-drops was silently ignored,
+      // leaving the SKU selection and owner formatting pipeline uninitialized.
+      for (const index of [0, 1]) {
+        const label = slugs[index];
+        const topic = index === 0
+          ? "Upcoming product drops: owner and staff post release details. Members can choose SKUs or skip individual drops."
+          : "Tonight's product drops: owner and staff post release details and SKUs. Members can choose SKUs or skip tonight.";
+        if (!found[index]) {
+          const overwrites = readOnlyOverwrites().map(item =>
+            item.id === appId ? dropBotPermissionOverwrite(item, appId) : item);
+          const created = await api(`/guilds/${guildId}/channels`, "POST", {
+            name: "❗️│" + label, type: 0, parent_id: important.id, topic,
+            permission_overwrites: overwrites
+          });
+          found[index] = created;
+          channels.push(created);
+          console.log("Discord drop channel created:", JSON.stringify({name:created.name,id:created.id}));
+        } else if (found[index].parent_id !== important.id) {
+          // Preserve the original ID, messages, roles, and manual overrides.
+          try {
+            const moved = await api(`/channels/${found[index].id}`, "PATCH", {
+              parent_id: important.id, lock_permissions: false
+            });
+            Object.assign(found[index], moved);
+            console.log("Discord drop channel category repaired:", JSON.stringify({
+              name:found[index].name,id:found[index].id,parentId:important.id
+            }));
+          } catch (error) {
+            console.error("Discord drop channel category repair unavailable:", label, error.message);
+          }
+        }
+      }
+      // Announcements is informational; creating it does not register SKU
+      // controls or modify unrelated staff channels.
+      if (!found[2]) {
+        const created = await api(`/guilds/${guildId}/channels`, "POST", {
+          name:"❗️│announcements", type:0, parent_id:important.id,
+          topic:"Server announcements and release information.",
+          permission_overwrites:readOnlyOverwrites()
+        });
+        found[2] = created;
+        channels.push(created);
+      }
       dropChannelIds = new Set(found.slice(0, 2).filter(Boolean).map(channel => channel.id));
       upcomingChannelId = found[0]?.id;
       tonightChannelId = found[1]?.id;
       console.log("Discord drop channels:", JSON.stringify({
-        upcoming: found[0]?.name || null, tonight: found[1]?.name || null,
+        upcoming: found[0]?.name || null, upcomingId:upcomingChannelId,
+        upcomingParent:found[0]?.parent_id || null, importantId:important.id,
+        tonight: found[1]?.name || null, tonightId:tonightChannelId,
         candidates: channels.filter(item => [0, 5].includes(item.type) && /drop|tonight/i.test(item.name)).map(item => item.name)
       }));
-      let important = channels.find(item => item.type === 4 && normalizeName(item.name) === "important");
-      if (!important) important = await api(`/guilds/${guildId}/channels`, "POST", { name: "Important", type: 4 });
       for (const [index, channel] of found.entries()) {
         if (!channel) continue;
         const formatted = `❗️│${["upcoming-drops", "dropping-tonight", "announcements"][index]}`;
