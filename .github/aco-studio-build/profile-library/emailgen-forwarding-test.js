@@ -210,7 +210,7 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  const store=makeMailTestStore({baseDir,safeStorage,platform});
  const authorize=event=>{requireOwner(event);requireCloudflareSession(event);};
  ipcMain.handle('email:test:credentials:status',event=>{authorize(event);return store.status();});
- ipcMain.handle('email:test:credentials:forget',event=>{authorize(event);return store.forget();});
+ ipcMain.handle('email:test:credentials:forget',(event,selection)=>{authorize(event);return store.forget(selection);});
  ipcMain.handle('email:test:credentials:save',async(event,config)=>{
   authorize(event);
   const verified=await verifyMailLogins(config);
@@ -218,10 +218,10 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  });
  ipcMain.handle('email:forwarding-test',async(event,request)=>{
   authorize(event);
-  const config=store.read();
-  if(!config)throw Error('Save your two mail app passwords securely before testing.');
-  if(String(request?.mailbox||'').trim().toLowerCase()!==config.mailbox)
-   throw Error('Saved mail credentials belong to a different forwarding inbox. Save the current accounts before testing.');
+  const mailbox=String(request?.mailbox||'').trim().toLowerCase();
+  const sender=String(request?.sender||'').trim().toLowerCase();
+  const config=store.read({mailbox,sender});
+  if(!config)throw Error('No secure mail-test account matches '+mailbox+(sender?' with sender '+sender:'')+'. Save the sending/receiving account pair first.');
   const runId=typeof request.runId==='string'&&/^[a-z0-9-]{8,90}$/i.test(request.runId)?request.runId:null;
   return testForwarding({...config,aliases:request.aliases},{
    onProgress:progress=>{
