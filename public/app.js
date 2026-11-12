@@ -10138,7 +10138,7 @@ function bindManagedMembershipForms() {
             expYear:
               formData.get("expYear") || "",
 
-            securityCode:
+            accountAccessCode:
               formData.get("securityCode") || ""
           };
 
@@ -11644,7 +11644,8 @@ async function saveRetailerProfile(
         ) || ""
       ).trim(),
 
-    securityCode:
+    // This is a non-payment ACO account code, not a card CVV/CVC.
+    accountAccessCode:
       String(
         formData.get(
           "securityCode"
