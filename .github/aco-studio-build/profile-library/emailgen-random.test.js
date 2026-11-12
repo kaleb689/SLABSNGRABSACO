@@ -37,7 +37,7 @@ test('Random local parts use secure name combinations, stay within 10 characters
  assert.match(app,/makeAlias\('Random '\+local,local,target,currentDomain\(\)\)/);
 });
 test('Encrypted Email Bank retains pool assignment and delivery test provenance across reload',()=>{
- for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:'])assert.ok(app.includes(field),field);
+ for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:','catchAllVerifiedAt:'])assert.ok(app.includes(field),field);
  assert.match(app,/if\(!await store\(\)\)/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=retailer/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=null/);
@@ -62,7 +62,35 @@ test('Cloudflare live AND exact mailbox receipt are mandatory before Personal un
  assert.match(app,/JigPersonalGuard\?\.ensureUnlocked/);
  assert.match(app,/await api\(\)\.publish\(toPublish\.map/);
  assert.match(app,/api\(\)\?\.testForwarding/);
- assert.match(app,/forwardingTestedAt=new Date\(\)\.toISOString\(\)/);
+ assert.match(app,/row\.forwardingTestedAt=now/);
+ assert.match(app,/row\.catchAllVerifiedAt=now/);
+});
+test('Catch-all verification only promotes actual inbox receipts and never publishes Cloudflare rules',async()=>{
+ assert.match(html,/id="randomAliasCatchAllTest"/);
+ assert.match(html,/Catch-all/);
+ const start=app.indexOf(' async function testAllRandomEmails(){'),end=app.indexOf(' // Changing the top forwarding field',start);
+ assert.ok(start>=0&&end>start);
+ const source=app.slice(start,end);
+ assert.doesNotMatch(source,/api\(\)\.publish/);
+ const records=Array.from({length:30},(_,i)=>({alias:'saved'+i+'@sng.sarl',target:'owner@example.com',randomGenerated:true,status:'draft',poolTarget:null}));
+ const fields={emailTarget:{value:'owner@example.com'},randomTestSmtp:{value:'smtp.gmail.com'},randomTestImap:{value:'imap.gmail.com'},
+  randomTestPassword:{value:'test-password'},randomTestSender:{value:'other@example.com'},randomTestSenderPassword:{value:'sender-password'},
+  randomAliasCatchAllTest:{checked:true},randomTestStatus:{textContent:''}};
+ const batches=[],ctx={records,requireOwner(){},OWNER_DOMAIN:'sng.sarl',validEmail:v=>/^[^@ ]+@[^@ ]+\.[^@ ]+$/.test(v),
+  $e:id=>fields[id],api:()=>({testForwarding:async req=>{
+   batches.push(req.aliases);
+   return {results:req.aliases.map((alias,i)=>({alias,status:i<7?'delivered':'not_received'}))};
+  }}),store:async()=>true,importLiveRandom:async()=>({added:0}),randomNotice(){},refreshRandomChooser(){},Date,Set};
+ vm.createContext(ctx);
+ vm.runInContext(source+'; this.verifyCatchAll=testAllRandomEmails;',ctx);
+ await ctx.verifyCatchAll();
+ assert.equal(batches.length,1);
+ assert.equal(batches[0].length,25);
+ assert.equal(records.filter(r=>r.status==='live').length,7);
+ assert.equal(records.filter(r=>r.catchAllVerifiedAt&&r.forwardingTestedAt).length,7);
+ assert.equal(records.filter(r=>r.status==='draft').length,23);
+ assert.ok(records.every(r=>!r.poolTarget));
+ assert.match(fields.randomTestStatus.textContent,/7 PASSED/);
 });
 test('Mail test credentials are temporary and never written to the encrypted Email Bank',()=>{
  assert.match(html,/id="randomTestPassword" type="password" autocomplete="off"/);
