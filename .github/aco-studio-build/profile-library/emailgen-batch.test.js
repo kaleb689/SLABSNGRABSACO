@@ -7,7 +7,7 @@ test('Email Bank right panel has live/verified totals, created batches, selectio
  assert.ok(start>0&&end>start,'batch manager injected inside owner encrypted closure');
  for(const id of ['emailBankTotalCount','emailBankLiveCount','emailBankVerifiedCount','emailBankPendingCount',
   'emailBatchSelect','emailBatchMeta','emailBatchRows','emailBatchSelectVerified','emailBatchSelectAll',
-  'emailBatchClear','emailBatchSearch','emailBatchFilter','emailBatchPrev','emailBatchNext',
+  'emailBatchClear','emailBatchSelectReady','emailBatchSearch','emailBatchFilter','emailBatchPrev','emailBatchNext',
   'emailBatchSelectedCount','emailBatchExportFormat','emailBatchExport','emailBatchRetailer',
   'emailBatchPoolReview','emailBatchPoolConfirmArea','emailBatchPoolConfirm','emailBatchPoolCancel'])
   assert.ok(html.includes('id="'+id+'"'),id);
