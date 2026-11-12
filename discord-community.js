@@ -4,7 +4,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
-import { parseDropNews, dropNewsPayloads, isDropNewsPaste } from "./drop-news-format.js";
+import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
@@ -3508,6 +3508,49 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     });
     await retireOwnerSkuReminderPanels(new Set([rawId]));
   }
+  // Repair only the most recent unformatted owner announcement in Upcoming.
+  // An existing formatted card near it is evidence that it was already
+  // converted, so don't double-post. SKU-bearing posts and saved selections
+  // are left alone to preserve all existing button source IDs.
+  async function repairUpcomingMainText() {
+    if (!upcomingChannelId || !ownerId) return;
+    const history = await api("/channels/" + upcomingChannelId + "/messages?limit=60");
+    if (!Array.isArray(history)) return;
+    const selections = await readSkuFile(skuSelectionsFile);
+    const candidate = history.find(message => {
+      if (message.author?.bot || message.webhook_id || message.pinned ||
+          ![0,19].includes(message.type ?? 0) ||
+          String(message.author?.id) !== String(ownerId) ||
+          parseDropSkus(message).length || !isNewDropPost(message)) return false;
+      const payload = upcomingAnnouncementPayload(message);
+      if (!payload) return false;
+      const sourceMs=Date.parse(message.timestamp || "");
+      if (!Number.isFinite(sourceMs)) return false;
+      const alreadyFormatted = history.some(other =>
+        isFormattedDropPost(other, appId) &&
+        Date.parse(other.timestamp || "") >= sourceMs &&
+        Date.parse(other.timestamp || "") - sourceMs <= 10 * 60_000);
+      if (alreadyFormatted) return false;
+      const selected = Object.values(selections).some(record =>
+        (record?.skippedUpcomingDrops || []).some(row =>
+          String(row.channelId)===String(upcomingChannelId) && String(row.sourceId)===String(message.id)));
+      return !selected;
+    });
+    if (!candidate) return;
+    const payload = upcomingAnnouncementPayload(candidate);
+    const card = await api("/channels/" + upcomingChannelId + "/messages", "POST", payload);
+    const formatted={...card,channel_id:upcomingChannelId,guild_id:guildId,
+      content:"", embeds:payload.embeds,type:0,author:card.author || {id:appId,bot:true}};
+    await ensureSkuControls(formatted);
+    // Original is removed only after formatting succeeds; its text is
+    // retained verbatim inside the new styled card.
+    await api("/channels/" + upcomingChannelId + "/messages/" + candidate.id, "DELETE");
+    await retireReformattedRawSource(upcomingChannelId,candidate.id);
+    console.log("Discord repaired Upcoming Drops main text:",JSON.stringify({
+      sourceId:candidate.id,formattedId:card.id
+    }));
+  }
+
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
       try {
@@ -3888,6 +3931,42 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
         } catch (error) {
           console.error("Discord drop-paste formatting failed; original message preserved:", error.message);
+        }
+      }
+    }
+    // The owner sometimes posts a free-form Upcoming announcement rather
+    // than Product / Retail / SKU blocks. Style it as the original turquoise
+    // announcement card instead of leaving the main text plain.
+    if (d.channel_id === upcomingChannelId && isNewDropPost(d) &&
+        String(d.author?.id || "") === String(ownerId || "") &&
+        !d.pinned && !parseMonitorDropProducts(d).length &&
+        !dropNewsPayloads(parseDropNews(d), "Upcoming Drops", d.content || "").length) {
+      const payload = upcomingAnnouncementPayload(d);
+      if (payload) {
+        try {
+          const posted = await api("/channels/" + d.channel_id + "/messages", "POST", payload);
+          const formatted = { ...posted, channel_id:d.channel_id, guild_id:guildId,
+            content:"", embeds:payload.embeds, type:0,
+            author:posted.author || {id:appId,bot:true} };
+          // Retain the source until the styled card and any required SKU
+          // controls are visible; never erase saved customer selections.
+          await ensureSkuControls(formatted);
+          const selections = await readSkuFile(skuSelectionsFile);
+          const sourcePrefix = d.channel_id + ":" + d.id + ":";
+          const hasSelections = Object.values(selections).some(record =>
+            (record?.items || []).some(item => String(item.key || "").startsWith(sourcePrefix)) ||
+            (record?.skippedUpcomingDrops || []).some(x => String(x.channelId) === String(d.channel_id) &&
+              String(x.sourceId) === String(d.id)));
+          if (!hasSelections) {
+            await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+            await retireReformattedRawSource(d.channel_id,d.id);
+          }
+          console.log("Discord styled Upcoming Drops announcement:", JSON.stringify({
+            sourceId:d.id, formattedId:posted.id, preservedSource:hasSelections
+          }));
+          return;
+        } catch (error) {
+          console.error("Discord Upcoming Drops styling unavailable; original preserved:",error.message);
         }
       }
     }
@@ -5286,6 +5365,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
       await cleanupExpiredDropMessages();
+      await repairUpcomingMainText().catch(error =>
+        console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
 
