@@ -84,7 +84,8 @@
   const chooser=$e('randomAliasPoolChooser');
   if(!chooser)return;
   const available=unlocked?unassignedRandom():[],unsynced=unlocked?unsyncedRandom():[];
-  chooser.hidden=!unlocked||available.length===0;
+  // Batch manager replaces the old global assignment path.
+  chooser.hidden=true;
   $e('randomAliasWaiting').textContent=available.length+' generated email(s) saved without a retailer pool. Adding them to a pool is optional.';
   const activate=$e('randomAliasActivate');
   const ready=available.filter(r=>r.status==='draft'||r.status==='pending');
@@ -94,9 +95,10 @@
    const verified=available.filter(r=>r.catchAllVerifiedAt&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
    catchStatus.textContent=verified+' saved, unassigned email(s) have passed an individual catch-all inbox delivery test. Other drafts are not marked working.';
   }
-  const sync=$e('randomAliasSync');sync.hidden=!unlocked||unsynced.length===0;
+  const sync=$e('randomAliasSync');sync.hidden=true;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
   refreshDraftDestinations();
+  refreshEmailBatchUI();
  }
  async function importLiveRandom(){
   const live=unsyncedRandom().filter(r=>r.status==='live'&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target);
@@ -370,6 +372,9 @@
     if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error('Enter your verified external IMAP inbox in the forwarding destination field above.');
     if(records.length+count>10000)throw Error('Encrypted Email Bank capacity would be exceeded.');
     const existing=new Set(records.map(r=>r.alias)),batch=[];
+    const batchCreatedAt=new Date().toISOString();
+    const batchEntropy=crypto.getRandomValues(new Uint8Array(8));
+    const batchId='gen-'+batchCreatedAt.replace(/[^0-9]/g,'').slice(0,17)+'-'+Array.from(batchEntropy,b=>b.toString(16).padStart(2,'0')).join('');
     for(let i=0;i<count;i++){
      let local,alias,attempts=0;
      do{
@@ -378,7 +383,8 @@
      }while(existing.has(alias));
      existing.add(alias);
      const row=makeAlias('Random '+local,local,target,currentDomain());
-     row.randomGenerated=true;row.poolTarget=null;row.poolImportedAt=null;batch.push(row);
+     row.randomGenerated=true;row.batchId=batchId;row.batchCreatedAt=batchCreatedAt;
+     row.poolTarget=null;row.poolImportedAt=null;batch.push(row);
      // Yield periodically so large local-only batches do not freeze the Email Gen window.
      if((i+1)%250===0&&i+1<count){
       $e('randomAliasStatus').textContent='Preparing '+(i+1)+' of '+count+' unique email drafts...';
@@ -390,34 +396,19 @@
      for(const row of batch){const index=records.indexOf(row);if(index>=0)records.splice(index,1);}
      render();throw Error('The encrypted bank did not save. No addresses were retained.');
     }
-    randomNotice('Saved '+batch.length+' emails in your encrypted Email Bank. No retailer pool was selected, and no forwarding rules were created. Next: click Turn on forwarding when ready, or export your list.',true);
+    emailBatchState.key='batch:'+batchId;emailBatchState.selected.clear();emailBatchState.page=0;
+    randomNotice('Saved '+batch.length+' emails as one batch in your Email Bank. No retailer was assigned. Use the batch manager on the right to export or review verified emails for Profiles.',true);
     refreshRandomChooser();
    }catch(error){randomNotice(String(error.message||error));}
    finally{randomGenBusy=false;create.disabled=false;}
   });
-  assign.addEventListener('click',async()=>{
-   if(randomGenBusy)return;randomGenBusy=true;assign.disabled=true;
-   try{
-    requireOwner();
-    const retailer=$e('randomAliasPool').value;
-    if(!RANDOM_RETAILERS[retailer])throw Error('Choose an unused retailer pool.');
-    const batch=unassignedRandom();
-    if(!batch.length)throw Error('Generate random emails first.');
-    for(const row of batch)row.poolTarget=retailer;
-    if(!await store()){
-     for(const row of batch)row.poolTarget=null;
-     throw Error('Pool selection could not be encrypted. No pool was changed.');
-    }
-    refreshRandomChooser();
-    await publishRandomAndSync();
-   }catch(error){randomNotice(String(error.message||error));}
-   finally{randomGenBusy=false;assign.disabled=false;refreshRandomChooser();}
+  // Old global actions could assign thousands of untested drafts by accident.
+  // Keep their IDs for layout compatibility, but always require batch review.
+  assign.addEventListener('click',()=>{
+   randomNotice('Use Email Bank totals & batches on the right. Select a batch and delivery-verified emails, then review the exact retailer import.');
   });
-  sync.addEventListener('click',async()=>{
-   if(randomGenBusy)return;randomGenBusy=true;sync.disabled=true;
-   try{await publishRandomAndSync();}
-   catch(error){randomNotice(String(error.message||error));}
-   finally{randomGenBusy=false;sync.disabled=false;refreshRandomChooser();}
+  sync.addEventListener('click',()=>{
+   randomNotice('Use the right-hand batch manager to import only tested emails. Publishing individual rules is not required for verified catch-all forwarding.');
   });
   const testAll=$e('randomAliasTestAll');
   if(!testAll)throw Error('Test All Emails button is missing.');

@@ -15,7 +15,7 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  assert.match(html,/id="randomAliasActivate"/);
  assert.match(html,/id="randomAliasForwardStatus"/);
  assert.match(html,/id="randomAliasCreate">Generate Only/);
- assert.match(html,/Cloudflare standard Email Routing has a finite per-domain rules limit/);
+ assert.match(html,/Cloudflare standard Email Routing supports up to 200 individual rules per domain/);
 });
 test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
  const start=app.indexOf(' const RANDOM_FIRST_NAMES='),end=app.indexOf(' // CSV export values',start);
@@ -39,8 +39,9 @@ test('Random local parts use secure name combinations, stay within 10 characters
 test('Encrypted Email Bank retains pool assignment and delivery test provenance across reload',()=>{
  for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:','catchAllVerifiedAt:'])assert.ok(app.includes(field),field);
  assert.match(app,/if\(!await store\(\)\)/);
- assert.match(app,/for\(const row of batch\)row\.poolTarget=retailer/);
- assert.match(app,/for\(const row of batch\)row\.poolTarget=null/);
+ assert.match(app,/row\.batchId=batchId/);
+ assert.match(app,/row\.batchCreatedAt=batchCreatedAt/);
+ assert.match(app,/Batch manager replaces the old global assignment path/);
 });
 test('Saved aliases can turn on forwarding without a retailer pool',()=>{
  assert.match(app,/const unassignedRandom=\(\)=>records\.filter\(r=>r\.randomGenerated===true&&!r\.poolTarget\)/);
