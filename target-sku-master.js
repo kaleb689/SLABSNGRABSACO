@@ -160,8 +160,12 @@ export function targetSkuCandidates(message,products,{directTarget=false,general
       e?.title,e?.description,...(e?.fields||[]).flatMap(f=>[f.name,f.value])
     ])].filter(Boolean).join("\n");
     // In mixed-retailer posts, refuse to assign another store's SKUs to Target.
+    const heading=text.split(/\r?\n/).slice(0,10).join("\n");
+    // A post headed "Target Drop" is a Target source even when additional
+    // retailer names appear in explanatory notes or product links.
+    const explicitTarget=/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|releases?)\s*(?:at|on|for)\s*target\b|\bupcoming\s+(?:drops?\s*)?[·:|—-]\s*target\b|\bupcoming\s+target\s+drop\b/i.test(heading);
     const found=mentionedRetailers(text);
-    if(found.length!==1||found[0]!=="target")return [];
+    if(!explicitTarget && (found.length!==1||found[0]!=="target"))return [];
   }
   const result=new Map();
   for(const row of Array.isArray(products)?products:[]) {

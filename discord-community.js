@@ -4,7 +4,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
-import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload } from "./drop-news-format.js";
+import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { createDropMessageRetention } from "./discord-drop-retention.js";
@@ -293,6 +293,10 @@ export function parseDropSkus(message) {
     for(const raw of section.split(/\r?\n/)){
       const line=raw.replace(/[*_`~]/g,"").trim().replace(/^>\s*/,"");
       if(!line)continue;
+      // A Target product URL contains its TCIN even when a pasted card
+      // contains no separate SKU label.
+      const targetLink=/https?:\/\/(?:www\.)?target\.com\/[^\s<>]*?\/A-(\d{7,12})(?:[?#\s]|$)/i.exec(line);
+      if(targetLink) { addSku(targetLink[1],title); continue; }
       if(pendingId){
         pendingId=false;
         if(/^[A-Z0-9][A-Z0-9._-]{2,79}$/i.test(line)){addSku(line,title);continue;}
@@ -3512,43 +3516,78 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   // An existing formatted card near it is evidence that it was already
   // converted, so don't double-post. SKU-bearing posts and saved selections
   // are left alone to preserve all existing button source IDs.
+  const upcomingRepairFile=path.join(dataDir,"discord-upcoming-format-repairs.json");
   async function repairUpcomingMainText() {
-    if (!upcomingChannelId || !ownerId) return;
-    const history = await api("/channels/" + upcomingChannelId + "/messages?limit=60");
-    if (!Array.isArray(history)) return;
-    const selections = await readSkuFile(skuSelectionsFile);
-    const candidate = history.find(message => {
-      if (message.author?.bot || message.webhook_id || message.pinned ||
-          ![0,19].includes(message.type ?? 0) ||
-          String(message.author?.id) !== String(ownerId) ||
-          parseDropSkus(message).length || !isNewDropPost(message)) return false;
-      const payload = upcomingAnnouncementPayload(message);
-      if (!payload) return false;
-      const sourceMs=Date.parse(message.timestamp || "");
-      if (!Number.isFinite(sourceMs)) return false;
-      const alreadyFormatted = history.some(other =>
-        isFormattedDropPost(other, appId) &&
-        Date.parse(other.timestamp || "") >= sourceMs &&
-        Date.parse(other.timestamp || "") - sourceMs <= 10 * 60_000);
-      if (alreadyFormatted) return false;
-      const selected = Object.values(selections).some(record =>
-        (record?.skippedUpcomingDrops || []).some(row =>
-          String(row.channelId)===String(upcomingChannelId) && String(row.sourceId)===String(message.id)));
-      return !selected;
-    });
-    if (!candidate) return;
-    const payload = upcomingAnnouncementPayload(candidate);
-    const card = await api("/channels/" + upcomingChannelId + "/messages", "POST", payload);
-    const formatted={...card,channel_id:upcomingChannelId,guild_id:guildId,
-      content:"", embeds:payload.embeds,type:0,author:card.author || {id:appId,bot:true}};
-    await ensureSkuControls(formatted);
-    // Original is removed only after formatting succeeds; its text is
-    // retained verbatim inside the new styled card.
-    await api("/channels/" + upcomingChannelId + "/messages/" + candidate.id, "DELETE");
-    await retireReformattedRawSource(upcomingChannelId,candidate.id);
-    console.log("Discord repaired Upcoming Drops main text:",JSON.stringify({
-      sourceId:candidate.id,formattedId:card.id
-    }));
+    if(!upcomingChannelId || !ownerId)return;
+    const history=await api("/channels/"+upcomingChannelId+"/messages?limit=100");
+    if(!Array.isArray(history))return;
+    const state=await readSkuFile(upcomingRepairFile);
+    let repaired=0;
+    // Focus on the latest unformatted pastes and never touch old pinned posts.
+    for(const source of [...history].reverse()) {
+      if(repaired>=4)break;
+      if(state[source.id] || source.author?.bot || source.webhook_id ||
+          source.pinned || !isNewDropPost(source) ||
+          ![0,19].includes(source.type??0))continue;
+      if(!await isTrustedDropPublisher(source))continue;
+      const rawText=String(source.content||"");
+      // Only repair the newest week; the channel's older message history must
+      // not be rewritten on every server restart.
+      const sourceAt=Date.parse(source.timestamp||"");
+      if(!Number.isFinite(sourceAt) || sourceAt<Date.now()-7*86400000)continue;
+      const monitored=parseMonitorDropProducts(source);
+      const structured=monitored.length?formattedDropPayloads(monitored,"Upcoming Drops"):
+        dropNewsPayloads(parseDropNews(source),"Upcoming Drops",rawText);
+      const ids=new Set(parseDropSkus(source).map(item=>item.sku));
+      let payloads=structured.length?structured:upcomingAnnouncementPayloads(source);
+      let converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      // If the structured layout drops any SKU, try a lossless freeform card
+      // rather than abandoning the existing pasted announcement.
+      if([...ids].some(id=>!converted.has(id))) {
+        payloads=upcomingAnnouncementPayloads(source);
+        converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      }
+      if(!payloads.length)continue;
+      // Reject incomplete conversion; never lose a SKU that somebody pasted.
+      if([...ids].some(id=>!converted.has(id))) {
+        console.warn("Upcoming Drops repair skipped incomplete SKU parse:",JSON.stringify({sourceId:source.id,sourceSkus:ids.size,renderedSkus:converted.size}));
+        continue;
+      }
+      const hasExistingCard=history.some(other=>{
+        if(!isFormattedDropPost(other,appId))return false;
+        const time=Date.parse(other.timestamp||"");
+        if(!Number.isFinite(time)||time<sourceAt||time-sourceAt>3*60000)return false;
+        const otherText=[other.content,...(other.embeds||[]).flatMap(e=>[e.title,e.description])].filter(Boolean).join("\n");
+        const first=rawText.split(/\r?\n/).find(Boolean)?.trim().slice(0,45)||"";
+        return first.length>=8 && otherText.includes(first);
+      });
+      if(hasExistingCard)continue;
+      try {
+        if(upcomingDropRetailer(source)==="target") {
+          await recordTargetMasterPost(source,parseDropSkus(source))
+            .catch(error=>console.error("Upcoming Target master backfill:",error.message));
+        }
+        const posted=[];
+        for(const payload of payloads) {
+          const card=await api("/channels/"+upcomingChannelId+"/messages","POST",payload);
+          posted.push(card.id);
+          await ensureSkuControls({...card,channel_id:upcomingChannelId,guild_id:guildId,
+            content:payload.content||"",embeds:payload.embeds,type:0,
+            author:card.author||{id:appId,bot:true}});
+        }
+        state[source.id]={cards:posted,at:new Date().toISOString()};
+        await writeSkuFile(upcomingRepairFile,state);
+        const referenced=await hasSavedDropReferences(upcomingChannelId,source.id);
+        if(!referenced){
+          await api("/channels/"+upcomingChannelId+"/messages/"+source.id,"DELETE");
+          await retireReformattedRawSource(upcomingChannelId,source.id);
+        }
+        console.log("Discord repaired Upcoming Drops main text:",JSON.stringify({
+          sourceId:source.id,posted:posted.length,skus:ids.size,retailer:upcomingDropRetailer(source),keptOriginal:referenced
+        }));
+        repaired++;
+      }catch(error){console.error("Discord Upcoming Drops historical formatting failed:",error.message);}
+    }
   }
 
   async function backfillDropMenus() {
@@ -3848,7 +3887,48 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       console.error("In-Store drop formatting failed; original message preserved:", error.message);
     }
   }
+  async function isTrustedDropPublisher(message) {
+    const id=String(message?.author?.id||"");
+    if(!id || message.author?.bot || message.webhook_id) return false;
+    if(id===String(ownerId||"")) return true;
+    let memberRoles=Array.isArray(message.member?.roles)?message.member.roles:[];
+    if(staffRoleId && memberRoles.includes(String(staffRoleId))) return true;
+    try {
+      // A message-history response often lacks guild role information.
+      if(!memberRoles.length) {
+        const member=await api("/guilds/"+guildId+"/members/"+id);
+        memberRoles=Array.isArray(member?.roles)?member.roles:[];
+      }
+      if(staffRoleId && memberRoles.includes(String(staffRoleId))) return true;
+      // Allow trusted guild moderators/admins even when their Discord account
+      // isn't the server owner's ID or in the dedicated support-staff role.
+      const guildRoles=await api("/guilds/"+guildId+"/roles");
+      let permissions=0n;
+      for(const role of guildRoles) {
+        if(memberRoles.includes(String(role.id)) || String(role.id)===String(guildId))
+          permissions|=BigInt(role.permissions||"0");
+      }
+      return (permissions & (8n | 8192n))!==0n; // Administrator / Manage Messages
+    } catch { return false; }
+  }
+  async function hasSavedDropReferences(channelId, sourceId) {
+    const saved=await readSkuFile(skuSelectionsFile),prefix=channelId+":"+sourceId+":";
+    if(Object.values(saved).some(record=>
+      (record?.items||[]).some(item=>String(item.key||"").startsWith(prefix)) ||
+      (record?.skippedUpcomingDrops||[]).some(x=>
+        String(x.channelId)===String(channelId)&&String(x.sourceId)===String(sourceId))))return true;
+    const drafts=await readSkuFile(skuDraftsFile);
+    return Object.keys(drafts).some(key=>key.endsWith(":"+sourceId));
+  }
   async function onDropPost(d) {
+    if(d?.channel_id === upcomingChannelId && !d?.author?.bot) {
+      console.log("Discord Upcoming Drops pasted message:",JSON.stringify({
+        id:d.id,type:d.type,webhook:Boolean(d.webhook_id),
+        contentCharacters:String(d.content||"").length,
+        attachmentCount:(d.attachments||[]).length,
+        embedCount:(d.embeds||[]).length
+      }));
+    }
     if (d.channel_id && d.channel_id === inStoreChannelId) return onInStorePost(d);
     if (d.guild_id !== guildId || !dropChannelIds.has(d.channel_id) || !d.id ||
       d.author?.bot || d.webhook_id || ![0, 19].includes(d.type ?? 0)) return;
@@ -3856,8 +3936,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // age-based sweep alone expires unpinned drop messages after ten days.
     // Only the owner can invoke automatic monitor-paste conversion. Regular
     // staff drop posts and free-form messages keep their existing behavior.
-    const monitored = isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")
-      ? parseMonitorDropProducts(d) : [];
+    const trusted = isNewDropPost(d) && await isTrustedDropPublisher(d);
+    const monitored = trusted ? parseMonitorDropProducts(d) : [];
     await recordTargetMasterPost(d, monitored.length ? monitored : parseDropSkus(d))
       .catch(error => console.error("Target SKU master raw post:", error.message));
     if (monitored.length) {
@@ -3879,9 +3959,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           // historical drop posts. Wait until the structured messages and
           // their selectable SKU controls are created successfully.
           try {
-            await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
-            await retireReformattedRawSource(d.channel_id,d.id);
-            console.log("Discord converted owner monitor paste:",d.channel_id,d.id,monitored.length);
+            if (!await hasSavedDropReferences(d.channel_id,d.id)) {
+              await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+              await retireReformattedRawSource(d.channel_id,d.id);
+            }
+            console.log("Discord converted trusted monitor paste:",d.channel_id,d.id,monitored.length);
           } catch (error) {
             console.error("Formatted drop published; could not remove raw paste:", error.message);
           }
@@ -3894,7 +3976,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // Owner "drop news" pastes (Product / Retail / Resale / Link blocks) are
     // re-posted in the community layout. The raw paste is removed only after
     // every card posts and the cards carry exactly the same SKUs.
-    if (!monitored.length && isNewDropPost(d) && String(d.author?.id || "") === String(ownerId || "")) {
+    if (!monitored.length && trusted) {
       const label = dropChannelLabel(d.channel_id);
       const payloads = dropNewsPayloads(parseDropNews(d), label, d.content || "");
       const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
@@ -3921,9 +4003,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             await notifyUpcomingRetailerAnnouncement({ ...rendered[0], content: d.content || "" })
               .catch(error => console.error("Formatted upcoming announcement:", error.message));
             try {
-              await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
-              await retireReformattedRawSource(d.channel_id, d.id);
-              console.log("Discord formatted owner drop paste:", d.channel_id, d.id, rawSkus.size);
+              if (!await hasSavedDropReferences(d.channel_id,d.id)) {
+                await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+                await retireReformattedRawSource(d.channel_id,d.id);
+              }
+              console.log("Discord formatted trusted drop paste:", d.channel_id, d.id, rawSkus.size);
             } catch (error) {
               console.error("Formatted drop published; could not remove raw paste:", error.message);
             }
@@ -3934,40 +4018,42 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
       }
     }
-    // The owner sometimes posts a free-form Upcoming announcement rather
-    // than Product / Retail / SKU blocks. Style it as the original turquoise
-    // announcement card instead of leaving the main text plain.
-    if (d.channel_id === upcomingChannelId && isNewDropPost(d) &&
-        String(d.author?.id || "") === String(ownerId || "") &&
-        !d.pinned && !parseMonitorDropProducts(d).length &&
-        !dropNewsPayloads(parseDropNews(d), "Upcoming Drops", d.content || "").length) {
-      const payload = upcomingAnnouncementPayload(d);
-      if (payload) {
+    // Structured formatter did not complete: cover all trusted Upcoming Drops
+    // pastes, including long messages and messages with SKU formats the older
+    // parser rejected. Do not make the absence of structured cards prevent
+    // the fallback from running.
+    if (d.channel_id === upcomingChannelId && trusted && !d.pinned) {
+      const payloads=upcomingAnnouncementPayloads(d);
+      if(payloads.length) {
         try {
-          const posted = await api("/channels/" + d.channel_id + "/messages", "POST", payload);
-          const formatted = { ...posted, channel_id:d.channel_id, guild_id:guildId,
-            content:"", embeds:payload.embeds, type:0,
-            author:posted.author || {id:appId,bot:true} };
-          // Retain the source until the styled card and any required SKU
-          // controls are visible; never erase saved customer selections.
-          await ensureSkuControls(formatted);
-          const selections = await readSkuFile(skuSelectionsFile);
-          const sourcePrefix = d.channel_id + ":" + d.id + ":";
-          const hasSelections = Object.values(selections).some(record =>
-            (record?.items || []).some(item => String(item.key || "").startsWith(sourcePrefix)) ||
-            (record?.skippedUpcomingDrops || []).some(x => String(x.channelId) === String(d.channel_id) &&
-              String(x.sourceId) === String(d.id)));
-          if (!hasSelections) {
-            await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
+          const posted=[];
+          for(const payload of payloads) {
+            const card=await api("/channels/"+d.channel_id+"/messages","POST",payload);
+            posted.push(card.id);
+            await ensureSkuControls({...card,channel_id:d.channel_id,
+              guild_id:guildId,content:"",embeds:payload.embeds,type:0,
+              author:card.author||{id:appId,bot:true}});
+          }
+          // Existing selections and skip links must keep resolving.
+          const referenced=await hasSavedDropReferences(d.channel_id,d.id);
+          if(!referenced) {
+            await api("/channels/"+d.channel_id+"/messages/"+d.id,"DELETE");
             await retireReformattedRawSource(d.channel_id,d.id);
           }
-          console.log("Discord styled Upcoming Drops announcement:", JSON.stringify({
-            sourceId:d.id, formattedId:posted.id, preservedSource:hasSelections
+          console.log("Discord styled Upcoming Drops announcement:",JSON.stringify({
+            sourceId:d.id,formattedCards:posted.length,
+            sourceSkus:parseDropSkus(d).length,keptOriginal:referenced,
+            retailer:upcomingDropRetailer(d)
           }));
           return;
-        } catch (error) {
-          console.error("Discord Upcoming Drops styling unavailable; original preserved:",error.message);
+        }catch(error) {
+          console.error("Discord Upcoming Drops paste formatting failed:",error.message);
         }
+      } else {
+        console.log("Discord Upcoming Drops paste not formatted:",JSON.stringify({
+          sourceId:d.id,characterCount:String(d.content||"").length,
+          trusted,skus:parseDropSkus(d).length
+        }));
       }
     }
     await ensureSkuControls(d);
@@ -3979,6 +4065,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   function sourceRetailerKey(source) {
     const text = [source?.content, ...(source?.embeds || []).flatMap(embed => [embed?.title, embed?.description])]
       .filter(Boolean).join("\n");
+    if (upcomingDropRetailer(source) === "target") return "target";
     const found = mentionedRetailers(text);
     return found.length === 1 ? found[0] : "";
   }
@@ -3997,6 +4084,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const where = channelId === tonightChannelId ? "Dropping Tonight" :
       channelId === upcomingChannelId ? "Upcoming Drops" : "Other drops";
     const named = retailerAlert(row?.retailer)?.name;
+    if (row?.retailer === "target") return "Target";
     return named ? named + " · " + where : where;
   }
   function ownerSkuPayload(userId, username, items, change, skipTonightDate, skippedUpcomingDrops = [], previousItems = null) {
@@ -4032,6 +4120,63 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   // Add copy buttons to already-published messages without reposting, pinging
   // members, or erasing the original Added/Removed history in their embeds.
+  // Keep source IDs unchanged; classify Target-branded Upcoming selections
+  // under Target in the member's private SKU summary/copy options.
+  async function repairUpcomingTargetSelections() {
+    if(!upcomingChannelId || !skuRequestsChannelId)return 0;
+    return withSkuQueue(async()=>{
+      const records=await readSkuFile(skuSelectionsFile),sourceIds=new Set();
+      for(const record of Object.values(records))for(const item of record?.items||[]) {
+        const [channel,id]=String(item.key||"").split(":");
+        if(channel===String(upcomingChannelId)&&id && !item.retailer)sourceIds.add(id);
+      }
+      const sources=new Map();
+      for(const id of [...sourceIds].slice(0,150)) {
+        try {
+          const source=await api("/channels/"+upcomingChannelId+"/messages/"+id);
+          sources.set(id,sourceRetailerKey(source));
+        }catch{/* Unavailable sources must not be classified by guessing. */}
+      }
+      let updated=0;
+      for(const [userId,record] of Object.entries(records)) {
+        let changed=false;
+        record.items=(record.items||[]).map(item=>{
+          const [channel,id]=String(item.key||"").split(":");
+          if(channel!==String(upcomingChannelId)||sources.get(id)!=="target"||
+             item.retailer==="target")return item;
+          changed=true;
+          return {...item,retailer:"target"};
+        });
+        if(!changed)continue;
+        updated++;
+        if(/^\d{17,22}$/.test(String(record.messageId||""))) {
+          try {
+            const old=await api("/channels/"+skuRequestsChannelId+"/messages/"+record.messageId);
+            const updatedCard=ownerSkuPayload(userId,record.username||userId,record.items,
+              "Existing selections",record.skipTonightDate,record.skippedUpcomingDrops||[]);
+            const embeds=[...(old.embeds||[])];
+            if(embeds.length) {
+              const original=String(embeds.at(-1)?.description||"");
+              const idx=original.indexOf("**SKU changes this update**");
+              const history=idx>=0?original.slice(idx):"";
+              const summary={...updatedCard.embeds.at(-1)};
+              if(history && summary.description.length+history.length<3950)
+                summary.description+="\n\n"+history;
+              embeds[embeds.length-1]=summary;
+            }
+            await api("/channels/"+skuRequestsChannelId+"/messages/"+record.messageId,"PATCH",{
+              ...(embeds.length?{embeds}:{}),
+              components:updatedCard.components,allowed_mentions:{parse:[]}
+            });
+          }catch(error){console.error("Target Upcoming selection display refresh:",error.message);}
+        }
+      }
+      if(updated)await writeSkuFile(skuSelectionsFile,records);
+      console.log("Upcoming Target SKU selections categorized:",JSON.stringify({updated,sources:sources.size}));
+      return updated;
+    });
+  }
+
   async function refreshExistingOwnerCopyButtons() {
     if (!skuRequestsChannelId) return 0;
     return withSkuQueue(async () => {
@@ -5369,6 +5514,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
+      // Migration is non-critical and must not delay Discord gateway setup.
+      setTimeout(() => void repairUpcomingTargetSelections().catch(error =>
+        console.error("Discord Target Upcoming SKU migration:",error.message)), 30000).unref?.();
 
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
