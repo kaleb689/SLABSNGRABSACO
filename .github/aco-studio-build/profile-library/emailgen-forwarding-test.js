@@ -127,12 +127,13 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
  const cfg=validate(input),started=now();
  const transporter=transport(mail,cfg);
  const imap=imapClient(IMAP,cfg.imapHost,cfg.mailbox,cfg.pass);
- const tests=cfg.aliases.map(alias=>({alias,marker:PREFIX+crypto.randomBytes(12).toString('hex'),sent:false,received:false}));
+ const tests=cfg.aliases.map(alias=>({alias,marker:PREFIX+crypto.randomBytes(12).toString('hex'),sent:false,received:false,attempted:false}));
  let connected=false,lock=null,receiverMoved=0,rateLimited=false;
  try{
   await imap.connect();connected=true;
   lock=await imap.getMailboxLock('INBOX');
   for(const item of tests){
+   item.attempted=true;
    try{
     await transporter.sendMail({from:cfg.sender,to:item.alias,subject:item.marker,
      text:'Owner-requested ACO Studio forwarding test. Unique test ID: '+item.marker});
@@ -185,8 +186,9 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
   senderMovedToTrash:sentCleanup.moved,senderCleanupAvailable:sentCleanup.available,
   cleanupPending:Math.max(0,received-receiverMoved),rateLimited,
   sentButUnconfirmed:tests.filter(t=>t.sent&&!t.received).length,
-  sendFailed:tests.filter(t=>!t.sent).length,
-  results:tests.map(t=>({alias:t.alias,status:t.received?'delivered':t.sent?'unconfirmed':'send_failed'}))};
+  sendFailed:tests.filter(t=>t.attempted&&!t.sent).length,
+  skipped:tests.filter(t=>!t.attempted).length,
+  results:tests.map(t=>({alias:t.alias,status:t.received?'delivered':t.sent?'unconfirmed':t.attempted?'send_failed':'not_attempted'}))};
 }
 async function verifyMailLogins(config,{mail=require('nodemailer'),IMAP=require('imapflow').ImapFlow}={}){
  const cfg=normalizeConfig(config);
