@@ -3921,10 +3921,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     return Object.keys(drafts).some(key=>key.endsWith(":"+sourceId));
   }
   async function onDropPost(d) {
-    if(d?.channel_id === upcomingChannelId && !d?.author?.bot) {
+    if(d?.channel_id === upcomingChannelId && String(d?.author?.id || "") !== String(appId || "")) {
       console.log("Discord Upcoming Drops pasted message:",JSON.stringify({
         id:d.id,type:d.type,webhook:Boolean(d.webhook_id),
         contentCharacters:String(d.content||"").length,
+        botAuthor:Boolean(d.author?.bot),
         attachmentCount:(d.attachments||[]).length,
         embedCount:(d.embeds||[]).length
       }));
