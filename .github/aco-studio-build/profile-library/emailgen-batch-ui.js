@@ -106,7 +106,7 @@
    meta.textContent=unlocked?'No generated emails yet. Manual aliases remain in the table below.':'Unlock your encrypted Email Bank to view batches.';
    batchElement('emailBatchPage').textContent='0 of 0';
    batchElement('emailBatchSelectedCount').textContent='0 selected.';
-   for(const id of ['emailBatchSelectVerified','emailBatchSelectAll','emailBatchExport','emailBatchPoolReview','emailBatchPrev','emailBatchNext']){
+   for(const id of ['emailBatchSelectReady','emailBatchSelectVerified','emailBatchSelectAll','emailBatchExport','emailBatchPoolReview','emailBatchPrev','emailBatchNext']){
     batchElement(id).disabled=true;
    }
    return;
@@ -145,6 +145,7 @@
   batchElement('emailBatchNext').disabled=emailBatchState.page>=maxPage;
   const countSelected=emailBatchSelectedRows(group).length,selectedVerified=emailBatchSelectedRows(group).filter(batchVerified).length;
   batchElement('emailBatchSelectedCount').textContent=countSelected+' selected in this batch ('+selectedVerified+' delivery verified). Export can include drafts; retailer import requires every selected email to be verified and unassigned.';
+  batchElement('emailBatchSelectReady').disabled=!group.rows.some(r=>batchVerified(r)&&!r.poolTarget&&!r.poolImportedAt);
   batchElement('emailBatchSelectVerified').disabled=!verifiedInBatch;
   batchElement('emailBatchSelectAll').disabled=group.rows.length===0;
   batchElement('emailBatchExport').disabled=countSelected===0;
@@ -250,6 +251,7 @@
    emailBatchState.selected=new Set(getRows(group).map(emailBatchFormattedEmail));
    emailBatchResetPreview();refreshEmailBatchUI();
   });
+  selectButton('emailBatchSelectReady',g=>g.rows.filter(r=>batchVerified(r)&&!r.poolTarget&&!r.poolImportedAt));
   selectButton('emailBatchSelectVerified',g=>g.rows.filter(batchVerified));
   selectButton('emailBatchSelectAll',g=>g.rows);
   batchElement('emailBatchClear').addEventListener('click',()=>{
