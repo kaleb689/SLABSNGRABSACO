@@ -13635,7 +13635,7 @@ function managedMembershipCardHtml(
                       type="password"
                       autocomplete="off"
                       value="${escapeHtml(
-                        customerSecrets.securityCode || ""
+                        customerSecrets.accountAccessCode || customerSecrets.securityCode || ""
                       )}"
                       data-admin-sensitive-input
                     >
