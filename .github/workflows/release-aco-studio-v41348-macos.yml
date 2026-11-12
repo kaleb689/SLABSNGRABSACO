@@ -192,7 +192,7 @@ jobs:
           grep -Fq 'randomAliasCatchAllTest' "$APP/Contents/Resources/app/index.html"
           grep -Fq '200 individual rules per domain' "$APP/Contents/Resources/app/index.html"
           grep -Fq 'catchAllVerifiedAt' "$APP/Contents/Resources/app/app.js"
-          grep -Fq 'only' "$APP/Contents/Resources/app/app.js"
+          grep -Fq "if(catchAllMode&&row.status!=='live')" "$APP/Contents/Resources/app/app.js"
           grep -Fq 'max="10000"' "$APP/Contents/Resources/app/index.html"
           grep -Fq 'const RANDOM_FIRST_NAMES=' "$APP/Contents/Resources/app/app.js"
           grep -Fq 'activateUnassignedForwarding' "$APP/Contents/Resources/app/app.js"
