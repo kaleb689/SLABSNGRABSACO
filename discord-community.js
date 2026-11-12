@@ -4102,7 +4102,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const records=await readSkuFile(skuSelectionsFile),sourceIds=new Set();
       for(const record of Object.values(records))for(const item of record?.items||[]) {
         const [channel,id]=String(item.key||"").split(":");
-        if(channel===String(upcomingChannelId)&&id)sourceIds.add(id);
+        if(channel===String(upcomingChannelId)&&id && !item.retailer)sourceIds.add(id);
       }
       const sources=new Map();
       for(const id of [...sourceIds].slice(0,150)) {
@@ -5478,8 +5478,6 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await provision();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
-      await repairUpcomingTargetSelections()
-        .catch(error => console.error("Discord Target Upcoming SKU migration:", error.message));
       await refreshExistingOwnerCopyButtons()
         .catch(error => console.error("SKU copy controls startup:", error.message));
       await sendOwnerRenewalPreview().catch(error => console.error("Discord renewal preview DM:", error.message));
@@ -5490,6 +5488,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
       await syncAll(); await connect(); void verifyAiConnection();
+      // Migration is non-critical and must not delay Discord gateway setup.
+      setTimeout(() => void repairUpcomingTargetSelections().catch(error =>
+        console.error("Discord Target Upcoming SKU migration:",error.message)), 30000).unref?.();
 
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
