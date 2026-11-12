@@ -7,12 +7,13 @@ test('Expanded right Email Bank owns the entire saved-credential and automated t
  assert.ok(html.indexOf('id="emailBatchManager"')<html.indexOf('id="randomAliasTestArea"'));
  assert.ok(html.indexOf('id="randomAliasTestArea"')<html.indexOf('id="bankSearch"'));
  assert.equal((html.match(/id="randomAliasTestArea"/g)||[]).length,1);
- for(const id of ['randomTestProgress','randomTestPassed','randomTestFailed','randomTestGreenBar','randomTestRedBar','randomTestRecent',
+ for(const id of ['randomTestProgress','randomTestPassed','randomTestFailed','randomTestUnconfirmed','randomTestGreenBar','randomTestAmberBar','randomTestRedBar','randomTestRecent',
  'randomAliasTestAll','randomAliasTestBatch','randomAliasTestStop','randomTestSettings','randomMailPreset','randomTestReceiver',
  'randomTestSender','randomTestSenderPassword','randomTestPassword','randomTestSenderImap','randomMailCredentialsSave',
  'randomMailCredentialsForget','randomAliasCatchAllTest'])assert.match(html,new RegExp('id="'+id+'"'));
  assert.match(app,/scheduleNewBatchAutoTest\(batchId\)/);
  assert.match(app,/AUTO_TEST_GROUP_SIZE=25/);
+ assert.match(app,/AUTO_TEST_PREFLIGHT_SIZE=3/);
  assert.match(app,/mailTestState\.active=true/);
  assert.match(app,/mailTestState\.cancel=true/);
  assert.match(app,/if\(response\.rateLimited\)/);
@@ -26,7 +27,7 @@ function elem(value=''){
   children:[],replaceChildren(){this.children=[];},appendChild(child){this.children.push(child);},
   setAttribute(){},addEventListener(){}};
 }
-function harness(rows,profiles){
+function harness(rows,profiles,{forceNoDelivery=false}={}){
  const widgets=new Map(),get=id=>{if(!widgets.has(id))widgets.set(id,elem());return widgets.get(id);};
  const inbox=rows[0]?.target||'';
  get('randomTestReceiver').value=inbox;
@@ -39,7 +40,8 @@ function harness(rows,profiles){
   api:()=>({mailTestCredentialStatus:async()=>({saved:profiles.length>0,profiles}),
    testForwarding:async request=>{
     calls.push(request);
-    return {results:request.aliases.map(alias=>({alias,status:alias.startsWith('bad')?'unconfirmed':'delivered'})),rateLimited:false,cleanupPending:0};
+    const results=request.aliases.map(alias=>({alias,status:forceNoDelivery||alias.startsWith('bad')?'unconfirmed':'delivered'}));
+    return {results,delivered:results.filter(x=>x.status==='delivered').length,sentButUnconfirmed:results.filter(x=>x.status==='unconfirmed').length,rateLimited:false,cleanupPending:0};
    }}),
   $e:get,document:{createElement:tag=>elem(tag)},setTimeout:(fn)=>{fn();return 1;},
   emailBatchGroups:()=>[{key:'batch:batch-1',rows}],emailBatchCurrentGroup:()=>({key:'batch:batch-1',rows}),
@@ -56,20 +58,23 @@ test('One automatic run loops through all 57 aliases and correctly selects two s
   {mailbox:'two@gmail.com',sender:'send2@gmail.com',smtpHost:'smtp.gmail.com',imapHost:'imap.gmail.com',senderImapHost:'imap.gmail.com',updatedAt:'2026-11-12T12:01:00Z'}
  ];
  const h=harness(rows,profiles);await h.ctx.run({all:true});
- assert.deepEqual(h.calls.map(call=>call.aliases.length),[25,10,22]);
+ assert.deepEqual(h.calls.map(call=>call.aliases.length),[3,25,7,3,19]);
  assert.deepEqual(h.calls.map(call=>[call.mailbox,call.sender]),[
-  ['one@gmail.com','send1@gmail.com'],['one@gmail.com','send1@gmail.com'],['two@gmail.com','send2@gmail.com']]);
+  ['one@gmail.com','send1@gmail.com'],['one@gmail.com','send1@gmail.com'],['one@gmail.com','send1@gmail.com'],
+  ['two@gmail.com','send2@gmail.com'],['two@gmail.com','send2@gmail.com']]);
  assert.equal(h.ctx.testState.passed,56);
- assert.equal(h.ctx.testState.failed,1);
+ assert.equal(h.ctx.testState.failed,0);
+ assert.equal(h.ctx.testState.unconfirmed,1);
  assert.equal(h.ctx.testState.done,57);
  assert.equal(h.ctx.testState.active,false);
  assert.equal(rows.filter(row=>row.status==='live'&&row.forwardingTestedAt).length,56);
  assert.equal(rows.find(row=>row.alias.startsWith('bad')).status,'draft');
  assert.ok(rows.every(row=>!row.poolTarget));
- assert.equal(h.saved.length,3,'encrypted bank saved once per 25/10/22 segment, never once per message');
+ assert.equal(h.saved.length,5,'encrypted bank saved once per preflight/group, never once per message');
  assert.equal(h.get('randomTestProgress').textContent,'57/57');
  assert.equal(h.get('randomTestPassed').textContent,'56');
- assert.equal(h.get('randomTestFailed').textContent,'1');
+ assert.equal(h.get('randomTestFailed').textContent,'0');
+ assert.equal(h.get('randomTestUnconfirmed').textContent,'1');
 });
 test('Missing sender/receiver passwords never marks drafts working and invites secure setup',async()=>{
  const rows=[{alias:'unused@sng.sarl',target:'different@gmail.com',randomGenerated:true,status:'draft'}];
@@ -79,4 +84,23 @@ test('Missing sender/receiver passwords never marks drafts working and invites s
  assert.equal(rows[0].status,'draft');
  assert.match(h.get('randomTestStatus').textContent,/Automatic test pending/);
  assert.equal(h.get('randomTestSettings').open,true);
+});
+
+test('Catch-all preflight stops after 3 unconfirmed messages and leaves all other aliases untouched',async()=>{
+ const rows=Array.from({length:405},(_,i)=>({alias:'draft'+i+'@sng.sarl',randomGenerated:true,target:'inbox@gmail.com',status:'draft',poolTarget:null}));
+ const profiles=[{mailbox:'inbox@gmail.com',sender:'sender@gmail.com',smtpHost:'smtp.gmail.com',imapHost:'imap.gmail.com',senderImapHost:'imap.gmail.com'}];
+ const h=harness(rows,profiles,{forceNoDelivery:true});
+ await h.ctx.run({all:true});
+ assert.deepEqual(h.calls.map(call=>call.aliases.length),[3],'no mass testing when first 3 do not reach Inbox');
+ assert.equal(h.ctx.testState.done,3);
+ assert.equal(h.ctx.testState.unconfirmed,3);
+ assert.equal(h.ctx.testState.failed,0);
+ assert.equal(h.ctx.testState.paused,true);
+ assert.equal(h.ctx.testState.passed,0);
+ assert.equal(rows.filter(r=>r.status==='draft').length,405);
+ assert.equal(h.saved.length,1);
+ assert.match(h.get('randomTestStatus').textContent,/Cloudflare catch-all is Active/);
+ assert.match(h.get('randomTestStatus').textContent,/Spam\/All Mail/);
+ assert.equal(h.get('randomTestUnconfirmed').textContent,'3');
+ assert.equal(h.get('randomTestFailed').textContent,'0');
 });
