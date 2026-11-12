@@ -135,6 +135,13 @@ const skuKey = value=>String(value||"").trim().toUpperCase();
 const isSku = value=>/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(value);
 const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replaceAll(String.fromCharCode(96)," ").replace(/\s+/g," ").trim().slice(0,180);
 const tick = String.fromCharCode(96);
+const dollar = value => typeof value === "number" && Number.isFinite(value)
+  ? "$" + value.toFixed(2) : "N/A";
+export function targetMasterPriceLine(entry) {
+  const t = entry?.prices?.target, m = entry?.prices?.tcgplayer;
+  return "Target: " + dollar(t?.price) + " | TCGplayer: " + dollar(m?.marketPrice);
+}
+
 const button = (label,id,disabled=false,style=2)=>({type:2,style,label,custom_id:id,disabled});
 
 export function initialTargetMaster(at=new Date().toISOString()) {
@@ -211,7 +218,7 @@ export function targetMasterDashboard(master) {
   const items=targetMasterItems(master),preview=items.slice(0,14);
   return {allowed_mentions:{parse:[]},
     embeds:[{title:"Target SKU Master - "+items.length+" products",
-      description:(preview.map(x=>tick+x.sku+tick+" - "+safeName(x.name)).join("\n")||"No Target SKUs saved.")+
+      description:(preview.map(x=>tick+x.sku+tick+" - "+safeName(x.name)+"\n  "+targetMasterPriceLine(x)).join("\n")||"No Target SKUs saved.")+
         (items.length>preview.length?"\n\n+"+(items.length-preview.length)+" more - View Full List for all.":"")+
         "\n\nAuto-adds unique Target SKUs from Target Drops and Target-only Upcoming / Dropping Tonight posts.",
       color:0xe74c3c,footer:{text:TARGET_MASTER_MARKER}}],
@@ -227,7 +234,7 @@ export function targetMasterView(master,page=0) {
   const shown=items.slice(chosen*15,(chosen+1)*15);
   return {flags:64,allowed_mentions:{parse:[]},
     embeds:[{title:"Target Master - "+items.length+" SKUs - Page "+(chosen+1)+"/"+pages,
-      description:shown.map(x=>tick+x.sku+tick+" - "+safeName(x.name)).join("\n")||"No SKUs saved.",
+      description:shown.map(x=>tick+x.sku+tick+" - "+safeName(x.name)+"\n  "+targetMasterPriceLine(x)).join("\n")||"No SKUs saved.",
       color:0xe74c3c}],
     components:[{type:1,components:[
       button("Previous","targetmaster:view:"+(chosen-1),chosen===0),
