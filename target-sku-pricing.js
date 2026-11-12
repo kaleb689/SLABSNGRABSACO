@@ -39,7 +39,7 @@ export function applyAuthorizedSkuPrices(master, document, at = new Date().toISO
     const mUrl = tcgUrl(tcg?.url);
     const prices = {...(old.prices || {})};
     let changed = false;
-    if (target?.seller === "Target" && tPrice !== null && tUrl) {
+    if (!prices.target?.locked && target?.seller === "Target" && tPrice !== null && tUrl) {
       prices.target = {price:tPrice, url:tUrl, checkedAt:at, seller:"Target"};
       changed = true;
     } else if (target !== undefined) rejected++;
