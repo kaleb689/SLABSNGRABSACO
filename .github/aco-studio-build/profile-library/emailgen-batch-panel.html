@@ -1,0 +1,62 @@
+
+<div id="emailBatchManager" class="emailBatchManager" aria-label="Email generation batches" style="margin:12px 0 16px;padding:13px;border:1px solid #3b6072;border-radius:12px;background:#102236">
+ <h3 style="margin:0 0 9px;font-size:15px;color:#b5fdf3">Email Bank totals &amp; batches</h3>
+ <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 11px">
+  <div class="tiny" style="padding:8px;background:#192c40;border-radius:8px">All saved <strong id="emailBankTotalCount" style="display:block;font-size:20px;color:#fff">0</strong></div>
+  <div class="tiny" style="padding:8px;background:#192c40;border-radius:8px">Live routing <strong id="emailBankLiveCount" style="display:block;font-size:20px;color:#83f1e4">0</strong></div>
+  <div class="tiny" style="padding:8px;background:#192c40;border-radius:8px">Delivery verified <strong id="emailBankVerifiedCount" style="display:block;font-size:20px;color:#b7f7a1">0</strong></div>
+  <div class="tiny" style="padding:8px;background:#192c40;border-radius:8px">Unverified / not live <strong id="emailBankPendingCount" style="display:block;font-size:20px;color:#ffcf91">0</strong></div>
+ </div>
+ <p class="tiny" style="margin-bottom:9px">Live routing means Cloudflare says the rule is live, or catch-all delivery was verified. <strong>Delivery verified</strong> means a real test reached the selected inbox. No email is assigned to a retailer from this panel without your explicit confirmation.</p>
+ <label for="emailBatchSelect" class="tiny" style="display:block;margin-bottom:4px">Created date and batch</label>
+ <select id="emailBatchSelect" style="width:100%;margin-bottom:7px" aria-label="Choose email generation batch"><option value="">No batches yet</option></select>
+ <p id="emailBatchMeta" class="tiny" role="status" style="margin-bottom:8px">Unlock the bank to view saved batches.</p>
+ <div class="buttons" style="gap:5px;margin-bottom:8px">
+  <button type="button" class="btn slim primary" id="emailBatchSelectVerified">Select all verified</button>
+  <button type="button" class="btn slim secondary" id="emailBatchSelectAll">Select whole batch</button>
+  <button type="button" class="btn slim plain" id="emailBatchClear">Clear selection</button>
+ </div>
+ <div class="buttons" style="gap:5px;margin-bottom:7px">
+  <input id="emailBatchSearch" type="search" placeholder="Find email within batch..." aria-label="Search generated emails in selected batch" style="flex:1;min-width:115px">
+  <select id="emailBatchFilter" aria-label="Filter batch emails"><option value="all">All</option><option value="verified">Tested working</option><option value="unverified">Not verified</option><option value="unassigned">Not in pool</option></select>
+ </div>
+ <div id="emailBatchRows" style="border:1px solid #304b61;border-radius:8px;max-height:215px;overflow:auto;padding:5px 7px;background:#0c1b2a" role="group" aria-label="Emails in selected generation batch"></div>
+ <div class="buttons" style="justify-content:space-between;gap:5px;margin:7px 0">
+  <button type="button" class="btn slim plain" id="emailBatchPrev">Previous</button>
+  <span id="emailBatchPage" class="tiny">0 of 0</span>
+  <button type="button" class="btn slim plain" id="emailBatchNext">Next</button>
+ </div>
+ <p class="tiny" id="emailBatchSelectedCount" style="margin:6px 0 11px">0 selected. Nothing changes unless you export or confirm a pool import.</p>
+ <label for="emailBatchExportFormat" class="tiny" style="display:block;margin-bottom:4px">Export chosen emails</label>
+ <div class="buttons" style="gap:6px;margin-bottom:10px">
+  <select id="emailBatchExportFormat" aria-label="Batch export format" style="flex:1;min-width:130px">
+   <option value="emails">Email addresses only (.txt)</option>
+   <option value="basic">Email Gen CSV</option>
+   <option value="shikari">Shikari CSV template</option>
+   <option value="shikari-txt">Shikari TXT template</option>
+  </select>
+  <button type="button" class="btn slim secondary" id="emailBatchExport">Export selected</button>
+ </div>
+ <p class="tiny" style="margin:-4px 0 11px">Export may include unverified drafts when you select them. Email Gen CSV uses its import-only preset password, not a real mailbox password. Exporting never publishes or assigns anything.</p>
+ <label for="emailBatchRetailer" class="tiny" style="display:block;margin-bottom:4px">Add tested emails to a Profiles unused pool (optional)</label>
+ <div class="buttons" style="gap:6px">
+  <select id="emailBatchRetailer" style="flex:1;min-width:145px" aria-label="Select a retailer for verified email import">
+   <option value="">Choose retailer...</option>
+   <option value="target">Target</option>
+   <option value="walmart">Walmart</option>
+   <option value="pokemoncenter">Pokémon Center</option>
+   <option value="costco">Costco</option>
+   <option value="sams">Sam's Club</option>
+  </select>
+  <button type="button" class="btn slim secondary" id="emailBatchPoolReview">Review import</button>
+ </div>
+ <div id="emailBatchPoolConfirmArea" hidden style="border:1px solid #668a82;padding:9px;border-radius:8px;margin-top:9px;background:#133329">
+  <p id="emailBatchPoolSummary" class="tiny" style="color:#c6f5e7;margin-bottom:7px"></p>
+  <div class="buttons">
+   <button type="button" class="btn slim primary" id="emailBatchPoolConfirm">Confirm exact batch import</button>
+   <button type="button" class="btn slim plain" id="emailBatchPoolCancel">Cancel</button>
+  </div>
+ </div>
+ <p id="emailBatchActionStatus" class="tiny" aria-live="polite" role="status" style="margin-top:8px"></p>
+ <p class="tiny" style="margin-top:5px">Older generated emails are grouped by saved creation timestamps when they lack a batch ID. Manual aliases remain available in the Email Bank table below.</p>
+</div>
