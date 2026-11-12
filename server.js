@@ -1014,6 +1014,7 @@ function redactLogValue(
       "cardnumber",
       "acocardnumber",
       "securitycode",
+      "accountaccesscode",
       "cvv",
       "cvc",
       "authorization",
@@ -1651,8 +1652,10 @@ function sanitizeSecrets(body) {
     expMonth: clean(body.expMonth, 2),
     expYear: clean(body.expYear, 4),
 
-    securityCode: clean(
-      body.securityCode,
+    // This is the separate non-payment ACO account access code.
+    // Card CVV/CVC is never stored.
+    accountAccessCode: clean(
+      body.accountAccessCode ?? body.securityCode,
       300
     )
   };
@@ -6440,9 +6443,8 @@ function paymentSecretsFromSavedPayment(
       payment.expYear ||
       "",
 
-    securityCode:
-      payment.securityCode ||
-      ""
+    accountAccessCode:
+      existing?.accountAccessCode || ""
   };
 }
 
@@ -6543,7 +6545,7 @@ function fullProfileCardDetails(
 
     securityCode:
       clean(
-        secrets?.securityCode,
+        secrets?.accountAccessCode,
         300
       ),
 
@@ -14502,7 +14504,7 @@ try {
       expYear:
         customerSecrets.expYear || "",
       securityCode:
-        customerSecrets.securityCode || ""
+        customerSecrets.accountAccessCode || ""
     };
   }
 } catch (error) {
@@ -14820,7 +14822,7 @@ try {
       expYear:
         customerSecrets.expYear || "",
       securityCode:
-        customerSecrets.securityCode || ""
+        customerSecrets.accountAccessCode || ""
     };
   }
 } catch (error) {
@@ -15220,8 +15222,8 @@ app.put(
 
       const suppliedSecurityCode =
         clean(
-          submittedCustomerCard
-            .securityCode,
+          submittedCustomerCard.accountAccessCode ??
+            submittedCustomerCard.securityCode,
           300
         );
 
@@ -15276,12 +15278,9 @@ app.put(
             .expYear ||
           "",
 
-        securityCode:
+        accountAccessCode:
           suppliedSecurityCode ||
-          savedCardBase
-            .securityCode ||
-          existingCustomerSecrets
-            .securityCode ||
+          existingCustomerSecrets.accountAccessCode ||
           ""
       };
 
@@ -24213,8 +24212,8 @@ app.put(
           expYear:
             req.body?.expYear,
 
-          securityCode:
-            req.body?.securityCode
+          accountAccessCode:
+            req.body?.accountAccessCode ?? req.body?.securityCode
         });
 
       assignment.customerProfile =
@@ -24292,7 +24291,7 @@ app.put(
             "",
 
           securityCode:
-            customerSecrets.securityCode ||
+            customerSecrets.accountAccessCode ||
             ""
         }
       });
@@ -28987,7 +28986,7 @@ app.get(
                   "",
 
                 securityCode:
-                  secrets.securityCode ||
+                  secrets.accountAccessCode ||
                   ""
               };
             })()
@@ -29155,7 +29154,7 @@ app.get(
                   "",
 
                 securityCode:
-                  secrets.securityCode ||
+                  secrets.accountAccessCode ||
                   ""
               };
             })()
@@ -30740,7 +30739,7 @@ function managedCustomerCardFromSecrets(
 
     securityCode:
       clean(
-        secrets?.securityCode,
+        secrets?.accountAccessCode,
         300
       )
   };
@@ -32846,9 +32845,9 @@ app.put(
             card.expYear,
             4
           ),
-        securityCode:
+        accountAccessCode:
           clean(
-            card.securityCode,
+            card.accountAccessCode ?? card.securityCode,
             300
           )
       };
@@ -33153,9 +33152,9 @@ app.put(
             4
           ),
 
-        securityCode:
+        accountAccessCode:
           clean(
-            submittedCard.securityCode,
+            submittedCard.accountAccessCode ?? submittedCard.securityCode,
             300
           )
       };
@@ -35050,11 +35049,16 @@ app.put(
           Object.prototype.hasOwnProperty.call(
             submittedCustomerCard,
             "securityCode"
+          ) ||
+          Object.prototype.hasOwnProperty.call(
+            submittedCustomerCard,
+            "accountAccessCode"
           )
         ) {
-          customerSecrets.securityCode =
+          customerSecrets.accountAccessCode =
             clean(
-              submittedCustomerCard.securityCode,
+              submittedCustomerCard.accountAccessCode ??
+                submittedCustomerCard.securityCode,
               300
             );
         }
@@ -35456,12 +35460,11 @@ app.put(
         }
 
         if (
-          submittedSecrets
-            .securityCode
+          submittedSecrets.accountAccessCode ||
+          submittedSecrets.securityCode
         ) {
-          nextSecrets.securityCode =
-            submittedSecrets
-              .securityCode;
+          nextSecrets.accountAccessCode =
+            submittedSecrets.accountAccessCode || submittedSecrets.securityCode;
         }
 
         record.profile =
@@ -35625,12 +35628,11 @@ app.put(
       }
 
       if (
-        submittedSecrets
-          .securityCode
+        submittedSecrets.accountAccessCode ||
+        submittedSecrets.securityCode
       ) {
-        nextSecrets.securityCode =
-          submittedSecrets
-            .securityCode;
+        nextSecrets.accountAccessCode =
+          submittedSecrets.accountAccessCode || submittedSecrets.securityCode;
       }
 
       account.adminProfile =
@@ -37036,14 +37038,17 @@ app.put(
 
 const replacementSecurityCode =
   clean(
-    secretsBody.securityCode,
+    secretsBody.accountAccessCode ?? secretsBody.securityCode,
     300
   );
 
+// Account security codes are separate from payment card verification data.
+// Keep blank updates unchanged; never store CVV/CVC under this field.
 if (replacementSecurityCode) {
-  nextSecrets.securityCode =
+  nextSecrets.accountAccessCode =
     replacementSecurityCode;
 }
+delete nextSecrets.securityCode;
 
 
 /* -------------------------------------------------------

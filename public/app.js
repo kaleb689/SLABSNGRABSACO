@@ -2124,16 +2124,13 @@ function profileFieldErrorMessage(
     }
   }
 
+  // Account security code is separate from card CVV/CVC, and must not
+  // be rejected simply for being longer than four digits.
   if (
-    name ===
-    "securityCode" &&
-    !/^\d{3,4}$/.test(
-      rawValue
-    )
+    name === "securityCode" &&
+    rawValue.length > 300
   ) {
-    return (
-      "Security Code must be 3 or 4 digits."
-    );
+    return "ACO account security code must be 300 characters or fewer.";
   }
 
   if (
@@ -10138,7 +10135,7 @@ function bindManagedMembershipForms() {
             expYear:
               formData.get("expYear") || "",
 
-            securityCode:
+            accountAccessCode:
               formData.get("securityCode") || ""
           };
 
@@ -11644,7 +11641,8 @@ async function saveRetailerProfile(
         ) || ""
       ).trim(),
 
-    securityCode:
+    // This is a non-payment ACO account code, not a card CVV/CVC.
+    accountAccessCode:
       String(
         formData.get(
           "securityCode"
