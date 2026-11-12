@@ -1,21 +1,38 @@
 <section class="panel section" id="randomEmailGenSection">
- <h2>2. Generate random forwarding emails</h2>
- <p class="sectionHelp">No names or aliases required. Choose how many unique @sng.sarl email addresses to create. All forward to the verified external IMAP inbox entered above, once Cloudflare forwarding is live.</p>
- <label>Number of emails to create (1–100 per batch)<input type="number" id="randomAliasCount" min="1" max="100" value="10" step="1" inputmode="numeric" required></label>
- <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasCreate">Create random emails</button><button type="button" class="btn secondary" id="randomAliasExport">Export Email Gen CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikari">Export Shikari profile template CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikariTxt">Export Shikari TXT (for .txt-only file pickers)</button></div>
+ <h2>2. Email Gen — Quick Start</h2>
+ <p class="sectionHelp"><strong>No retailer pool is required.</strong> Follow these steps whenever you want new emails:</p>
+ <ol class="sectionHelp">
+  <li><strong>Choose your inbox.</strong> Enter the Gmail (or other) address where you want messages delivered in the forwarding destination field above. Complete Cloudflare's one-time verification if requested.</li>
+  <li><strong>Generate emails.</strong> Choose a quantity below and click Generate Only. Your new addresses are safely saved, without any retailer assignment or live forwarding rule.</li>
+  <li><strong>Turn on forwarding when ready.</strong> Click the separate forwarding button below after connecting Cloudflare. The app will attempt to activate the new addresses.</li>
+  <li><strong>Check delivery.</strong> Use Test Email Delivery. An address is verified only after a real message reaches the selected inbox.</li>
+ </ol>
+ <p class="sectionHelp">You can stop after Step 2 and export saved addresses. Adding them to Target, Walmart, Pokémon Center, Costco or Sam's Club is entirely optional.</p>
+ <label>Step 2 — Number of emails to generate (1–10,000; based on available bank space)<input type="number" id="randomAliasCount" min="1" max="10000" value="10" step="1" inputmode="numeric" required></label>
+ <p class="sectionHelp">Email Gen saves addresses locally first. Forwarding and retailer assignment are separate actions. Cloudflare standard Email Routing has a finite per-domain rules limit; activating or testing thousands of addresses may require a larger routing setup. Failed or unverified emails stay safely saved, not marked as working.</p>
+ <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasCreate">Generate Only — Save Emails</button><button type="button" class="btn secondary" id="randomAliasExport">Export Email Gen CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikari">Export Shikari profile template CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikariTxt">Export Shikari TXT (for .txt-only file pickers)</button></div>
  <small><strong>Choose the correct file:</strong> <code>Export Email Gen CSV</code> contains <code>profile_name,email,password</code> with <code>aco gen 1</code>, <code>aco gen 2</code> and the requested import-only password <code>Freeshit1!</code>. The <strong>Shikari Profile CSV/TXT</strong> exports match your existing Shikari file's <strong>24 exact columns beginning with <code>index,profile_name,first_name,last_name,email</code></strong>, with sequential names and original emails. The original Shikari profile format has <strong>no password column</strong>, so it will not import that preset password. Address, name, phone, and payment fields are left blank unless you complete real Target profiles first. The <code>.txt</code> choice is for Shikari file pickers that don't select <code>.csv</code>; it is still comma-delimited. Both files are plaintext; protect them. Neither creates a real retailer account or mailbox password.</small>
+ <section class="panel section" id="randomAliasForwardingArea">
+  <h3>Step 3 — Turn on forwarding (no retailer pool needed)</h3>
+  <p class="sectionHelp">If your forwarding destination and Cloudflare connection are ready, click below. ACO Studio publishes in manageable groups and stops if the provider reports a problem. This will <strong>not</strong> add any email to a retailer pool.</p>
+  <button type="button" class="btn primary" id="randomAliasActivate">Turn on forwarding for saved emails</button>
+  <p id="randomAliasForwardStatus" class="tiny" role="status" aria-live="polite"></p>
+ </section>
  <div id="randomAliasPoolChooser" hidden>
+  <h3>Optional — Add saved emails to a retailer pool</h3>
+  <p class="sectionHelp">Leave this alone if you want to keep your addresses outside all retailer pools. When selected, this applies to all currently unassigned generated emails. Only verified, working addresses are actually imported into the retailer's unused pool.</p>
   <p class="tiny" id="randomAliasWaiting" role="status"></p>
-  <label>Choose unused retailer email pool after creation
+  <label>Choose a retailer (optional)
    <select id="randomAliasPool" aria-label="Choose unused retailer email pool">
     <option value="">Choose retailer...</option><option value="target">Target</option><option value="walmart">Walmart</option>
     <option value="pokemoncenter">Pokémon Center</option><option value="costco">Costco</option><option value="sams">Sam's Club</option>
    </select>
   </label>
-  <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasAssign">Activate forwarding &amp; send live addresses to pool</button></div>
+  <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasAssign">Assign saved emails to this retailer (optional)</button></div>
  </div>
  <div class="buttons" style="margin-top:10px"><button type="button" class="btn secondary" id="randomAliasSync" hidden>Publish / sync assigned emails</button></div>
- <section class="fieldStack" id="randomAliasDestinationArea">
+ <details class="fieldStack" id="randomAliasDestinationArea">
+  <summary>Advanced: Change the forwarding inbox for existing drafts</summary>
   <h3>Change forwarding inbox on existing drafts</h3>
   <p class="sectionHelp">Keep every generated @sng.sarl address. Change only random-generated DRAFT aliases with no published Cloudflare rule or retailer import. Live, pending, manually created, and imported accounts are not changed. Preview and explicitly confirm before saving an encrypted backup and changing the destination.</p>
   <label>Existing draft destination
@@ -32,19 +49,21 @@
    <div class="buttons"><button type="button" class="btn primary" id="randomDestinationConfirm">Confirm change of draft destinations</button><button type="button" class="btn secondary" id="randomDestinationCancel">Cancel</button></div>
   </section>
   <p id="randomDestinationStatus" class="tiny" role="status" aria-live="polite"></p>
- </section>
+ </details>
  <div class="fieldStack" id="randomAliasTestArea">
-  <h3>Test All Emails — verify delivery to your inbox</h3>
-  <p class="sectionHelp">Send from a DIFFERENT email account to each live generated address, then check the forwarding inbox entered above. Gmail may hide messages sent back to the same mailbox. Cloudflare missing-email notices and routing rules alone are not a pass. Your destinations and aliases stay unchanged.</p>
+  <h3>Step 4 — Test Email Delivery</h3>
+  <p class="sectionHelp">Use a second email account to send a test to each activated address, then check that each message reached your selected inbox. The app never marks an address as working just because Cloudflare accepted it.</p>
   <label>Separate sending email account<input id="randomTestSender" type="email" autocomplete="off" spellcheck="false" placeholder="A different mailbox from your forwarding inbox"></label>
   <label>Sending account app password (test session only; never saved)<input id="randomTestSenderPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Separate sender's app password"></label>
+  <details><summary>Advanced mail settings (Gmail defaults)</summary>
   <label>Sending SMTP server (encrypted TLS, port 465)<input id="randomTestSmtp" value="smtp.gmail.com" autocomplete="off" spellcheck="false"></label>
   <label>IMAP server (encrypted TLS, port 993)<input id="randomTestImap" value="imap.gmail.com" autocomplete="off" spellcheck="false"></label>
+  </details>
   <label>Mail app password for the forwarding inbox (test session only; never saved)<input id="randomTestPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Your verified inbox app password"></label>
-  <div class="buttons"><button type="button" class="btn secondary" id="randomAliasTestAll">Test All Emails</button></div>
+  <div class="buttons"><button type="button" class="btn secondary" id="randomAliasTestAll">Test Email Delivery</button></div>
   <p id="randomTestStatus" class="tiny" aria-live="polite"></p>
   <small>The app reports PASSED only when a unique test message is found in your verified IMAP INBOX. SMTP accepted, pending verification, undelivered, or untested are not a pass. Both test passwords are cleared after each run.</small>
  </div>
  <p id="randomAliasStatus" class="tiny" aria-live="polite"></p>
- <small>Unverified or pending forwarding aliases stay in your encrypted Email Bank. Only Cloudflare-confirmed live addresses go into your Personal retailer's Unused email pool. If verification is pending, complete it and use Publish / sync. Manually created aliases remain unchanged.</small>
+ <small>All generated emails remain in your encrypted Email Bank until you decide otherwise. Forwarding is optional, and retailer pool assignment is optional. Only Cloudflare-confirmed live addresses with a successful inbox delivery test can enter the Personal retailer Unused email pool. Existing manual aliases are not changed.</small>
 </section>

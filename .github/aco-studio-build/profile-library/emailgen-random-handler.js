@@ -85,7 +85,10 @@
   if(!chooser)return;
   const available=unlocked?unassignedRandom():[],unsynced=unlocked?unsyncedRandom():[];
   chooser.hidden=!unlocked||available.length===0;
-  $e('randomAliasWaiting').textContent=available.length+' generated email(s) waiting for a retailer unused pool.';
+  $e('randomAliasWaiting').textContent=available.length+' generated email(s) saved without a retailer pool. Adding them to a pool is optional.';
+  const activate=$e('randomAliasActivate');
+  const ready=available.filter(r=>r.status==='draft'||r.status==='pending');
+  if(activate){activate.disabled=!unlocked||ready.length===0;activate.textContent=ready.length?'Turn on forwarding for '+ready.length+' saved email(s)':'No emails waiting to activate';}
   const sync=$e('randomAliasSync');sync.hidden=!unlocked||unsynced.length===0;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
   refreshDraftDestinations();
@@ -109,6 +112,40 @@
   }
   document.dispatchEvent(new CustomEvent('jigstudio:bank-context-updated'));
   return {added,already};
+ }
+ // Forward emails independently of retailer assignment. Nothing enters a retailer pool here.
+ async function activateUnassignedForwarding(){
+  requireOwner();
+  const pending=unassignedRandom().filter(r=>r.status==='draft'||r.status==='pending');
+  if(!pending.length){
+   randomNotice('No saved, unassigned emails need forwarding. You can still test existing live emails.',true);
+   return;
+  }
+  let completed=0,live=0,issues=[];
+  for(let index=0;index<pending.length;index+=100){
+   const batch=pending.slice(index,index+100);
+   $e('randomAliasForwardStatus').textContent='Turning on forwarding: '+completed+' / '+pending.length+' checked...';
+   const published=await api().publish(batch.map(({alias,target})=>({alias,target})));
+   const returned=published.items||[],matched=new Set();
+   for(const result of returned){
+    if(!batch.some(r=>r.alias===result.alias))continue;
+    matched.add(result.alias);
+    const row=records.find(r=>r.randomGenerated===true&&r.alias===result.alias);
+    if(result.error)issues.push(result.alias+': '+result.error);
+    if(!row||!['draft','pending','live','paused','conflict'].includes(result.status))continue;
+    row.status=result.status;row.remoteId=result.remoteId||null;
+    if(result.status==='live')live++;
+   }
+   if(!await store())throw Error('The forwarding service responded, but your encrypted Email Bank could not save the results. Stop and check the bank before retrying.');
+   completed+=batch.length;
+   if(matched.size<batch.length)issues.push((batch.length-matched.size)+' email(s) received no forwarding status.');
+   if(issues.length)break; // Respect provider errors or limits instead of continuing to send requests.
+  }
+  const remaining=unassignedRandom().filter(r=>r.status==='draft'||r.status==='pending').length;
+  const summary='Forwarding checked for '+completed+' of '+pending.length+' saved email(s); '+live+' confirmed active by Cloudflare, '+remaining+' still awaiting activation or review. No retailer pool was changed.';
+  $e('randomAliasForwardStatus').textContent=summary+(issues.length?' Issues: '+issues.slice(0,2).join(' | '):'');
+  randomNotice(summary+' Next: use Test Email Delivery to verify messages actually arrive.',issues.length===0&&remaining===0);
+  refreshRandomChooser();
  }
  async function publishRandomAndSync(){
   requireOwner();
@@ -281,8 +318,14 @@
   refreshDraftDestinations();
  }
  function setupRandomEmailGen(){
-  const create=$e('randomAliasCreate'),assign=$e('randomAliasAssign'),sync=$e('randomAliasSync');
-  if(!create||!assign||!sync)throw Error('Random Email Gen controls are unavailable.');
+  const create=$e('randomAliasCreate'),assign=$e('randomAliasAssign'),sync=$e('randomAliasSync'),activate=$e('randomAliasActivate');
+  if(!create||!assign||!sync||!activate)throw Error('Random Email Gen controls are unavailable.');
+  activate.addEventListener('click',async()=>{
+   if(randomGenBusy)return;randomGenBusy=true;activate.disabled=true;
+   try{await activateUnassignedForwarding();}
+   catch(error){$e('randomAliasForwardStatus').textContent=String(error?.message||error);}
+   finally{randomGenBusy=false;refreshRandomChooser();}
+  });
   const exportButton=$e('randomAliasExport'),shikariButton=$e('randomAliasExportShikari'),shikariTextButton=$e('randomAliasExportShikariTxt');
   if(!exportButton||!shikariButton||!shikariTextButton)throw Error('Email Gen and Shikari export controls are unavailable.');
   for(const [button,mode,extension] of [[exportButton,'basic','csv'],[shikariButton,'shikari','csv'],[shikariTextButton,'shikari','txt']])button.addEventListener('click',()=>{
@@ -299,7 +342,7 @@
    try{
     requireOwner();
     const count=Number($e('randomAliasCount').value),target=$e('emailTarget').value.trim().toLowerCase();
-    if(!Number.isSafeInteger(count)||count<1||count>100)throw Error('Choose 1–100 random forwarding emails.');
+    if(!Number.isSafeInteger(count)||count<1||count>10000)throw Error('Choose 1–10,000 random forwarding emails.');
     if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error('Enter your verified external IMAP inbox in the forwarding destination field above.');
     if(records.length+count>10000)throw Error('Encrypted Email Bank capacity would be exceeded.');
     const existing=new Set(records.map(r=>r.alias)),batch=[];
@@ -312,13 +355,18 @@
      existing.add(alias);
      const row=makeAlias('Random '+local,local,target,currentDomain());
      row.randomGenerated=true;row.poolTarget=null;row.poolImportedAt=null;batch.push(row);
+     // Yield periodically so large local-only batches do not freeze the Email Gen window.
+     if((i+1)%250===0&&i+1<count){
+      $e('randomAliasStatus').textContent='Preparing '+(i+1)+' of '+count+' unique email drafts...';
+      await new Promise(resolve=>setTimeout(resolve,0));
+     }
     }
     records.push(...batch);
     if(!await store()){
      for(const row of batch){const index=records.indexOf(row);if(index>=0)records.splice(index,1);}
      render();throw Error('The encrypted bank did not save. No addresses were retained.');
     }
-    randomNotice('Created '+batch.length+' random @'+OWNER_DOMAIN+' email drafts. All will forward to '+target+' once Cloudflare is live. Choose the unused retailer pool below.',true);
+    randomNotice('Saved '+batch.length+' emails in your encrypted Email Bank. No retailer pool was selected, and no forwarding rules were created. Next: click Turn on forwarding when ready, or export your list.',true);
     refreshRandomChooser();
    }catch(error){randomNotice(String(error.message||error));}
    finally{randomGenBusy=false;create.disabled=false;}

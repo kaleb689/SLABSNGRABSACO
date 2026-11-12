@@ -9,7 +9,13 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  for(const retailer of ['target','walmart','pokemoncenter','costco','sams'])
   assert.match(html,new RegExp('<option value="'+retailer+'">'));
  assert.ok(html.indexOf('id="randomAliasCreate"')<html.indexOf('id="randomAliasPoolChooser"'));
- assert.match(html,/verified external IMAP inbox entered above/);
+ assert.match(html,/Choose your inbox/);
+ assert.match(html,/id="randomAliasCount" min="1" max="10000"/);
+ assert.match(html,/No retailer pool is required/);
+ assert.match(html,/id="randomAliasActivate"/);
+ assert.match(html,/id="randomAliasForwardStatus"/);
+ assert.match(html,/id="randomAliasCreate">Generate Only/);
+ assert.match(html,/Cloudflare standard Email Routing has a finite per-domain rules limit/);
 });
 test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
  const start=app.indexOf(' const RANDOM_FIRST_NAMES='),end=app.indexOf(' // CSV export values',start);
@@ -23,16 +29,31 @@ test('Random local parts use secure name combinations, stay within 10 characters
  assert.ok(results.every(name=>/^[a-z]{5,9}[0-9]{1,2}$/.test(name)&&name.length<=10),results.find(name=>name.length>10));
  assert.ok(new Set(results).size>200,'random aliases should have varied names');
  assert.ok(results.every(name=>!name.startsWith('sng')),'Do not use the old sng plus hex alias format');
- assert.match(app,/new Set\\(records\\.map\\(r=>r\\.alias\\)\\)/);
- assert.match(app,/if\\(\\+\\+attempts>100\\)/);
- assert.match(app,/count<1\\|\\|count>100/);
- assert.match(app,/makeAlias\\('Random '\\+local,local,target,currentDomain\\(\\)\\)/);
+ assert.match(app,/new Set\(records\.map\(r=>r\.alias\)\)/);
+ assert.match(app,/if\(\+\+attempts>100\)/);
+ assert.match(app,/count<1\|\|count>10000/);
+ assert.match(app,/if\(records\.length\+count>10000\)/);
+ assert.match(app,/if\(\(i\+1\)%250===0&&i\+1<count\)/);
+ assert.match(app,/makeAlias\('Random '\+local,local,target,currentDomain\(\)\)/);
 });
 test('Encrypted Email Bank retains pool assignment and delivery test provenance across reload',()=>{
  for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:'])assert.ok(app.includes(field),field);
  assert.match(app,/if\(!await store\(\)\)/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=retailer/);
  assert.match(app,/for\(const row of batch\)row\.poolTarget=null/);
+});
+test('Saved aliases can turn on forwarding without a retailer pool',()=>{
+ assert.match(app,/const unassignedRandom=\(\)=>records\.filter\(r=>r\.randomGenerated===true&&!r\.poolTarget\)/);
+ const start=app.indexOf(' async function activateUnassignedForwarding(){');
+ const end=app.indexOf(' async function publishRandomAndSync(){',start);
+ assert.ok(start>=0&&end>start);
+ const source=app.slice(start,end);
+ assert.match(source,/unassignedRandom\(\)\.filter/);
+ assert.match(source,/batch\.map\(\(\{alias,target\}\)=>\(\{alias,target\}\)\)/);
+ assert.match(source,/index\+=100/);
+ assert.doesNotMatch(source,/poolTarget\s*=/);
+ assert.doesNotMatch(source,/importLiveRandom\(\)/);
+ assert.match(app,/activate\.addEventListener\('click'/);
 });
 test('Cloudflare live AND exact mailbox receipt are mandatory before Personal unused-pool import',()=>{
  assert.match(app,/unsyncedRandom\(\)\.filter\(r=>r\.status==='live'&&r\.forwardingTestedAt&&r\.forwardingTestTarget===r\.target\)/);
