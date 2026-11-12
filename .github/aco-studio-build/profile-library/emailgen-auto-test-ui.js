@@ -3,7 +3,7 @@
  // emails never cause a synchronous renderer repaint for every test result.
  const MAIL_TEST_CATCHALL_PREF='aco.emailgen.catchall.preferences.v1';
  const AUTO_TEST_GROUP_SIZE=25;
- const mailTestState={active:false,cancel:false,profiles:[],profileCheckedAt:0,
+ const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
   loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,
   paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0};
  let mailProgressTimer=null;
@@ -184,36 +184,43 @@
     (catchallForMailbox(r.target)||r.status==='live'));
  }
  async function runAutomaticEmailTests({batchId=null,all=false,automatic=false}={}){
-  if(mailTestState.active||randomGenBusy){
+  if(mailTestState.active||mailTestState.starting||randomGenBusy){
    if(automatic&&batchId)mailTestState.autoPendingBatch=batchId;
    return;
   }
-  requireOwner();
-  if(!unlocked)return;
-  await loadSavedMailPairs(true);
-  const batch=batchId?emailBatchGroups().find(g=>g.key==='batch:'+batchId):!all?emailBatchCurrentGroup():null;
-  const unverifiedAll=(batch?batch.rows:records).filter(r=>r.randomGenerated===true&&
+  mailTestState.starting=true;
+  let profileBuckets=new Map(),missing=new Set(),total=0;
+  try{
+   requireOwner();
+   if(!unlocked)return;
+   await loadSavedMailPairs(true);
+   const batch=batchId?emailBatchGroups().find(g=>g.key==='batch:'+batchId):!all?emailBatchCurrentGroup():null;
+   const unverifiedAll=(batch?batch.rows:records).filter(r=>r.randomGenerated===true&&
     (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target));
-  const candidates=collectTestCandidates({batchId,all});
-  const profileBuckets=new Map(),missing=new Set();
-  for(const row of candidates){
-   const selected=findSavedMailPair(row.target);
-   if(!selected){missing.add(row.target);continue;}
-   const key=mailPairKey(selected);
-   if(!profileBuckets.has(key))profileBuckets.set(key,{profile:selected,rows:[]});
-   profileBuckets.get(key).rows.push(row);
-  }
-  const total=[...profileBuckets.values()].reduce((sum,group)=>sum+group.rows.length,0);
-  if(!total){
+   const candidates=collectTestCandidates({batchId,all});
+   for(const row of candidates){
+    const selected=findSavedMailPair(row.target);
+    if(!selected){missing.add(row.target);continue;}
+    const key=mailPairKey(selected);
+    if(!profileBuckets.has(key))profileBuckets.set(key,{profile:selected,rows:[]});
+    profileBuckets.get(key).rows.push(row);
+   }
+   total=[...profileBuckets.values()].reduce((sum,group)=>sum+group.rows.length,0);
+   if(!total){
+    const status=mailUIElement('randomTestStatus');
+    if(unverifiedAll.length){
+     const targets=[...new Set(unverifiedAll.map(r=>r.target))];
+     status.textContent='Automatic test pending for '+unverifiedAll.length+' emails. Save a matching sender and receiver app-password pair and confirm catch-all forwarding for draft addresses. Inbox(es): '+targets.join(', ')+'.';
+     mailUIElement('randomTestSettings').open=true;
+     if(batchId)mailTestState.autoPendingBatch=batchId;
+    }else status.textContent='All eligible saved addresses are already delivery verified.';
+    return;
+   }
+  }catch(error){
    const status=mailUIElement('randomTestStatus');
-   if(unverifiedAll.length){
-    const targets=[...new Set(unverifiedAll.map(r=>r.target))];
-    status.textContent='Automatic test pending for '+unverifiedAll.length+' emails. Save a matching sender and receiver app-password pair and confirm catch-all forwarding for draft addresses. Inbox(es): '+targets.join(', ')+'.';
-    mailUIElement('randomTestSettings').open=true;
-    if(batchId)mailTestState.autoPendingBatch=batchId;
-   }else status.textContent='All eligible saved addresses are already delivery verified.';
+   if(status)status.textContent='Could not start automatic tests: '+String(error?.message||error);
    return;
-  }
+  }finally{mailTestState.starting=false;}
   mailTestState.active=true;randomGenBusy=true;mailTestState.cancel=false;
   mailTestState.statuses=new Map();
   mailTestState.runId=createTestRunId();mailTestState.recent=[];
