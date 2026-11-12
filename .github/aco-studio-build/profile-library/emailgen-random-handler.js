@@ -88,7 +88,12 @@
   $e('randomAliasWaiting').textContent=available.length+' generated email(s) saved without a retailer pool. Adding them to a pool is optional.';
   const activate=$e('randomAliasActivate');
   const ready=available.filter(r=>r.status==='draft'||r.status==='pending');
-  if(activate){activate.disabled=!unlocked||ready.length===0;activate.textContent=ready.length?'Turn on forwarding for '+ready.length+' saved email(s)':'No emails waiting to activate';}
+  if(activate){activate.disabled=!unlocked||ready.length===0;activate.textContent=ready.length?'Create individual forwarding rules for '+ready.length+' emails':'No individual rules waiting';}
+  const catchStatus=$e('randomAliasCatchAllStatus');
+  if(catchStatus){
+   const verified=available.filter(r=>r.catchAllVerifiedAt&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
+   catchStatus.textContent=verified+' saved, unassigned email(s) have passed an individual catch-all inbox delivery test. Other drafts are not marked working.';
+  }
   const sync=$e('randomAliasSync');sync.hidden=!unlocked||unsynced.length===0;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
   refreshDraftDestinations();
@@ -143,8 +148,10 @@
   }
   const remaining=unassignedRandom().filter(r=>r.status==='draft'||r.status==='pending').length;
   const summary='Forwarding checked for '+completed+' of '+pending.length+' saved email(s); '+live+' confirmed active by Cloudflare, '+remaining+' still awaiting activation or review. No retailer pool was changed.';
-  $e('randomAliasForwardStatus').textContent=summary+(issues.length?' Issues: '+issues.slice(0,2).join(' | '):'');
-  randomNotice(summary+' Next: use Test Email Delivery to verify messages actually arrive.',issues.length===0&&remaining===0);
+  const limited=issues.some(s=>/\b429\b|limit exceeded|too many requests/i.test(s));
+  const hint=limited?' Cloudflare refused more individual routing rules. The standard domain limit is 200 rules. Do not repeatedly retry; use the catch-all instructions and verify real inbox delivery instead.':'';
+  $e('randomAliasForwardStatus').textContent=summary+(issues.length?' Issues: '+issues.slice(0,2).join(' | '):'')+hint;
+  randomNotice(summary+hint+' Next: verify actual inbox delivery.',issues.length===0&&remaining===0);
   refreshRandomChooser();
  }
  async function publishRandomAndSync(){
