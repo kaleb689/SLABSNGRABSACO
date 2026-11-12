@@ -163,7 +163,7 @@ export function targetSkuCandidates(message,products,{directTarget=false,general
     const heading=text.split(/\r?\n/).slice(0,10).join("\n");
     // A post headed "Target Drop" is a Target source even when additional
     // retailer names appear in explanatory notes or product links.
-    const explicitTarget=/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|releases?)\s*(?:at|on|for)\s*target\b/i.test(heading);
+    const explicitTarget=/\btarget\s*(?:drops?|restocks?|releases?|skus?)\b|\b(?:drops?|releases?)\s*(?:at|on|for)\s*target\b|\bupcoming\s+(?:drops?\s*)?[·:|—-]\s*target\b|\bupcoming\s+target\s+drop\b/i.test(heading);
     const found=mentionedRetailers(text);
     if(!explicitTarget && (found.length!==1||found[0]!=="target"))return [];
   }
