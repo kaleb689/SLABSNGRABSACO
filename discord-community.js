@@ -293,6 +293,10 @@ export function parseDropSkus(message) {
     for(const raw of section.split(/\r?\n/)){
       const line=raw.replace(/[*_`~]/g,"").trim().replace(/^>\s*/,"");
       if(!line)continue;
+      // A Target product URL contains its TCIN even when a pasted card
+      // contains no separate SKU label.
+      const targetLink=/https?:\\/\\/(?:www\\.)?target\\.com\\/[^\\s<>]*?\\/A-(\\d{7,12})(?:[?#\\s]|$)/i.exec(line);
+      if(targetLink) { addSku(targetLink[1],title); continue; }
       if(pendingId){
         pendingId=false;
         if(/^[A-Z0-9][A-Z0-9._-]{2,79}$/i.test(line)){addSku(line,title);continue;}
