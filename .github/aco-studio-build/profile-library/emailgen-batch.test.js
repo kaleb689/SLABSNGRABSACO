@@ -81,3 +81,45 @@ test('Export only uses explicit selection; no Cloudflare publish or silent pool 
  assert.match(source,/if\(chosen\.some\(r=>!batchVerified\(r\)\)\)/);
  assert.match(source,/importEmails/);
 });
+
+
+test('Only the exact chosen batch is deleted after typed confirmation and verified ciphertext backup',async()=>{
+ const rows=[
+  {alias:'one@sng.sarl',randomGenerated:true,batchId:'batch-delete',batchCreatedAt:'2026-11-12T15:00:00Z',status:'draft',poolTarget:null},
+  {alias:'two@sng.sarl',randomGenerated:true,batchId:'batch-delete',batchCreatedAt:'2026-11-12T15:00:00Z',status:'live',remoteId:'cloudflare-id',poolTarget:null},
+  {alias:'untouched@sng.sarl',randomGenerated:true,batchId:'batch-keep',batchCreatedAt:'2026-11-12T15:30:00Z',status:'draft'},
+  {alias:'manual@sng.sarl',randomGenerated:false,status:'live'}
+ ];
+ const encrypted='ciphertext-only-contents',storage=new Map([['email.bank',encrypted]]);
+ const controls=new Map(),get=id=>{
+  if(!controls.has(id))controls.set(id,{textContent:'',hidden:false,checked:false,value:''});
+  return controls.get(id);
+ };
+ const ctx={records:rows,randomGenBusy:false,unlocked:true,mailTestState:{active:false},requireOwner(){},Date,Set,Map,KEY:'email.bank',
+  crypto:{getRandomValues:b=>{b.fill(7);return b;}},localStorage:{getItem:k=>storage.has(k)?storage.get(k):null,setItem:(k,v)=>storage.set(k,v)},
+  $e:get,refreshEmailBatchUI:()=>{},RANDOM_RETAILERS:{target:'Target'},store:async()=>{storage.set('email.bank','new-encrypted-bank');return true;}};
+ vm.createContext(ctx);
+ const end=app.indexOf(' function setupEmailBatchUI(){',start);
+ vm.runInContext(app.slice(start,end)+";emailBatchState.key='batch:batch-delete';this.review=reviewEmailBatchDeletion;this.deleteBatch=confirmEmailBatchDeletion;",ctx);
+ ctx.review();
+ assert.equal(get('emailBatchDeleteConfirmArea').hidden,false);
+ assert.match(get('emailBatchDeleteSummary').textContent,/Cloudflare/);
+ assert.equal(rows.length,4,'preview never deletes');
+ await assert.rejects(ctx.deleteBatch(),/Type DELETE/);
+ get('emailBatchDeleteTyped').value='DELETE';
+ get('emailBatchDeleteAcknowledge').checked=true;
+ await ctx.deleteBatch();
+ assert.deepEqual(rows.map(x=>x.alias),['untouched@sng.sarl','manual@sng.sarl']);
+ assert.ok([...storage.keys()].some(key=>key.startsWith('email.bank.batch-delete-backup.')));
+ assert.ok([...storage.values()].includes(encrypted));
+ assert.match(get('emailBatchActionStatus').textContent,/Cloudflare/);
+});
+test('Batch deletion refuses retailer-assigned records even if they are generated',()=>{
+ assert.match(html,/id="emailBatchDeleteReview"/);
+ assert.match(html,/id="emailBatchDeleteTyped"/);
+ assert.match(html,/id="emailBatchDeleteAcknowledge"/);
+ assert.match(app,/group\.rows\.filter\(r=>Boolean\(r\.poolTarget\)\|\|Boolean\(r\.poolImportedAt\)\)/);
+ assert.match(app,/if\(mailTestState\.active\|\|randomGenBusy\)/);
+ assert.match(app,/localStorage\.setItem\(backupKey,previous\)/);
+ assert.doesNotMatch(app.slice(app.indexOf(' function reviewEmailBatchDeletion'),app.indexOf(' function setupEmailBatchUI')),/api\(\)\.publish/);
+});
