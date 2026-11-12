@@ -17,6 +17,7 @@ import {
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
 import { applyAuthorizedSkuPrices, fetchAuthorizedSkuPriceFeed, fetchTcgcsvPokemonMarket, applyTcgcsvPokemonMarket } from "./target-sku-pricing.js";
+import { addFixedTargetRetail } from "./target-sku-fixed-retail.js";
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
   searchTargetPicks, pasteTargetPicks, targetPickDiff,
@@ -3078,10 +3079,15 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function initializeTargetMaster() {
     return withTargetMasterQueue(async () => {
       const saved = await loadTargetMaster();
-      const { master, added } = targetMasterEnsureOwnerRequested(saved);
-      if (added.length) {
+      const approved = targetMasterEnsureOwnerRequested(saved);
+      const fixed = addFixedTargetRetail(approved.master);
+      const { master } = fixed;
+      if (approved.added.length || fixed.added.length) {
         await writeSkuFile(targetMasterFile, master);
-        console.log("Owner-requested Target SKUs added:", JSON.stringify({ added, total: targetMasterItems(master).length }));
+        console.log("Target master additions:", JSON.stringify({
+          skus:approved.added, fixedTargetPrices:fixed.added,
+          total:targetMasterItems(master).length
+        }));
       }
       await publishTargetMaster(master);
       console.log("Target SKU master ready:", targetMasterItems(master).length);
