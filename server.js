@@ -35460,12 +35460,11 @@ app.put(
         }
 
         if (
-          submittedSecrets
-            .securityCode
+          submittedSecrets.accountAccessCode ||
+          submittedSecrets.securityCode
         ) {
           nextSecrets.accountAccessCode =
-            submittedSecrets
-              .accountAccessCode || submittedSecrets.securityCode;
+            submittedSecrets.accountAccessCode || submittedSecrets.securityCode;
         }
 
         record.profile =
@@ -35629,12 +35628,11 @@ app.put(
       }
 
       if (
-        submittedSecrets
-          .securityCode
+        submittedSecrets.accountAccessCode ||
+        submittedSecrets.securityCode
       ) {
-        nextSecrets.securityCode =
-          submittedSecrets
-            .securityCode;
+        nextSecrets.accountAccessCode =
+          submittedSecrets.accountAccessCode || submittedSecrets.securityCode;
       }
 
       account.adminProfile =
