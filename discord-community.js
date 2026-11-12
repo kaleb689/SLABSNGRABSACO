@@ -3524,7 +3524,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const state=await readSkuFile(upcomingRepairFile);
     let repaired=0;
     // Focus on the latest unformatted pastes and never touch old pinned posts.
-    for(const source of [...history].reverse()) {
+    // Discord history arrives newest first: repair the latest user paste first.
+    for(const source of history) {
       if(repaired>=4)break;
       if(state[source.id] || source.author?.bot || source.webhook_id ||
           source.pinned || !isNewDropPost(source) ||
