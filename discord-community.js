@@ -16,6 +16,7 @@ import {
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
+import { applyAuthorizedSkuPrices, fetchAuthorizedSkuPriceFeed } from "./target-sku-pricing.js";
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
   searchTargetPicks, pasteTargetPicks, targetPickDiff,
@@ -3018,6 +3019,29 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return added;
     });
   }
+  // Once per day, when an explicitly configured authorized price feed exists.
+  // No scraping, no fabricated prices, and no changes to unrelated bot data.
+  async function refreshTargetSkuPrices() {
+    const url = String(process.env.TARGET_SKU_PRICE_FEED_URL || "").trim();
+    if (!url || !targetSkuListChannelId) return;
+    try {
+      const feed = await fetchAuthorizedSkuPriceFeed(url,
+        String(process.env.TARGET_SKU_PRICE_FEED_TOKEN || "").trim());
+      const result = await withTargetMasterQueue(async () => {
+        const original = await loadTargetMaster();
+        const next = applyAuthorizedSkuPrices(original, feed);
+        if (next.updated) {
+          await writeSkuFile(targetMasterFile, next.master);
+          await publishTargetMaster(next.master);
+        }
+        return {updated:next.updated, rejected:next.rejected};
+      });
+      console.log("Target SKU authorized price refresh:", JSON.stringify(result));
+    } catch (error) {
+      console.error("Target SKU price refresh unavailable:", error.message);
+    }
+  }
+
   async function initializeTargetMaster() {
     return withTargetMasterQueue(async () => {
       const saved = await loadTargetMaster();
@@ -5180,6 +5204,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
   setTimeout(setup, 5000).unref?.();
+  setTimeout(() => void refreshTargetSkuPrices(), 45_000).unref?.();
+  setInterval(() => void refreshTargetSkuPrices(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(syncAll, 60000).unref?.();
   setInterval(() => void cleanupExpiredDropMessages().catch(error =>
     console.error("Discord ten-day drop cleanup:", error.message)), 5 * 60000).unref?.();
