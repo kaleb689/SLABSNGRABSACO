@@ -263,3 +263,49 @@ export function dropNewsPayloads(parsed, label, rawText = "") {
     allowed_mentions: { parse: [] }
   }));
 }
+
+// Fallback for the owner's free-form Upcoming Drops announcement. Previously
+// these posts fell through the structured news parser and stayed unformatted.
+// Preserve the exact words, SKUs and URLs; only improve presentation. A long
+// or non-announcement post is left as authored rather than silently truncated.
+export function upcomingAnnouncementPayload(input) {
+  const original = sourceText(input).trim();
+  if (!original || original.length > 3400 || /<@!?\d+>|@everyone|@here/i.test(original))
+    return null;
+  const lines = original.split(/\r?\n/).map(line => line.trim());
+  const meaningful = lines.filter(Boolean);
+  if (!meaningful.length || (meaningful.length < 2 &&
+    !/\b(upcoming|drop|release|restock|launch|preorder)\b/i.test(original)))
+    return null;
+  // Leave existing formatted bot cards and standalone URLs untouched.
+  if (meaningful.length === 1 && isUrl(meaningful[0])) return null;
+  const title = "📅 Upcoming Drops";
+  const body = [];
+  let first = true;
+  for (const line of lines) {
+    if (!line) { if (body.at(-1) !== "") body.push(""); continue; }
+    const parsedDate = parseReleaseDate(line);
+    if (parsedDate && /^(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\s*,?\s*)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{1,2}\/\d{1,2})/i.test(line)) {
+      body.push("> **Release:** " + releaseTimestamp(parsedDate));
+    } else if (/^(?:SKU|TCIN|PID)\s*[:#-]/i.test(line)) {
+      body.push("> **" + safe(line).replace(/^(SKU|TCIN|PID)\s*[:#-]\s*/i, "$1:** `") + "`");
+    } else if (isUrl(line)) {
+      body.push("> **Link:** " + line);
+    } else if (first) {
+      body.push("**" + emojiFix(safe(line)).slice(0,220) + "**");
+    } else if (/^(?:retail|msrp|resale|price|demand|outlook|product|time|date|notes?|store|seller)\s*:/i.test(line)) {
+      const match = /^([^:]{1,35}):\s*(.*)$/.exec(line);
+      body.push(match ? quoteLine(match[1],match[2]) : "> " + emojiFix(safe(line)));
+    } else {
+      body.push("> " + emojiFix(safe(line)));
+    }
+    first = false;
+  }
+  const description = body.join("\n").trim();
+  if (!description || description.length > 3800) return null;
+  return {
+    embeds: [{ title, description, color: COLOR,
+      footer: {text:FORMATTED_DROP_MARKER}}],
+    allowed_mentions:{parse:[]}
+  };
+}
