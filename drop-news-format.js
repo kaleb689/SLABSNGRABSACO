@@ -277,7 +277,7 @@ export function upcomingDropRetailer(input) {
 // format without dropping products or changing the SKU strings.
 export function upcomingAnnouncementPayloads(input) {
   const original=sourceText(input).trim();
-  if (!original || /<@!?\d+>|@everyone|@here/i.test(original)) return [];
+  if (!original) return [];
   if (original.length <= 3400) {
     const result=upcomingAnnouncementPayload(input);
     return result ? [result] : [];
@@ -308,7 +308,7 @@ export function upcomingAnnouncementPayloads(input) {
 // or non-announcement post is left as authored rather than silently truncated.
 export function upcomingAnnouncementPayload(input) {
   const original = sourceText(input).trim();
-  if (!original || original.length > 3400 || /<@!?\d+>|@everyone|@here/i.test(original))
+  if (!original || original.length > 3400)
     return null;
   const lines = original.split(/\r?\n/).map(line => line.trim());
   const meaningful = lines.filter(Boolean);
