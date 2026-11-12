@@ -14,6 +14,7 @@
 #emailBatchManager .batch-progress-rail{height:9px;overflow:hidden;border-radius:10px;background:#243446;display:flex;margin-top:9px}
 #emailBatchManager .batch-progress-pass{height:100%;background:#2ac877;width:0%;transition:width .2s}
 #emailBatchManager .batch-progress-fail{height:100%;background:#ed5f5d;width:0%;transition:width .2s}
+#emailBatchManager .batch-progress-unconfirmed{height:100%;background:#e3a548;width:0%;transition:width .2s}
 #emailBatchManager #emailBatchManagerStatus{white-space:pre-line}
 </style>
 
@@ -21,18 +22,19 @@
 
  <section id="randomAliasTestArea" style="border:1px solid #3d6881;border-radius:12px;padding:14px;background:#102c3a;margin-bottom:14px">
   <h3 style="font-size:16px;margin:0 0 5px;color:#b5fdf3">Automatic email testing</h3>
-  <p class="tiny">After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified retries every eligible saved address, in groups of 25. Live counters update after each confirmed receipt or failure.</p>
+  <p class="tiny">After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified starts with 3 preflight emails per catch-all inbox. If none arrive, it pauses instead of sending hundreds more. After preflight, it tests in groups of 25. Green means delivered, amber means not confirmed in Inbox, and red means the sending server rejected the message.</p>
   <div class="test-controls">
    <button type="button" class="btn primary" id="randomAliasTestAll">Test All Unverified</button>
    <button type="button" class="btn secondary" id="randomAliasTestBatch">Test Selected Batch</button>
    <button type="button" class="btn danger" id="randomAliasTestStop" hidden>Stop after this group</button>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:11px">
+  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:11px">
    <div class="test-metric"><span class="tiny">Progress</span><strong id="randomTestProgress" style="color:#fff">0/0</strong></div>
    <div class="test-metric"><span class="tiny">Passed</span><strong id="randomTestPassed" style="color:#38d88f">0</strong></div>
-   <div class="test-metric"><span class="tiny">Failed</span><strong id="randomTestFailed" style="color:#fc7378">0</strong></div>
+   <div class="test-metric"><span class="tiny">Not confirmed</span><strong id="randomTestUnconfirmed" style="color:#ffc36f">0</strong></div>
+   <div class="test-metric"><span class="tiny">Send failed</span><strong id="randomTestFailed" style="color:#fc7378">0</strong></div>
   </div>
-  <div class="batch-progress-rail" aria-hidden="true"><div id="randomTestGreenBar" class="batch-progress-pass"></div><div id="randomTestRedBar" class="batch-progress-fail"></div></div>
+  <div class="batch-progress-rail" aria-hidden="true"><div id="randomTestGreenBar" class="batch-progress-pass"></div><div id="randomTestAmberBar" class="batch-progress-unconfirmed"></div><div id="randomTestRedBar" class="batch-progress-fail"></div></div>
   <p id="randomTestStatus" class="tiny" role="status" aria-live="polite" style="margin:9px 0">Automatic testing starts after each generated batch when matching secure mail credentials are saved.</p>
   <div id="randomTestRecent" class="tiny" style="max-height:120px;overflow:auto" aria-label="Recent test results"></div>
   <details id="randomTestSettings" style="margin-top:12px;padding:11px;border:1px solid #365168;border-radius:10px">
@@ -61,7 +63,7 @@
    <p id="randomMailCredentialsStatus" class="tiny" aria-live="polite" style="margin:8px 0"></p>
    <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
     <input type="checkbox" id="randomAliasCatchAllTest">
-    <span class="tiny">I configured the Cloudflare catch-all to forward unmatched addresses to the receiver shown above. Test generated addresses even when they have no individual Cloudflare rule. This does not change Cloudflare routing rules.</span>
+    <span class="tiny">I checked in Cloudflare that catch-all is ACTIVE, action Send to an email, and the verified destination is this receiver. ACO Studio cannot enable or confirm that setting from this checkbox alone. Testing of unpublished aliases starts with 3 preflight emails and pauses if none arrive.</span>
    </label>
   </details>
  </section>
