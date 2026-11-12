@@ -466,9 +466,10 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 {
  const handler=fs.readFileSync(path.join(__dirname,'emailgen-random-handler.js'),'utf8');
  const batchUI=fs.readFileSync(path.join(__dirname,'emailgen-batch-ui.js'),'utf8');
+ const autoTestUI=fs.readFileSync(path.join(__dirname,'emailgen-auto-test-ui.js'),'utf8');
  const panel=fs.readFileSync(path.join(__dirname,'emailgen-random-panel.html'),'utf8');
  const batchPanel=fs.readFileSync(path.join(__dirname,'emailgen-batch-panel.html'),'utf8');
- replace('app.js',' function addEvents(){',handler+'\n'+batchUI+'\n function addEvents(){\n  setupRandomEmailGen();\n  setupEmailBatchUI();');
+ replace('app.js',' function addEvents(){',handler+'\n'+batchUI+'\n'+autoTestUI+'\n function addEvents(){\n  setupRandomEmailGen();\n  setupEmailBatchUI();\n  setupAutoMailTests();');
  replace('app.js'," function render(){\n  const items=unlocked?records:[];",
   " function render(){\n  refreshRandomChooser();\n  const items=unlocked?records:[];");
  replace('app.js',"credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))",
@@ -481,7 +482,8 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  fs.copyFileSync(path.join(__dirname,'emailgen-forwarding-test.js'),path.join(root,'emailgen-forwarding-test.js'));
  fs.copyFileSync(path.join(__dirname,'emailgen-mail-test-store.js'),path.join(root,'emailgen-mail-test-store.js'));
  replace('preload.js',' cloudflare:Object.freeze({',
-  " cloudflare:Object.freeze({\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),\n  saveMailTestCredentials:settings=>ipcRenderer.invoke('email:test:credentials:save',settings),\n  mailTestCredentialStatus:()=>ipcRenderer.invoke('email:test:credentials:status'),\n  forgetMailTestCredentials:()=>ipcRenderer.invoke('email:test:credentials:forget'),");
+  " cloudflare:Object.freeze({\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),\n  saveMailTestCredentials:settings=>ipcRenderer.invoke('email:test:credentials:save',settings),\n  mailTestCredentialStatus:()=>ipcRenderer.invoke('email:test:credentials:status'),\n  forgetMailTestCredentials:selection=>ipcRenderer.invoke('email:test:credentials:forget',selection),
+  onEmailTestProgress:callback=>{const listener=(_event,progress)=>callback(progress);ipcRenderer.on('email:test:progress',listener);return ()=>ipcRenderer.removeListener('email:test:progress',listener);},");
  replace('main.js'," ipcMain.handle('cf:authorize',async(event,config)=>{",
   " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,baseDir:app.getPath('userData'),safeStorage});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
  const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
@@ -491,7 +493,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  for(const entry of ['emailgen-forwarding-test.js','emailgen-mail-test-store.js'])
   if(!pkg.build.files.includes(entry))pkg.build.files.push(entry);
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
- for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js'])
+ for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js','emailgen-auto-test.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
 
