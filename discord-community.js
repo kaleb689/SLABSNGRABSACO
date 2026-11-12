@@ -3538,10 +3538,16 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const monitored=parseMonitorDropProducts(source);
       const structured=monitored.length?formattedDropPayloads(monitored,"Upcoming Drops"):
         dropNewsPayloads(parseDropNews(source),"Upcoming Drops",rawText);
-      const payloads=structured.length?structured:upcomingAnnouncementPayloads(source);
-      if(!payloads.length)continue;
       const ids=new Set(parseDropSkus(source).map(item=>item.sku));
-      const converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      let payloads=structured.length?structured:upcomingAnnouncementPayloads(source);
+      let converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      // If the structured layout drops any SKU, try a lossless freeform card
+      // rather than abandoning the existing pasted announcement.
+      if([...ids].some(id=>!converted.has(id))) {
+        payloads=upcomingAnnouncementPayloads(source);
+        converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
+      }
+      if(!payloads.length)continue;
       // Reject incomplete conversion; never lose a SKU that somebody pasted.
       if([...ids].some(id=>!converted.has(id))) {
         console.warn("Upcoming Drops repair skipped incomplete SKU parse:",JSON.stringify({sourceId:source.id,sourceSkus:ids.size,renderedSkus:converted.size}));
