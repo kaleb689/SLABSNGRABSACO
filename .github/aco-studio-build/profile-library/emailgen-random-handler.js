@@ -88,7 +88,12 @@
   $e('randomAliasWaiting').textContent=available.length+' generated email(s) saved without a retailer pool. Adding them to a pool is optional.';
   const activate=$e('randomAliasActivate');
   const ready=available.filter(r=>r.status==='draft'||r.status==='pending');
-  if(activate){activate.disabled=!unlocked||ready.length===0;activate.textContent=ready.length?'Turn on forwarding for '+ready.length+' saved email(s)':'No emails waiting to activate';}
+  if(activate){activate.disabled=!unlocked||ready.length===0;activate.textContent=ready.length?'Create individual forwarding rules for '+ready.length+' emails':'No individual rules waiting';}
+  const catchStatus=$e('randomAliasCatchAllStatus');
+  if(catchStatus){
+   const verified=available.filter(r=>r.catchAllVerifiedAt&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
+   catchStatus.textContent=verified+' saved, unassigned email(s) have passed an individual catch-all inbox delivery test. Other drafts are not marked working.';
+  }
   const sync=$e('randomAliasSync');sync.hidden=!unlocked||unsynced.length===0;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
   refreshDraftDestinations();
@@ -143,8 +148,10 @@
   }
   const remaining=unassignedRandom().filter(r=>r.status==='draft'||r.status==='pending').length;
   const summary='Forwarding checked for '+completed+' of '+pending.length+' saved email(s); '+live+' confirmed active by Cloudflare, '+remaining+' still awaiting activation or review. No retailer pool was changed.';
-  $e('randomAliasForwardStatus').textContent=summary+(issues.length?' Issues: '+issues.slice(0,2).join(' | '):'');
-  randomNotice(summary+' Next: use Test Email Delivery to verify messages actually arrive.',issues.length===0&&remaining===0);
+  const limited=issues.some(s=>/\b429\b|limit exceeded|too many requests/i.test(s));
+  const hint=limited?' Cloudflare refused more individual routing rules. The standard domain limit is 200 rules. Do not repeatedly retry; use the catch-all instructions and verify real inbox delivery instead.':'';
+  $e('randomAliasForwardStatus').textContent=summary+(issues.length?' Issues: '+issues.slice(0,2).join(' | '):'')+hint;
+  randomNotice(summary+hint+' Next: verify actual inbox delivery.',issues.length===0&&remaining===0);
   refreshRandomChooser();
  }
  async function publishRandomAndSync(){
@@ -176,14 +183,22 @@
   const password=$e('randomTestPassword').value;
   const sender=$e('randomTestSender').value.trim().toLowerCase();
   const senderPassword=$e('randomTestSenderPassword').value;
+  const catchAllMode=$e('randomAliasCatchAllTest')?.checked===true;
   if(!validEmail(mailbox)||mailbox.endsWith('@'+OWNER_DOMAIN))
    throw Error('Enter the verified external forwarding inbox in the field above.');
   if(!password)throw Error('Enter the app password for your verified inbox to test delivery.');
   if(!validEmail(sender)||!senderPassword)throw Error('Enter a separate sending account and its app password. Keep the forwarding inbox unchanged.');
   const selected=records.filter(r=>r.randomGenerated===true&&r.target===mailbox);
   if(!selected.length)throw Error('No generated aliases forward to this inbox.');
-  const live=selected.filter(r=>r.status==='live');
-  if(!live.length)throw Error('Publish and activate forwarding first, then test delivery.');
+  // Catch-all uses no individual routing rule. Test saved drafts explicitly,
+  // 25 at a time, and promote ONLY those with proven SMTP-to-IMAP delivery.
+  const live=catchAllMode?
+   selected.filter(r=>['draft','pending','live','conflict'].includes(r.status)&&
+    !(r.forwardingTestedAt&&r.forwardingTestTarget===mailbox)).slice(0,25):
+   selected.filter(r=>r.status==='live');
+  if(!live.length)throw Error(catchAllMode?
+   'No untested saved emails remain for this inbox. Deselect catch-all to retest individual rules.':
+   'Publish and activate forwarding first, or enable catch-all and select catch-all verification.');
   const verify=api()?.testForwarding;
   if(typeof verify!=='function')throw Error('This build is missing the end-to-end SMTP/IMAP test service.');
   let passed=0,failed=0,attempted=0;
@@ -195,7 +210,11 @@
     const row=batch.find(r=>r.alias===item.alias);
     if(!row)continue;
     if(item.status==='delivered'){
-     row.forwardingTestedAt=new Date().toISOString();row.forwardingTestTarget=mailbox;passed++;
+     const now=new Date().toISOString();
+     row.forwardingTestedAt=now;row.forwardingTestTarget=mailbox;passed++;
+     if(catchAllMode&&row.status!=='live'){
+      row.status='live';row.catchAllVerifiedAt=now;
+     }
     }else{
      row.forwardingTestedAt=null;row.forwardingTestTarget=null;failed++;
     }
@@ -203,9 +222,14 @@
    attempted+=batch.length;
    if(!await store())throw Error('Mailbox tests completed but results could not be saved in the encrypted Email Bank.');
   }
-  const noRule=selected.length-live.length,added=await importLiveRandom();
-  $e('randomTestStatus').textContent='Delivery tests: '+passed+' PASSED (received in IMAP), '+failed+' not confirmed, '+noRule+' awaiting active Cloudflare routing. '+added.added+' verified emails imported to unused retailer pools. No failed test was marked usable.';
-  randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0);
+  const noRule=selected.filter(r=>r.status!=='live').length,added=await importLiveRandom();
+  const unverified=catchAllMode?selected.filter(r=>['draft','pending','live','conflict'].includes(r.status)&&
+    !(r.forwardingTestedAt&&r.forwardingTestTarget===mailbox)).length:0;
+  $e('randomTestStatus').textContent='Delivery tests: '+passed+' PASSED (received in IMAP), '+failed+
+   ' failed/unconfirmed, '+noRule+' not confirmed live, '+added.added+' verified emails imported to unused retailer pools.'+
+   (catchAllMode?' Catch-all test covers up to 25 unverified saved emails per click; '+unverified+' still need a successful delivery receipt.':'')+
+   ' No failed test was marked usable.';
+  randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0&&unverified===0);
   refreshRandomChooser();
  }
  // Changing the top forwarding field only affects NEW aliases. This

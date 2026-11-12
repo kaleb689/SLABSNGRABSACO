@@ -4,19 +4,31 @@
  <ol class="sectionHelp">
   <li><strong>Choose your inbox.</strong> Enter the Gmail (or other) address where you want messages delivered in the forwarding destination field above. Complete Cloudflare's one-time verification if requested.</li>
   <li><strong>Generate emails.</strong> Choose a quantity below and click Generate Only. Your new addresses are safely saved, without any retailer assignment or live forwarding rule.</li>
-  <li><strong>Turn on forwarding when ready.</strong> Click the separate forwarding button below after connecting Cloudflare. The app will attempt to activate the new addresses.</li>
+  <li><strong>Set up forwarding.</strong> For large batches, use one verified Cloudflare catch-all destination instead of making an individual rule for every email.</li>
   <li><strong>Check delivery.</strong> Use Test Email Delivery. An address is verified only after a real message reaches the selected inbox.</li>
  </ol>
  <p class="sectionHelp">You can stop after Step 2 and export saved addresses. Adding them to Target, Walmart, Pokémon Center, Costco or Sam's Club is entirely optional.</p>
  <label>Step 2 — Number of emails to generate (1–10,000; based on available bank space)<input type="number" id="randomAliasCount" min="1" max="10000" value="10" step="1" inputmode="numeric" required></label>
- <p class="sectionHelp">Email Gen saves addresses locally first. Forwarding and retailer assignment are separate actions. Cloudflare standard Email Routing has a finite per-domain rules limit; activating or testing thousands of addresses may require a larger routing setup. Failed or unverified emails stay safely saved, not marked as working.</p>
+ <p class="sectionHelp">Email Gen saves addresses locally first. Forwarding and retailer assignment are separate actions. Cloudflare standard Email Routing supports up to 200 individual rules per domain; a catch-all rule can cover additional addresses without creating one rule per email. Failed and unverified emails stay saved, not marked working.</p>
  <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasCreate">Generate Only — Save Emails</button><button type="button" class="btn secondary" id="randomAliasExport">Export Email Gen CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikari">Export Shikari profile template CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikariTxt">Export Shikari TXT (for .txt-only file pickers)</button></div>
  <small><strong>Choose the correct file:</strong> <code>Export Email Gen CSV</code> contains <code>profile_name,email,password</code> with <code>aco gen 1</code>, <code>aco gen 2</code> and the requested import-only password <code>Freeshit1!</code>. The <strong>Shikari Profile CSV/TXT</strong> exports match your existing Shikari file's <strong>24 exact columns beginning with <code>index,profile_name,first_name,last_name,email</code></strong>, with sequential names and original emails. The original Shikari profile format has <strong>no password column</strong>, so it will not import that preset password. Address, name, phone, and payment fields are left blank unless you complete real Target profiles first. The <code>.txt</code> choice is for Shikari file pickers that don't select <code>.csv</code>; it is still comma-delimited. Both files are plaintext; protect them. Neither creates a real retailer account or mailbox password.</small>
  <section class="panel section" id="randomAliasForwardingArea">
-  <h3>Step 3 — Turn on forwarding (no retailer pool needed)</h3>
-  <p class="sectionHelp">If your forwarding destination and Cloudflare connection are ready, click below. ACO Studio publishes in manageable groups and stops if the provider reports a problem. This will <strong>not</strong> add any email to a retailer pool.</p>
-  <button type="button" class="btn primary" id="randomAliasActivate">Turn on forwarding for saved emails</button>
-  <p id="randomAliasForwardStatus" class="tiny" role="status" aria-live="polite"></p>
+  <h3>Step 3 — Forward unlimited-style aliases with Catch-all</h3>
+  <p class="sectionHelp"><strong>Recommended when you have hundreds of generated emails.</strong> Cloudflare only allows 200 individual forwarding rules per domain. A catch-all rule receives mail to addresses with no matching individual rule and forwards it to one verified inbox, without creating hundreds of extra rules.</p>
+  <ol class="sectionHelp">
+   <li>Open <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Cloudflare Dashboard</a> and select your <strong>sng.sarl</strong> domain.</li>
+   <li>Open <strong>Email Routing → Routing Rules → Catch-all address</strong>.</li>
+   <li>Choose <strong>Send to an email</strong> (Forward), select your <strong>verified forwarding inbox</strong>, and save the catch-all rule.</li>
+   <li>Return here and enable the catch-all verification checkbox in Step 4. Only email addresses with actual inbox delivery receipts are marked working.</li>
+  </ol>
+  <p class="sectionHelp"><strong>Important:</strong> Catch-all forwards messages sent to any unmatched address at your domain, even typos and addresses you did not generate. It does not replace or delete existing specific rules. Review the destination before enabling it. ACO Studio does not enable catch-all automatically.</p>
+  <p id="randomAliasCatchAllStatus" class="tiny" aria-live="polite"></p>
+  <details>
+   <summary>Advanced — Create individual Cloudflare rules (200/domain maximum)</summary>
+   <p class="sectionHelp">Use this only when you need an exact address-specific rule. If Cloudflare reports HTTP 429 or Limit Exceeded, stop: more attempts will not bypass the provider's domain rule limit.</p>
+   <button type="button" class="btn secondary" id="randomAliasActivate">Create individual forwarding rules</button>
+   <p id="randomAliasForwardStatus" class="tiny" role="status" aria-live="polite"></p>
+  </details>
  </section>
  <div id="randomAliasPoolChooser" hidden>
   <h3>Optional — Add saved emails to a retailer pool</h3>
@@ -52,7 +64,8 @@
  </details>
  <div class="fieldStack" id="randomAliasTestArea">
   <h3>Step 4 — Test Email Delivery</h3>
-  <p class="sectionHelp">Use a second email account to send a test to each activated address, then check that each message reached your selected inbox. The app never marks an address as working just because Cloudflare accepted it.</p>
+  <p class="sectionHelp">Use a separate sending email account to verify a real message reaches your forwarding inbox. Only receipt-confirmed addresses are marked working. In catch-all mode, test up to 25 unverified saved addresses per click to avoid overwhelming your email provider.</p>
+   <label class="check"><input type="checkbox" id="randomAliasCatchAllTest"> I enabled Cloudflare catch-all to this same verified inbox and want to verify my saved addresses without individual rules (up to 25 per click).</label>
   <label>Separate sending email account<input id="randomTestSender" type="email" autocomplete="off" spellcheck="false" placeholder="A different mailbox from your forwarding inbox"></label>
   <label>Sending account app password (test session only; never saved)<input id="randomTestSenderPassword" type="password" autocomplete="off" spellcheck="false" placeholder="Separate sender's app password"></label>
   <details><summary>Advanced mail settings (Gmail defaults)</summary>
