@@ -98,7 +98,7 @@
   const sync=$e('randomAliasSync');sync.hidden=true;
   sync.textContent='Publish / sync '+unsynced.length+' assigned email(s)';
   refreshDraftDestinations();
-  refreshEmailBatchUI();
+  if(!mailTestState.active)refreshEmailBatchUI();
  }
  async function importLiveRandom(){
   const live=unsyncedRandom().filter(r=>r.status==='live'&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target);
@@ -177,62 +177,9 @@
    (publishIssues.length?' Cloudflare publication issues ('+publishIssues.length+'): '+publishIssues.slice(0,3).join(' | '):''),left.length===0);
   refreshRandomChooser();
  }
+ // Kept for backward compatibility. New Email Bank worker owns automated tests.
  async function testAllRandomEmails(){
-  requireOwner();
-  const mailbox=$e('emailTarget').value.trim().toLowerCase();
-  const smtpHost=$e('randomTestSmtp').value.trim().toLowerCase();
-  const imapHost=$e('randomTestImap').value.trim().toLowerCase();
-  const password=$e('randomTestPassword').value;
-  const sender=$e('randomTestSender').value.trim().toLowerCase();
-  const senderPassword=$e('randomTestSenderPassword').value;
-  const catchAllMode=$e('randomAliasCatchAllTest')?.checked===true;
-  if(!validEmail(mailbox)||mailbox.endsWith('@'+OWNER_DOMAIN))
-   throw Error('Enter the verified external forwarding inbox in the field above.');
-  if(!password)throw Error('Enter the app password for your verified inbox to test delivery.');
-  if(!validEmail(sender)||!senderPassword)throw Error('Enter a separate sending account and its app password. Keep the forwarding inbox unchanged.');
-  const selected=records.filter(r=>r.randomGenerated===true&&r.target===mailbox);
-  if(!selected.length)throw Error('No generated aliases forward to this inbox.');
-  // Catch-all uses no individual routing rule. Test saved drafts explicitly,
-  // 25 at a time, and promote ONLY those with proven SMTP-to-IMAP delivery.
-  const live=catchAllMode?
-   selected.filter(r=>['draft','pending','live','conflict'].includes(r.status)&&
-    !(r.forwardingTestedAt&&r.forwardingTestTarget===mailbox)).slice(0,25):
-   selected.filter(r=>r.status==='live');
-  if(!live.length)throw Error(catchAllMode?
-   'No untested saved emails remain for this inbox. Deselect catch-all to retest individual rules.':
-   'Publish and activate forwarding first, or enable catch-all and select catch-all verification.');
-  const verify=api()?.testForwarding;
-  if(typeof verify!=='function')throw Error('This build is missing the end-to-end SMTP/IMAP test service.');
-  let passed=0,failed=0,attempted=0;
-  for(let index=0;index<live.length;index+=100){
-   const batch=live.slice(index,index+100);
-   $e('randomTestStatus').textContent='Sending test messages and checking inbox delivery: '+attempted+'/'+live.length+' tested.';
-   const result=await verify({mailbox,sender,senderPassword,smtpHost,imapHost,password,aliases:batch.map(r=>r.alias)});
-   for(const item of result.results||[]){
-    const row=batch.find(r=>r.alias===item.alias);
-    if(!row)continue;
-    if(item.status==='delivered'){
-     const now=new Date().toISOString();
-     row.forwardingTestedAt=now;row.forwardingTestTarget=mailbox;passed++;
-     if(catchAllMode&&row.status!=='live'){
-      row.status='live';row.catchAllVerifiedAt=now;
-     }
-    }else{
-     row.forwardingTestedAt=null;row.forwardingTestTarget=null;failed++;
-    }
-   }
-   attempted+=batch.length;
-   if(!await store())throw Error('Mailbox tests completed but results could not be saved in the encrypted Email Bank.');
-  }
-  const noRule=selected.filter(r=>r.status!=='live').length,added=await importLiveRandom();
-  const unverified=catchAllMode?selected.filter(r=>['draft','pending','live','conflict'].includes(r.status)&&
-    !(r.forwardingTestedAt&&r.forwardingTestTarget===mailbox)).length:0;
-  $e('randomTestStatus').textContent='Delivery tests: '+passed+' PASSED (received in IMAP), '+failed+
-   ' failed/unconfirmed, '+noRule+' not confirmed live, '+added.added+' verified emails imported to unused retailer pools.'+
-   (catchAllMode?' Catch-all test covers up to 25 unverified saved emails per click; '+unverified+' still need a successful delivery receipt.':'')+
-   ' No failed test was marked usable.';
-  randomNotice(passed+' forwarded addresses confirmed by a real inbox receipt; '+failed+' failed/unconfirmed.',failed===0&&noRule===0&&unverified===0);
-  refreshRandomChooser();
+  return runAutomaticEmailTests({all:true});
  }
  // Changing the top forwarding field only affects NEW aliases. This
  // owner-only flow changes already-saved, unpublished RANDOM DRAFTS explicitly.
@@ -397,8 +344,9 @@
      render();throw Error('The encrypted bank did not save. No addresses were retained.');
     }
     emailBatchState.key='batch:'+batchId;emailBatchState.selected.clear();emailBatchState.page=0;
-    randomNotice('Saved '+batch.length+' emails as one batch in your Email Bank. No retailer was assigned. Use the batch manager on the right to export or review verified emails for Profiles.',true);
+    randomNotice('Saved '+batch.length+' emails in the Email Bank; starting automatic delivery checks if matching secure mail accounts are configured. No retailer pool was assigned.',true);
     refreshRandomChooser();
+    scheduleNewBatchAutoTest(batchId);
    }catch(error){randomNotice(String(error.message||error));}
    finally{randomGenBusy=false;create.disabled=false;}
   });
@@ -410,14 +358,8 @@
   sync.addEventListener('click',()=>{
    randomNotice('Use the right-hand batch manager to import only tested emails. Publishing individual rules is not required for verified catch-all forwarding.');
   });
-  const testAll=$e('randomAliasTestAll');
-  if(!testAll)throw Error('Test All Emails button is missing.');
-  testAll.addEventListener('click',async()=>{
-   if(randomGenBusy)return;randomGenBusy=true;testAll.disabled=true;
-   try{await testAllRandomEmails();}
-   catch(error){$e('randomTestStatus').textContent='Delivery test did not pass: '+String(error?.message||error)+'. No unverified email was imported.';}
-   finally{$e('randomTestPassword').value='';$e('randomTestSenderPassword').value='';testAll.disabled=false;randomGenBusy=false;refreshRandomChooser();}
-  });
+  // Automatic testing controls and secure saved account presets are wired
+  // by setupAutoMailTests() in the expanded right-hand Email Bank.
   refreshRandomChooser();
   setupDraftDestinationControls();
  }
