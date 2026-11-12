@@ -299,7 +299,7 @@
    try{
     requireOwner();
     const count=Number($e('randomAliasCount').value),target=$e('emailTarget').value.trim().toLowerCase();
-    if(!Number.isSafeInteger(count)||count<1||count>100)throw Error('Choose 1–100 random forwarding emails.');
+    if(!Number.isSafeInteger(count)||count<1||count>10000)throw Error('Choose 1–10,000 random forwarding emails.');
     if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error('Enter your verified external IMAP inbox in the forwarding destination field above.');
     if(records.length+count>10000)throw Error('Encrypted Email Bank capacity would be exceeded.');
     const existing=new Set(records.map(r=>r.alias)),batch=[];
@@ -312,6 +312,11 @@
      existing.add(alias);
      const row=makeAlias('Random '+local,local,target,currentDomain());
      row.randomGenerated=true;row.poolTarget=null;row.poolImportedAt=null;batch.push(row);
+     // Yield periodically so large local-only batches do not freeze the Email Gen window.
+     if((i+1)%250===0&&i+1<count){
+      $e('randomAliasStatus').textContent='Preparing '+(i+1)+' of '+count+' unique email drafts...';
+      await new Promise(resolve=>setTimeout(resolve,0));
+     }
     }
     records.push(...batch);
     if(!await store()){
