@@ -465,16 +465,19 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
 // Extend the original local encrypted Email Bank; retain all existing owner data.
 {
  const handler=fs.readFileSync(path.join(__dirname,'emailgen-random-handler.js'),'utf8');
+ const batchUI=fs.readFileSync(path.join(__dirname,'emailgen-batch-ui.js'),'utf8');
  const panel=fs.readFileSync(path.join(__dirname,'emailgen-random-panel.html'),'utf8');
- replace('app.js',' function addEvents(){',handler+'\n function addEvents(){\n  setupRandomEmailGen();');
+ const batchPanel=fs.readFileSync(path.join(__dirname,'emailgen-batch-panel.html'),'utf8');
+ replace('app.js',' function addEvents(){',handler+'\n'+batchUI+'\n function addEvents(){\n  setupRandomEmailGen();\n  setupEmailBatchUI();');
  replace('app.js'," function render(){\n  const items=unlocked?records:[];",
   " function render(){\n  refreshRandomChooser();\n  const items=unlocked?records:[];");
  replace('app.js',"credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))",
-  "    randomGenerated:r.randomGenerated===true,\n    poolTarget:['target','walmart','pokemoncenter','costco','sams'].includes(r.poolTarget)?r.poolTarget:null,\n    poolImportedAt:typeof r.poolImportedAt==='string'&&Number.isFinite(Date.parse(r.poolImportedAt))?r.poolImportedAt:null,\n    forwardingTestedAt:typeof r.forwardingTestedAt==='string'&&Number.isFinite(Date.parse(r.forwardingTestedAt))?r.forwardingTestedAt:null,\n    forwardingTestTarget:typeof r.forwardingTestTarget==='string'?r.forwardingTestTarget:null,\n    catchAllVerifiedAt:typeof r.catchAllVerifiedAt==='string'&&Number.isFinite(Date.parse(r.catchAllVerifiedAt))?r.catchAllVerifiedAt:null,\n    credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))");
+  "    randomGenerated:r.randomGenerated===true,\n    batchId:typeof r.batchId==='string'&&r.batchId.length<=100?r.batchId:null,\n    batchCreatedAt:typeof r.batchCreatedAt==='string'&&Number.isFinite(Date.parse(r.batchCreatedAt))?r.batchCreatedAt:null,\n    poolTarget:['target','walmart','pokemoncenter','costco','sams'].includes(r.poolTarget)?r.poolTarget:null,\n    poolImportedAt:typeof r.poolImportedAt==='string'&&Number.isFinite(Date.parse(r.poolImportedAt))?r.poolImportedAt:null,\n    forwardingTestedAt:typeof r.forwardingTestedAt==='string'&&Number.isFinite(Date.parse(r.forwardingTestedAt))?r.forwardingTestedAt:null,\n    forwardingTestTarget:typeof r.forwardingTestTarget==='string'?r.forwardingTestTarget:null,\n    catchAllVerifiedAt:typeof r.catchAllVerifiedAt==='string'&&Number.isFinite(Date.parse(r.catchAllVerifiedAt))?r.catchAllVerifiedAt:null,\n    credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))");
  replace('app.js',"name.textContent=rec.alias;","name.textContent=rec.alias;\n   if(rec.randomGenerated){const tested=document.createElement('small');tested.className='tiny';tested.textContent=rec.forwardingTestedAt&&rec.forwardingTestTarget===rec.target?(rec.catchAllVerifiedAt?'Catch-all delivery verified · ':'Delivery test PASSED · ')+new Date(rec.forwardingTestedAt).toLocaleString():'Delivery not confirmed';name.append(tested);}");
  replace('index.html','<section class="panel section"><h2>2. Bulk generate</h2>',
   panel+'<section class="panel section"><h2>3. Manual bulk generate</h2>');
  replace('index.html','<h2>3. Cloudflare setup</h2>','<h2>4. Cloudflare setup</h2>');
+ replace('index.html','<div class="bankToolbar">',batchPanel+'<div class="bankToolbar">');
  fs.copyFileSync(path.join(__dirname,'emailgen-forwarding-test.js'),path.join(root,'emailgen-forwarding-test.js'));
  replace('preload.js',' cloudflare:Object.freeze({',
   " cloudflare:Object.freeze({\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),");
@@ -486,7 +489,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  pkg.build||={};pkg.build.files||=[];
  if(!pkg.build.files.includes('emailgen-forwarding-test.js'))pkg.build.files.push('emailgen-forwarding-test.js');
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
- for(const file of ['emailgen-random.test.js','emailgen-forwarding-test.test.js'])
+ for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
 
