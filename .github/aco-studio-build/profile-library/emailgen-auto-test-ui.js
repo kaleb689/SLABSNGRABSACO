@@ -222,6 +222,10 @@
    return;
   }finally{mailTestState.starting=false;}
   mailTestState.active=true;randomGenBusy=true;mailTestState.cancel=false;
+  // Signal that data mutations are paused during a test run rather than silently ignoring clicks.
+  for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','emailBatchDeleteReview']){
+   const button=mailUIElement(id);if(button)button.disabled=true;
+  }
   mailTestState.statuses=new Map();
   mailTestState.runId=createTestRunId();mailTestState.recent=[];
   mailTestState.total=total;mailTestState.done=0;mailTestState.passed=0;mailTestState.failed=0;
@@ -281,6 +285,9 @@
    status.textContent='Automatic testing stopped: '+String(error?.message||error)+'. Verified records already saved remain intact. Other addresses remain unverified.';
   }finally{
    mailTestState.active=false;randomGenBusy=false;stop.hidden=true;
+   for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','emailBatchDeleteReview']){
+    const button=mailUIElement(id);if(button)button.disabled=false;
+   }
    renderAutoTestProgress();
    refreshEmailBatchUI();
   }
