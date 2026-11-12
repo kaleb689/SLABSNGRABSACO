@@ -16,7 +16,7 @@ import {
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
-import { applyAuthorizedSkuPrices, fetchAuthorizedSkuPriceFeed } from "./target-sku-pricing.js";
+import { applyAuthorizedSkuPrices, fetchAuthorizedSkuPriceFeed, fetchTcgcsvPokemonMarket, applyTcgcsvPokemonMarket } from "./target-sku-pricing.js";
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
   searchTargetPicks, pasteTargetPicks, targetPickDiff,
@@ -3019,6 +3019,39 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       return added;
     });
   }
+  const tcgcsvStateFile = path.join(dataDir, "discord-target-tcgcsv-state.json");
+  let tcgcsvSyncRunning = false;
+  async function refreshTcgcsvMarket() {
+    if (!targetSkuListChannelId || tcgcsvSyncRunning) return;
+    tcgcsvSyncRunning = true;
+    try {
+      const state = await readSkuFile(tcgcsvStateFile);
+      const saved = await loadTargetMaster();
+      const result = await fetchTcgcsvPokemonMarket(saved, state.lastBuild || "");
+      if (result.unchanged) return;
+      // Only commit a successful ingestion. Failed network requests leave the
+      // last successful source build, master records and message unchanged.
+      const applied = await withTargetMasterQueue(async () => {
+        const current = await loadTargetMaster();
+        const next = applyTcgcsvPokemonMarket(current, result);
+        if (next.updated) {
+          await writeSkuFile(targetMasterFile, next.master);
+          await publishTargetMaster(next.master);
+        }
+        return next.updated;
+      });
+      await writeSkuFile(tcgcsvStateFile, {lastBuild:result.build,
+        checkedAt:new Date().toISOString(),matched:applied,
+        groupsFetched:result.groupsFetched, unmatched:result.unmatched});
+      console.log("TCGCSV Target SKU market sync:", JSON.stringify({
+        updated:applied, groupsFetched:result.groupsFetched,
+        unmatched:result.unmatched, ambiguous:result.ambiguous
+      }));
+    } catch (error) {
+      console.error("TCGCSV Target SKU market sync failed:", error.message);
+    } finally { tcgcsvSyncRunning = false; }
+  }
+
   // Once per day, when an explicitly configured authorized price feed exists.
   // No scraping, no fabricated prices, and no changes to unrelated bot data.
   async function refreshTargetSkuPrices() {
@@ -5205,6 +5238,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   setTimeout(setup, 5000).unref?.();
   setTimeout(() => void refreshTargetSkuPrices(), 45_000).unref?.();
+  setTimeout(() => void refreshTcgcsvMarket(), 70_000).unref?.();
+  setInterval(() => void refreshTcgcsvMarket(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(() => void refreshTargetSkuPrices(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(syncAll, 60000).unref?.();
   setInterval(() => void cleanupExpiredDropMessages().catch(error =>
