@@ -12,7 +12,7 @@ import { installDiscordAnimatedEmojis } from "./discord-emoji-pack.js";
 import { RETAILER_ALERTS, retailerAlert, retailerFromDropLabel, mentionedRetailers, retailerAlertButtons } from "./retailer-alert-roles.js";
 import {
   TARGET_MASTER_MARKER, findTargetMasterChannel, targetMasterPublicOverwrites, targetMasterPositionPlan,
-  initialTargetMaster, targetMasterItems, targetSkuCandidates,
+  initialTargetMaster, targetMasterItems, targetSkuCandidates, targetMasterEnsureOwnerRequested,
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
@@ -3020,7 +3020,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   async function initializeTargetMaster() {
     return withTargetMasterQueue(async () => {
-      const master = await loadTargetMaster();
+      const saved = await loadTargetMaster();
+      const { master, added } = targetMasterEnsureOwnerRequested(saved);
+      if (added.length) {
+        await writeSkuFile(targetMasterFile, master);
+        console.log("Owner-requested Target SKUs added:", JSON.stringify({ added, total: targetMasterItems(master).length }));
+      }
       await publishTargetMaster(master);
       console.log("Target SKU master ready:", targetMasterItems(master).length);
       return targetMasterItems(master).length;
