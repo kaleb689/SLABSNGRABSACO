@@ -5504,6 +5504,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function setup() {
     try {
       await provision();
+      // Discord message events must be received before slow SKU/menu backfill,
+      // message cleanup, role sync, and historical audits begin. Previously
+      // connecting last left pasted Upcoming Drops messages unprocessed during
+      // a long startup maintenance window.
+      await connect();
+      console.log("Discord gateway connection started before maintenance.");
+      void verifyAiConnection();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
       await refreshExistingOwnerCopyButtons()
@@ -5515,7 +5522,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await repairUpcomingMainText().catch(error =>
         console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
-      await syncAll(); await connect(); void verifyAiConnection();
+      await syncAll();
       // Migration is non-critical and must not delay Discord gateway setup.
       setTimeout(() => void repairUpcomingTargetSelections().catch(error =>
         console.error("Discord Target Upcoming SKU migration:",error.message)), 30000).unref?.();
