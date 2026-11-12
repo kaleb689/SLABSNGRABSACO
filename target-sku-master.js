@@ -98,6 +98,39 @@ const SEED = [
   ["1013166576","Pokemon TCG: Mega Evolution - Delta Reign Booster Display"]
 ];
 export const INITIAL_TARGET_SKUS = Object.freeze(SEED.map(([sku,name])=>Object.freeze({sku,name})));
+
+// Explicitly requested by the owner on 2026-11-12. This is an additive
+// migration: existing master SKUs and owner custom labels remain untouched.
+export const OWNER_REQUESTED_TARGET_SKUS = Object.freeze(
+  "1010892076,1010892065,1010892068,1011407490,1010892067,1012793603,1012850573,1012850572,1012850570,1010892074,95082118,1012663804,95093989,95093981,95093982,1012055696,1011206804,93954446,1010892078,94681790,95120822,1012470483,1013645543,94636860,94636862,89432660,94300072,93954435,95120834".split(",")
+);
+const OWNER_REQUESTED_TARGET_NAMES = Object.freeze({
+  "95093989": "Pokemon TCG: Ascended Heroes First Partners Deluxe Pin Collection",
+  "1012470483": "Product name pending verification",
+  "1013645543": "Pokemon TCG: Black Bolt / White Flare Heavy Hitters Premium Collection",
+  "94636860": "Pokemon TCG: White Flare Elite Trainer Box",
+  "94636862": "Pokemon TCG: Black Bolt Elite Trainer Box",
+  "89432660": "Pokemon TCG: Paldean Fates Booster Bundle",
+  "94300072": "Pokemon TCG: Prismatic Evolutions Super-Premium Collection",
+  "93954435": "Pokemon TCG: Prismatic Evolutions Elite Trainer Box"
+});
+export function targetMasterEnsureOwnerRequested(master, at=new Date().toISOString()) {
+  if (!master || typeof master !== "object" || !master.entries || !master.removed)
+    throw new Error("Invalid saved Target master; refusing to modify.");
+  const next = structuredClone(master);
+  const added = [];
+  for (const sku of OWNER_REQUESTED_TARGET_SKUS) {
+    if (next.entries[sku]) continue;
+    const fromSeed = INITIAL_TARGET_SKUS.find(entry => entry.sku === sku);
+    const name = OWNER_REQUESTED_TARGET_NAMES[sku] || fromSeed?.name || "Product name pending verification";
+    next.entries[sku] = { sku, name, source: "owner-requested", addedAt: at };
+    delete next.removed[sku];
+    added.push(sku);
+  }
+  if (added.length) next.updatedAt = at;
+  return {master:next,added};
+}
+
 const skuKey = value=>String(value||"").trim().toUpperCase();
 const isSku = value=>/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(value);
 const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replaceAll(String.fromCharCode(96)," ").replace(/\s+/g," ").trim().slice(0,180);
