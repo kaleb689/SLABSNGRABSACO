@@ -5258,7 +5258,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true;
   async function connect() {
-    if (closed) return;
+    // A maintenance retry may call setup() again after the gateway is already
+    // connecting or live. Never open a duplicate Discord websocket.
+    if (closed || (socket && (socket.readyState === 0 || socket.readyState === 1))) return;
     try {
       const gateway = await api("/gateway/bot");
       socket = new WebSocket(`${gateway.url}?v=10&encoding=json`);
