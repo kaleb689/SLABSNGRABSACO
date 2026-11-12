@@ -291,13 +291,15 @@ export function upcomingAnnouncementPayloads(input) {
   if(chunk) parts.push(chunk);
   if(parts.length>8) return [];
   const retailer=upcomingDropRetailer(input);
-  return parts.map((part,index)=>{
-    const payload=upcomingAnnouncementPayload(part);
+  const rendered=parts.map((part,index)=>{
+    const payload=upcomingAnnouncementPayload(part) ||
+      upcomingAnnouncementPayload("Upcoming Drop (continued)\n"+part);
     if(!payload)return null;
     payload.embeds[0].title="📅 Upcoming Drops"+(retailer==="target"?" · Target":"")+
       " ("+(index+1)+"/"+parts.length+")";
     return payload;
-  }).filter(Boolean);
+  });
+  return rendered.every(Boolean) ? rendered : [];
 }
 
 // Fallback for the owner's free-form Upcoming Drops announcement. Previously
