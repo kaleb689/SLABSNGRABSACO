@@ -10,6 +10,8 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
   assert.match(html,new RegExp('<option value="'+retailer+'">'));
  assert.ok(html.indexOf('id="randomAliasCreate"')<html.indexOf('id="randomAliasPoolChooser"'));
  assert.match(html,/verified external IMAP inbox entered above/);
+ assert.match(html,/id="randomAliasCount" min="1" max="10000"/);
+ assert.match(html,/Cloudflare currently supports up to 200 standard Email Routing rules per domain/);
 });
 test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
  const start=app.indexOf(' const RANDOM_FIRST_NAMES='),end=app.indexOf(' // CSV export values',start);
@@ -23,10 +25,12 @@ test('Random local parts use secure name combinations, stay within 10 characters
  assert.ok(results.every(name=>/^[a-z]{5,9}[0-9]{1,2}$/.test(name)&&name.length<=10),results.find(name=>name.length>10));
  assert.ok(new Set(results).size>200,'random aliases should have varied names');
  assert.ok(results.every(name=>!name.startsWith('sng')),'Do not use the old sng plus hex alias format');
- assert.match(app,/new Set\\(records\\.map\\(r=>r\\.alias\\)\\)/);
- assert.match(app,/if\\(\\+\\+attempts>100\\)/);
- assert.match(app,/count<1\\|\\|count>100/);
- assert.match(app,/makeAlias\\('Random '\\+local,local,target,currentDomain\\(\\)\\)/);
+ assert.match(app,/new Set\(records\.map\(r=>r\.alias\)\)/);
+ assert.match(app,/if\(\+\+attempts>100\)/);
+ assert.match(app,/count<1\|\|count>10000/);
+ assert.match(app,/if\(records\.length\+count>10000\)/);
+ assert.match(app,/if\(\(i\+1\)%250===0&&i\+1<count\)/);
+ assert.match(app,/makeAlias\('Random '\+local,local,target,currentDomain\(\)\)/);
 });
 test('Encrypted Email Bank retains pool assignment and delivery test provenance across reload',()=>{
  for(const field of ['randomGenerated:r.randomGenerated===true','poolTarget:','poolImportedAt:','forwardingTestedAt:','forwardingTestTarget:'])assert.ok(app.includes(field),field);
