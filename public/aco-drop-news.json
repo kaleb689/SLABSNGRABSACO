@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "publishedAt": "2026-11-11T14:09:39Z",
-  "summary": "November 11, 2026 briefing compared with November 9. New confirmed Walmart drawing window: November 12, 5–6 p.m. EST / 2–3 p.m. PST for four Pokémon offers; UPC listing explicitly says receive one at random. This is an event/assortment clarification, not a proven newly introduced policy. No substantive new purchase-limit or checkout-rule change established for November 4–11. Target Delta Reign listings remain out of stock; Pokémon Center estimates remain mid-November. Current US Greninja article and Sam's terms could not be verified; source and local-stock limitations are recorded below.",
+  "publishedAt": "2026-11-13T14:42:00Z",
+  "summary": "November 13, 2026, compared with November 11. Walmart's four November 12 Pokémon drawings are closed, results due November 15 at 6 p.m. EST; queue now shows Star Trek items with an undated Thursday banner and marketplace offers. US official indexed content again verifies today's Mega Greninja release; Build & Battle official extracts conflict on November 6 versus November 20. No substantive new purchase-limit/checkout rule established for November 6–13. Sam's live policy access recovered; product pages remain unavailable. Signed-in and local inventory untested.",
   "retailers": [
     {
       "id": "target",
-      "coverage": "Four Delta Reign pages, preorder help and terms rechecked against November 9; same prices, IDs, out-of-stock/final-sale status and past street date. Other five 30th Celebration pages were not refreshed this edition and are omitted from current listing coverage. Numeric caps, future opening hours, signed-in checkout and local stock unverified. This is not an exhaustive TCG catalog.",
+      "coverage": "Four Delta Reign pages, preorder help and terms rechecked against November 11: identifiers, prices, past street dates and out-of-stock/final-sale status match. No numeric cap or future opening verified. Other Target products, signed-in checkout and local stock not exhaustively checked. Third-party overnight timing/one-per-SKU claim is separated as unverified.",
       "confirmed": [
         {
           "title": "Rechecked listing: Delta Reign Elite Trainer Box",
@@ -13,17 +13,16 @@
           "productName": "Pokémon Trading Card Game: Mega Evolution—Delta Reign Elite Trainer Box",
           "sku": "Target TCIN 1012793604; DPCI 361-00-4466; UPC 196214165809",
           "dropAt": "November 6, 2026 street date (past); no future restock time verified",
-          "details": "Official page shows $59.99, out of stock and final sale. Identifiers match November 9. No numeric cap was found in retrieved text.",
+          "details": "Official page shows $59.99, out of stock and final sale. Identifiers match November 11. No numeric cap was found in retrieved text.",
           "planningImpact": "Keep each format as a distinct Target selection. Require a live seller, quantity allowance and fulfillment check before planning a purchase; street date does not promise inventory or midnight checkout.",
           "checks": [
-            "Verify current allowed quantity and local/shipping availability.",
-            "ETB cannot ship to PO Boxes; review listed destination exclusions."
+            "Verify current allowed quantity, seller and shipping/local availability."
           ],
           "sources": [
             {
               "title": "Target Delta Reign Elite Trainer Box",
               "url": "https://www.target.com/p/-/A-1012793604",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -33,7 +32,7 @@
           "productName": "Pokémon Trading Card Game: Mega Evolution—Delta Reign Booster Bundle",
           "sku": "Target TCIN 1013166578; DPCI 361-00-7235; UPC 196214165823",
           "dropAt": "November 6, 2026 street date (past); no future restock time verified",
-          "details": "Official page shows $31.99, out of stock and final sale. Identifiers match November 9. No numeric cap was found in retrieved text.",
+          "details": "Official page shows $31.99, out of stock and final sale. Identifiers match November 11. No numeric cap was found in retrieved text.",
           "planningImpact": "Keep each format as a distinct Target selection. Require a live seller, quantity allowance and fulfillment check before planning a purchase; street date does not promise inventory or midnight checkout.",
           "checks": [
             "Verify current allowed quantity and local/shipping availability."
@@ -42,7 +41,7 @@
             {
               "title": "Target Delta Reign Booster Bundle",
               "url": "https://www.target.com/p/-/A-1013166578",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -52,7 +51,7 @@
           "productName": "Pokémon Trading Card Game: Mega Evolution—Delta Reign Three-Booster Blister",
           "sku": "Target TCIN 1013166573; DPCI 361-00-0064; UPC 196214165830",
           "dropAt": "November 6, 2026 street date (past); no future restock time verified",
-          "details": "Official page shows $14.99, out of stock and final sale. Identifiers match November 9. No numeric cap was found in retrieved text.",
+          "details": "Official page shows $14.99, out of stock and final sale. Identifiers match November 11. No numeric cap was found in retrieved text.",
           "planningImpact": "Keep each format as a distinct Target selection. Require a live seller, quantity allowance and fulfillment check before planning a purchase; street date does not promise inventory or midnight checkout.",
           "checks": [
             "Verify current allowed quantity and local/shipping availability."
@@ -61,7 +60,7 @@
             {
               "title": "Target Delta Reign Three-Booster Blister",
               "url": "https://www.target.com/p/-/A-1013166573",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -71,7 +70,7 @@
           "productName": "Pokémon Trading Card Game: Mega Evolution—Delta Reign Booster Display",
           "sku": "Target TCIN 1013166576; DPCI 361-00-0065; UPC 196214165854",
           "dropAt": "November 6, 2026 street date (past); no future restock time verified",
-          "details": "Official page shows $179.99, out of stock and final sale. The street date and identifiers match November 9. No numeric cap was found in retrieved text.",
+          "details": "Official page shows $179.99, out of stock and final sale. The street date and identifiers match November 11. No numeric cap was found in retrieved text.",
           "planningImpact": "Keep each format as a distinct Target selection. Require a live seller, quantity allowance and fulfillment check before planning a purchase; street date does not promise inventory or midnight checkout.",
           "checks": [
             "Verify current allowed quantity and local/shipping availability."
@@ -80,7 +79,7 @@
             {
               "title": "Target Delta Reign Booster Display",
               "url": "https://www.target.com/p/-/A-1013166576",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -91,7 +90,7 @@
           "sku": "",
           "dropAt": "",
           "details": "Limited preorder inventory; canceled orders cannot be reinstated. Date changes may require confirmation. Payment authorization renews seven days before street date; failed authorization may cancel. Charge occurs at shipment or pickup. Pickup is limited to eligible items/stores.",
-          "planningImpact": "Review existing preorder notices, payment and fulfillment eligibility. No new rule established against November 9.",
+          "planningImpact": "Review existing preorder notices, payment and fulfillment eligibility. No new rule established against November 11.",
           "checks": [
             "An Add to Cart label on an out-of-stock page is not an open preorder.",
             "Confirm actual Preorder option and fulfillment eligibility."
@@ -100,7 +99,7 @@
             {
               "title": "Target preorder help",
               "url": "https://www.target.com/help/articles/orders-purchases/pre-orders",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -119,7 +118,7 @@
             {
               "title": "Target terms",
               "url": "https://www.target.com/c/terms-conditions/-/N-4sr7l",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         }
@@ -130,43 +129,58 @@
     },
     {
       "id": "walmart",
-      "coverage": "Official drawing hub now shows November 12 window and four TCG offers, replacing November 9 closed-only coverage. Item IDs, numeric caps, current seller and order-level fulfillment not exposed. Figure assortment needs verification; UPC explicitly says one at random. Queue banner remains undated. FAQ and quantity help rechecked.",
+      "coverage": "Drawing hub now closed, all four prior TCG offers show November 15 results deadline. Queue lineup replaced Reality Fracture with Star Trek; banner says Thursday 9 p.m. ET without calendar date. Three linked item IDs verified, but two selected offers are marketplace sellers and standard bundle seller unavailable. No new dated purchase opening, numeric cap or universal Walmart+ requirement verified. FAQ and quantity policy rechecked.",
       "confirmed": [
         {
-          "title": "New confirmed November 12 Pokémon drawings",
-          "kind": "drop",
+          "title": "November 12 drawings closed; results deadline verified",
+          "kind": "listing",
           "productName": "30th Celebration Figure Collection—Mew and Mewtwo; Poster Collection; Ultra-Premium Collection—Day and Night (receive 1 at random); Knock Out Collection 4-Count Bundle",
           "sku": "",
-          "dropAt": "November 12, 2026, 5–6 p.m. EST / 2–3 p.m. PST",
-          "details": "Prices in product order: $39.97; $19.97; $224.97; $47.92. Drawing-specific IDs and caps unverified. Figure title alone does not establish a two-figure bundle.",
-          "planningImpact": "Use Walmart's actual assortment, not Target's separate variant selections.",
+          "dropAt": "",
+          "details": "All four drawings are closed, results by November 15, 2026, 6 p.m. EST / 3 p.m. PST. The prior November 12 entry window has ended. Drawing IDs/caps remain unverified; figure title does not establish both figures in one box.",
+          "planningImpact": "Remove the expired window from upcoming monitoring recommendations; check existing entry/order status. Random UPC assortment differs from separately selectable variants.",
           "checks": [
-            "Verify item ID, quantity, eligibility and figure contents before entry."
+            "Check official entry status and selected order; results deadline is not another drop."
           ],
           "sources": [
             {
-              "title": "Walmart drawing hub",
+              "title": "Walmart closed drawings",
               "url": "https://www.walmart.com/shop/collectibles/draw",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
         {
-          "title": "Queue banner still lacks a calendar date",
+          "title": "Star Trek queue listings replace previous lineup; no dated opening",
           "kind": "listing",
-          "productName": "Magic: The Gathering Reality Fracture Collector Booster; Collector Booster Box",
-          "sku": "",
+          "productName": "Magic: The Gathering Star Trek Collector Booster Box (12 Packs); Beam Me Up Bundle; Bundle",
+          "sku": "Walmart item IDs: Collector Booster Box 21183806474; Beam Me Up Bundle 21056620742; Bundle 21013316135",
           "dropAt": "",
-          "details": "Online-only Wednesday 9 p.m. ET banner remains without a fresh calendar date.",
-          "planningImpact": "Do not call tonight at 9 p.m. EST / 6 p.m. PST confirmed from an undated queue banner; the dated drawing is tomorrow.",
+          "details": "Queue says online-only Thursday 9 p.m. ET, without a calendar date. Linked Collector Box offer is sold/shipped by C6 Games; Beam Me Up by Cataclysm Games. Standard Bundle shows Preorder, seller not exposed. These are not verified Walmart first-party stock.",
+          "planningImpact": "Keep formats and sellers separate. Do not infer November 19 at 9 p.m. EST / 6 p.m. PST, live stock or checkout eligibility from this banner.",
           "checks": [
-            "Require dated event confirmation and recheck item IDs, seller and cap."
+            "Verify dated event, actual seller, preorder release/ship date, price and allowed quantity."
           ],
           "sources": [
             {
               "title": "Walmart queue",
               "url": "https://www.walmart.com/shop/collectibles/queue",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
+            },
+            {
+              "title": "Collector Booster Box; marketplace offer",
+              "url": "https://www.walmart.com/ip/Magic-The-Gathering-Star-Trek-Collector-Booster-Box-12-Packs/21183806474",
+              "checkedAt": "2026-11-13T14:42:00Z"
+            },
+            {
+              "title": "Beam Me Up Bundle; marketplace offer",
+              "url": "https://www.walmart.com/ip/Magic-The-Gathering-Star-Trek-Beam-Me-Up-Bundle/21056620742",
+              "checkedAt": "2026-11-13T14:42:00Z"
+            },
+            {
+              "title": "Star Trek Bundle; seller unavailable",
+              "url": "https://www.walmart.com/ip/Magic-The-Gathering-Star-Trek-Bundle/21013316135",
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -176,7 +190,7 @@
           "productName": "",
           "sku": "",
           "dropAt": "",
-          "details": "Account required; free entry once per drawing. Address, payment and quantity lock at entry, which cannot be canceled. Selection automatically places an order subject to processing; existing cart cannot combine. General caps may aggregate person, household, order, account, payment and address. Drawing orders below $35 may incur delivery fees; existing-cart items cannot be added to meet the threshold.",
+          "details": "Account required; free entry once per drawing. Address, payment and quantity lock at entry, which cannot be canceled. Selection automatically places an order subject to processing; existing cart cannot combine. General caps may aggregate person, household, order, account, payment and address. Drawing orders below $35 may incur delivery fees; existing-cart items cannot be added to meet the threshold. Walmart reserves the right to prohibit dealers/resellers; its site is for personal, noncommercial use.",
           "planningImpact": "Confirm details before entry; profile counts do not expand the permitted household allowance. Rules match prior coverage.",
           "checks": [
             "Verify event-specific eligibility/cap and any Walmart+ requirement; no universal Walmart+ requirement verified."
@@ -185,29 +199,31 @@
             {
               "title": "Walmart drawing FAQ",
               "url": "https://www.walmart.com/help/article/drawing-rules-and-faqs/ca1d27dd99c74b9eafb434f9c4c5a980",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             },
             {
               "title": "Walmart quantity limits",
               "url": "https://www.walmart.com/help/article/quantity-limits-and-bulk-purchases/825450266d4245b29e242d06a01bd91d",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         }
       ],
-      "checks": []
+      "checks": [
+        "Treat Walmart+ shipping icons separately from event eligibility; confirm any offer-specific membership requirement."
+      ]
     },
     {
       "id": "pokemoncenter",
-      "coverage": "Shipment estimates, preorder FAQ and queue help rechecked: mid-November estimate unchanged against November 9. ETB and US November article render only iframes. Earlier edition's November 13 US Mega Greninja release reference could not be reverified from readable current US content; search returned UK official page and conflicting secondary dates. No new US date, retailer opening hour, PC SKU, stock or numeric cap verified.",
+      "coverage": "Shipment table now has November 11 update metadata but US Delta Reign estimate is still mid-November, unchanged versus November 11 edition. US indexed November roundup again readable for Greninja; full article, showcase and PC ETB render only iframes. Indexed Build & Battle dates conflict. No retailer opening hour, PC SKU, current stock or numeric cap verified. FAQ/queue baseline rechecked.",
       "confirmed": [
         {
-          "title": "Mid-November preorder shipments remain estimates",
+          "title": "Delta Reign shipment estimate unchanged despite updated metadata",
           "kind": "listing",
           "productName": "Mega Evolution—Delta Reign; Pokémon Center Elite Trainer Box, Booster Bundle (6 Packs), Booster Display Box (36 Packs)",
           "sku": "",
           "dropAt": "Mid-November 2026 estimated preorder shipment; no new purchase time",
-          "details": "Official table still lists mid-November for US/CA/UK Delta Reign PC ETB, 6-pack bundle and 36-pack display, matching November 9. This estimates existing preorder shipment, not new availability.",
+          "details": "US Delta Reign PC ETB, 6-pack bundle and 36-pack display still estimate mid-November shipments. Page metadata updated November 11; this does not establish a changed estimate, restock or checkout rule.",
           "planningImpact": "Maintain separate shipment and purchase expectations; do not treat an estimate as cancellation, stock or a new opening.",
           "checks": [
             "Recheck the US product page for its SKU, allowance and availability before selection."
@@ -216,12 +232,12 @@
             {
               "title": "Estimated preorder shipments",
               "url": "https://support.pokemoncenter.com/hc/en-us/articles/4407702295572-Estimated-Preorder-Release-Dates",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             },
             {
               "title": "PC ETB page; iframe-only, product details unavailable",
               "url": "https://www.pokemoncenter.com/product/10-10438-112/pokemon-tcg-mega-evolution-delta-reign-pokemon-center-elite-trainer-box",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -240,7 +256,7 @@
             {
               "title": "Pokémon Center preorder FAQ",
               "url": "https://support.pokemoncenter.com/hc/en-us/articles/24128350732820-Pok%C3%A9mon-Center-Preorder-FAQ",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -259,18 +275,61 @@
             {
               "title": "Virtual queue guidance",
               "url": "https://support.pokemoncenter.com/hc/en-us/articles/37286495522452-Pok%C3%A9mon-Center-Virtual-Queue",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
+            }
+          ]
+        },
+        {
+          "title": "Today's manufacturer release reverified in official US index",
+          "kind": "listing",
+          "productName": "Pokémon TCG: Mega Greninja ex League Battle Deck",
+          "sku": "",
+          "dropAt": "November 13, 2026 manufacturer release; no retailer opening time",
+          "details": "Official US indexed roundup says available November 13; full page remains iframe-only. This restores current source coverage lost November 11, not evidence of a changed release date.",
+          "planningImpact": "Use as release-day watch context, not a confirmed Pokémon Center opening. Do not use another retailer's identifiers.",
+          "checks": [
+            "Verify working US offer, PC SKU, quantity allowance and stock before selection."
+          ],
+          "sources": [
+            {
+              "title": "Official US November roundup; indexed extract only",
+              "url": "https://www.pokemon.com/us/pokemon-news/check-out-every-pokemon-tcg-product-release-in-november-2026",
+              "checkedAt": "2026-11-13T14:42:00Z"
+            }
+          ]
+        },
+        {
+          "title": "Build & Battle dates conflict across official indexed pages",
+          "kind": "listing",
+          "productName": "Pokémon TCG: Mega Evolution—Delta Reign Build & Battle Box",
+          "sku": "",
+          "dropAt": "",
+          "details": "US product showcase indexed extract lists November 20, 2026; November roundup indexed extract lists November 6. Full pages are iframe-only. Neither establishes a purchase opening at the five retailers.",
+          "planningImpact": "Keep November 20 as a date requiring clarification; do not present a single settled retailer launch schedule.",
+          "checks": [
+            "Seek updated manufacturer clarification and a dated retailer offer; verify SKU and cap."
+          ],
+          "sources": [
+            {
+              "title": "US product showcase; indexed November 20",
+              "url": "https://www.pokemon.com/us/news/pokemon-tcg-mega-evolution-delta-reign-product-showcase",
+              "checkedAt": "2026-11-13T14:42:00Z"
+            },
+            {
+              "title": "US roundup; conflicting indexed November 6",
+              "url": "https://www.pokemon.com/us/pokemon-news/check-out-every-pokemon-tcg-product-release-in-november-2026",
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         }
       ],
       "checks": [
-        "For Mega Greninja ex League Battle Deck, recheck US manufacturer/retailer page before treating prior November 13 reference as a purchase opening."
+        "Do not interpret a queue or shipment estimate as new stock; verify US product-page limits."
       ]
     },
     {
       "id": "costco",
-      "coverage": "Paldea Partners and membership conditions rechecked; same online-only item and two-unit daily membership cap as November 9. No current official 30th Celebration bundle opening verified in searches. Signed-in deliverability and warehouse stock unverified; old November 9 rumored window is not carried as upcoming.",
+      "coverage": "Paldea Partners item and membership conditions rechecked; same online-only listing and daily membership cap as November 11. No official dated US 30th Celebration bundle opening verified. Secondary allocation sheets are historical snapshots, not live stock. Signed-in deliverability and warehouse stock untested.",
       "confirmed": [
         {
           "title": "Paldea Partners cap unchanged",
@@ -287,7 +346,7 @@
             {
               "title": "Costco Paldea Partners tins",
               "url": "https://www.costco.com/p/-/pokemon-3-pack-paldea-partners-tins/4000352232",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         },
@@ -306,7 +365,7 @@
             {
               "title": "Costco membership conditions",
               "url": "https://www.costco.com/f/-/member-privileges-conditions",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         }
@@ -315,24 +374,43 @@
     },
     {
       "id": "sams",
-      "coverage": "Returns page fetched initially but relevant follow-up and both terms URLs timed out. Official returns indexed extract remains readable but crawled last month; current live terms and Plus details could not be reverified. Mini Tin pages still 404; indexed November 18 lacks a year and has November 2025 reviews. No current item cap or national TCG opening verified. Failures do not establish no stock.",
+      "coverage": "Live terms and returns pages readable again after November 11 timeouts. Terms still show November 6 revision date previously observed November 9; prior edition lacks full snapshot to isolate changed provisions. Both Mini Tin URLs still 404. No current numeric product cap, national TCG opening or universal Plus-only access rule verified; source failures do not establish no inventory.",
       "confirmed": [
         {
-          "title": "Indexed return-policy baseline; live recheck limited",
+          "title": "Live trading-card return baseline reverified",
           "kind": "policy_baseline",
           "productName": "",
           "sku": "",
           "dropAt": "",
-          "details": "Official indexed returns help lists collectibles and opened/unopened trading cards under no returns, consistent with November 9 coverage. Extract is older; direct follow-up timed out, so no fresh policy-change conclusion is possible.",
-          "planningImpact": "Plan quantities only within a verified item allowance and without assuming unwanted sealed cards can be returned.",
+          "details": "Returns help excludes collectibles and opened/unopened trading cards. Consistent with prior indexed coverage; recovered access is not a newly introduced restriction.",
+          "planningImpact": "Confirm contents and allowed quantity before buying; do not assume sealed surplus cards can be returned.",
           "checks": [
-            "Confirm exact product, cap and condition before purchase; contact club about damage-specific issues."
+            "Check exact offer and contact club for damage-specific issues."
           ],
           "sources": [
             {
-              "title": "Sam’s returns: official indexed extract; live follow-up timeout",
+              "title": "Sam's Club returns",
               "url": "https://help.samsclub.com/app/answers/detail/a_id/4072",
-              "checkedAt": "2026-11-11T14:09:39Z"
+              "checkedAt": "2026-11-13T14:42:00Z"
+            }
+          ]
+        },
+        {
+          "title": "Membership and Plus shipping baseline rechecked",
+          "kind": "policy_baseline",
+          "productName": "",
+          "sku": "",
+          "dropAt": "",
+          "details": "Cards are non-transferable. Plus free ground shipping applies to eligible online orders in contiguous US subject to minimum order value and exclusions; Club members may pay shipping. Terms display November 6 update, but changed provisions cannot be isolated.",
+          "planningImpact": "Use eligible membership and confirm each offer's tier/channel. Shipping benefits do not prove universal Plus-only TCG access.",
+          "checks": [
+            "Verify item cap per membership/person/order, shipping versus club availability and offer-specific Plus conditions."
+          ],
+          "sources": [
+            {
+              "title": "Sam's Club terms, November 6 revision metadata",
+              "url": "https://help.samsclub.com/app/answers/detail/a_id/4075/~/terms-and-conditions---sams-club",
+              "checkedAt": "2026-11-13T14:42:00Z"
             }
           ]
         }
@@ -350,7 +428,7 @@
       "productName": "Reported 30th Celebration Day + Night Ultra-Premium Collection 2-pack; separate ETB + Booster Bundle",
       "sku": "",
       "dropAt": "",
-      "details": "November 9 newsletter reported a possible November 9 UPC two-pack window without Costco confirmation. That date is now past; no new official opening verified. Its separate ETB + Booster Bundle item 2007496 report remains independently unverified here.",
+      "details": "November 9 newsletter's possible UPC two-pack window is past, with no official date/price/channel verified here. Separate reported ETB + Booster Bundle item 2007496 remains unverified. Current secondary tracker describes November 9 allocation counts, not a live stock guarantee.",
       "planningImpact": "Keep UPC two-pack and ETB bundle distinct; do not turn reported arrivals, allocation sheets or rumors into national shelf/drop times or current selections.",
       "checks": [
         "Require a current official listing or warehouse confirmation of item number, contents, cap, membership eligibility and channel before planning."
@@ -359,7 +437,12 @@
         {
           "title": "TCG Drop Radar November 9 report",
           "url": "https://buttondown.com/tcgdropradar/archive/costco-upc-2-pack-watch-the-next-pokemon-release/",
-          "checkedAt": "2026-11-11T14:09:39Z"
+          "checkedAt": "2026-11-13T14:42:00Z"
+        },
+        {
+          "title": "Restockd November 9 allocation snapshot; secondary report",
+          "url": "https://restockd.app/pokemon-in-store?allocation=costco-30th",
+          "checkedAt": "2026-11-13T14:42:00Z"
         }
       ]
     },
@@ -370,7 +453,7 @@
       "productName": "Pokémon 4 Mini Tins + 4 Promo Cards Bundle",
       "sku": "",
       "dropAt": "",
-      "details": "Official indexed text still says November 18 in-club-only, all membership tiers and maximum two per membership, but no year. Both direct URLs returned 404 again. This does not verify a current cap or November 18, 2026 event.",
+      "details": "Older indexed/secondary descriptions say November 18 in-club-only and maximum two per membership without a year; both direct URLs still 404 today. Current official indexed extract retains max-two wording but does not establish 2026 availability or a current cap.",
       "planningImpact": "Keep this out of confirmed drop schedules and current SKU selections pending a working official offer.",
       "checks": [
         "Obtain a working official page or club confirmation of year, item number, cap and stock."
@@ -379,14 +462,39 @@
         {
           "title": "Indexed Sam’s Mini Tin bundle; direct fetch 404",
           "url": "https://www.samsclub.com/ip/pokemon-4-mini-tins-4-promo-cards-bundle/17593918944",
-          "checkedAt": "2026-11-11T14:09:39Z"
+          "checkedAt": "2026-11-13T14:42:00Z"
         },
         {
           "title": "Alternate Mini Tin URL; direct fetch 404",
           "url": "https://www.samsclub.com/ip/pokemon-4-mini-tins-4-promo-cards-bundle/17553851885",
-          "checkedAt": "2026-11-11T14:09:39Z"
+          "checkedAt": "2026-11-13T14:42:00Z"
+        },
+        {
+          "title": "Packs Near Me historical listing report; secondary",
+          "url": "https://packsnearme.com/guides/does-sams-club-sell-pokemon-cards",
+          "checkedAt": "2026-11-13T14:42:00Z"
         }
       ]
+    },
+    {
+      "title": "Target overnight timing and one-per-SKU claim unverified",
+      "kind": "rumor",
+      "productName": "Reported 30th Celebration collections and Delta Reign products",
+      "sku": "",
+      "dropAt": "",
+      "details": "CartTactic indexed report predicts November 13 around 3 a.m. EST / 2 a.m. CST and claims one per SKU, while warning some items may not drop. That time is past; full report could not be fetched. Four checked official Delta Reign listings are currently out of stock, with no numeric cap exposed.",
+      "planningImpact": "Do not promote the report to a confirmed future window or universal cap. Restock detections do not verify present availability.",
+      "checks": [
+        "Check exact official listing for live stock, seller, numeric cap and any drawing controls."
+      ],
+      "sources": [
+        {
+          "title": "CartTactic; indexed report, direct fetch unavailable",
+          "url": "https://carttactic.com/target-pokemon-30th-celebration-delta-reign-drop-tonight-nov-13/",
+          "checkedAt": "2026-11-13T14:42:00Z"
+        }
+      ],
+      "retailer": "target"
     }
   ]
 }
