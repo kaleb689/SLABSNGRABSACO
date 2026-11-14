@@ -8,6 +8,7 @@ on:
       - customer-cancelled-history.js
       - test/customer-cancelled-history.test.mjs
       - test/cancellation-tracking.test.mjs
+      - test/customer-checkout-values.test.mjs
       - server.js
       - operator-imap-policy.js
       - public/operator-imap-health.js
@@ -36,6 +37,7 @@ on:
       - customer-cancelled-history.js
       - test/customer-cancelled-history.test.mjs
       - test/cancellation-tracking.test.mjs
+      - test/customer-checkout-values.test.mjs
       - server.js
       - operator-imap-policy.js
       - public/operator-imap-health.js
@@ -78,4 +80,4 @@ jobs:
           node --check public/operator-imap-health.js
           node --check public/admin-mobile.js
       - name: Carrier API contract and event tests
-        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs test/shipping-delivery-verification.test.mjs test/order-notifications.test.js test/customer-cancelled-history.test.mjs test/cancellation-tracking.test.mjs
+        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs test/shipping-delivery-verification.test.mjs test/order-notifications.test.js test/customer-cancelled-history.test.mjs test/cancellation-tracking.test.mjs test/customer-checkout-values.test.mjs test/app-dashboard.test.mjs
