@@ -80,6 +80,18 @@ function summarize(messages, bounds, parseCheckout) {
   const colorCounts = {}, parsedCounts = {}, missingParse = {}, sourceRetailers = {},
     messageAuthorTypes = {}, imageHosts = {}, hourCounts = {};
   const parsedEvents = [];
+  const rejectedRedShapes = [], fieldKinds = {};
+  const fieldKind = (value) => {
+    const label=String(value||"").toLowerCase().replace(/[*_`]/g,"").trim();
+    if (/^(?:order|confirmation|retailer order)/.test(label)) return "order_id_label";
+    if (/(?:account|profile|email|login|username)/.test(label)) return "account_or_profile_label";
+    if (/(?:product|item)/.test(label)) return "product_label";
+    if (/(?:quantity|qty)/.test(label)) return "quantity_label";
+    if (/(?:total|paid|charged|amount|subtotal)/.test(label)) return "payment_total_label";
+    if (/(?:price)/.test(label)) return "unit_price_label";
+    if (/(?:site|retailer|store)/.test(label)) return "retailer_label";
+    return "other";
+  };
   let missingOrderNumber = 0, moduleLifecycle = 0, rejectedRedWithOrderId = 0, rejectedRedWithoutOrderId = 0;
   for (const m of messages) {
     const timestamp = Date.parse(m.timestamp || "");
@@ -93,6 +105,9 @@ function summarize(messages, bounds, parseCheckout) {
       for (const e of Array.isArray(m.embeds) ? m.embeds : []) {
         const domain = safeDomain(e?.thumbnail?.url || e?.image?.url);
         if (domain) addCount(imageHosts, domain);
+      }
+      for (const e of Array.isArray(m.embeds) ? m.embeds : []) {
+        for (const field of Array.isArray(e?.fields) ? e.fields : []) addCount(fieldKinds, fieldKind(field?.name));
       }
       if (raw) {
         addCount(parsedCounts, raw.status || "unknown");
@@ -117,6 +132,21 @@ function summarize(messages, bounds, parseCheckout) {
       if (!raw && status === "cancelled" && timestamp < to) {
         if (orderId.length >= 5) rejectedRedWithOrderId++;
         else rejectedRedWithoutOrderId++;
+        const embeds=Array.isArray(m.embeds) ? m.embeds : [];
+        rejectedRedShapes.push({
+          hour:new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(timestamp)),
+          embeds:embeds.length,
+          fieldKinds:embeds.flatMap(e=>(Array.isArray(e.fields)?e.fields:[]).map(f=>fieldKind(f.name))),
+          hasIdentityEmail:Boolean(identity.email),
+          hasProfileName:Boolean(identity.profileName),
+          descriptionHasOrderToken:embeds.some(e=>/\border\b/i.test(String(e.description||""))),
+          descriptionHasCancellationToken:embeds.some(e=>/\bcancel(?:led|lation)?\b/i.test(String(e.description||""))),
+          titleHasCancellationToken:embeds.some(e=>/\bcancel(?:led|lation)?\b/i.test(String(e.title||""))),
+          contentHasCancellationToken:/\bcancel(?:led|lation)?\b/i.test(String(m.content||"")),
+          anyProductLink:embeds.some(e=>/\]\(https?:\/\//i.test(String(e.description||""))),
+          hasNumericTokens:embeds.some(e=>/(?:\d[ -]*){5,}/.test(String(e.description||"")+
+            " "+(Array.isArray(e.fields)?e.fields.map(f=>String(f.value||"")).join(" "):"")))
+        });
       }
       parsedEvents.push({
         timestamp,
@@ -130,7 +160,7 @@ function summarize(messages, bounds, parseCheckout) {
   }
   const groups = new Map();
   for (const event of parsedEvents.sort((a,b) => a.timestamp-b.timestamp)) {
-    const prior=groups.get(event.key) || { firstAt:event.timestamp,events:[],firstSuccessAt:null,lastStatus:"unverified",bestItems:[],paid:null,hasNumber:event.orderNumberAvailable };
+    const prior=groups.get(event.key) || { firstAt:event.timestamp,events:[],firstSuccessAt:null,lastStatus:"unverified",bestItems:[],lastSuccessItems:[],paid:null,hasNumber:event.orderNumberAvailable };
     prior.firstAt=Math.min(prior.firstAt,event.timestamp);
     prior.events.push(event);
     prior.lastStatus=event.status;
@@ -138,6 +168,7 @@ function summarize(messages, bounds, parseCheckout) {
       prior.firstSuccessAt=Math.min(prior.firstSuccessAt ?? event.timestamp,event.timestamp);
       const sum=q=>q.reduce((a,i)=>a+Math.max(0,Number(i.quantity)||0),0);
       if (sum(event.items)>sum(prior.bestItems)) prior.bestItems=event.items;
+      if (sum(event.items)>0) prior.lastSuccessItems=event.items;
       if (event.paidCents !== null) prior.paid=event.paidCents;
     }
     groups.set(event.key,prior);
@@ -171,6 +202,23 @@ function summarize(messages, bounds, parseCheckout) {
       units+=q;
     }
   }
+  const latestProducts=new Map(),latestNames=new Map();
+  let latestUnits=0, changedLineGroups=0;
+  for(const group of retained){
+    const items=group.lastSuccessItems.length?group.lastSuccessItems:group.bestItems;
+    const sumItems=arr=>arr.reduce((sum,i)=>sum+(Number(i?.quantity)||0),0);
+    if(sumItems(group.bestItems)!==sumItems(items))changedLineGroups++;
+    for(const item of items){
+      const q=Number(item.quantity), name=safeProduct(item.name);
+      if(!Number.isSafeInteger(q)||q<=0||!name)continue;
+      const key=communityProductKey(name,item.sku)||name.toLowerCase();
+      addCount(latestProducts,key,q);
+      latestNames.set(key,name);
+      latestUnits+=q;
+    }
+  }
+  const latestTopProducts=[...latestProducts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))
+    .slice(0,8).map(([key,qty])=>({name:latestNames.get(key),quantity:qty}));
   const topProducts=[...products.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))
     .slice(0,8).map(([key,qty])=>({name:productNames.get(key),quantity:qty}));
   return {
@@ -182,6 +230,8 @@ function summarize(messages, bounds, parseCheckout) {
     statusColorMessages:colorCounts,
     parsedCheckoutMessages:parsedCounts,
     ignoredMessagesByColor:missingParse,
+    fieldKinds,
+    rejectedRedShapes,
     webhookTypes:messageAuthorTypes,
     retailerFieldsParsed:sourceRetailers,
     missingOrderNumbersInParsed:missingOrderNumber,
@@ -195,6 +245,9 @@ function summarize(messages, bounds, parseCheckout) {
     duplicatedOrderEvents:eventsOfSameOrder,
     attemptedGroupsWithoutOrderNumber:noNumberOrders,
     retainedUnits:units,
+    latestSuccessLineUnits:latestUnits,
+    latestSuccessLineTopProducts:latestTopProducts,
+    changedLineGroups,
     verifiedPaidCents:paidCents.value,
     paidPriceKnownOrders:knownPrice,
     priceMissingOrders:unknownPrice,
