@@ -90,7 +90,7 @@ test("managed business mailbox cannot create a checkout or match other customers
 test("customer Success returns cancelled history separately from successful purchases", async () => {
   const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
   const app = await fs.readFile(new URL("../public/app-dashboard.js", import.meta.url), "utf8");
-  const route = server.slice(server.indexOf('  "/api/account/success",'),server.indexOf('/* -------------------------------------------------------\\n   MY PROFILE'));
+  const route = server.slice(server.indexOf('  "/api/account/success",'),server.indexOf('/* -------------------------------------------------------\n   MY PROFILE'));
   assert.match(route, /customerCancelledCheckouts\(ownedRecords/);
   assert.match(route, /hiddenIds: await loadHiddenCancelledIds/);
   assert.match(route, /\.map\(safeSuccessCheckout\)/);
