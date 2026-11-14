@@ -313,6 +313,87 @@ function summarize(messages, bounds, parseCheckout) {
   };
 }
 
+
+function priceShapeAudit(messages, from, to, parseCheckout) {
+  const stats = {
+    successMessages:0,uniqueOrderNumbers:0,explicitPaidMessages:0,
+    withDollarAnywhere:0,withDollarDescription:0,withDollarTitle:0,withDollarFooter:0,
+    withDollarContent:0,withDollarPriceField:0,withUnitPriceField:0,
+    withTotalField:0,withOtherMoneyField:0,withPriceInProductLink:0,
+    withDecimalInDescription:0,fieldLabelCounts:{},orderTotalBasis:{},
+    pricesByProduct:{},priceFieldFormats:{},totalFieldFormats:{},
+    simplePriceCents:[],explicitPaidCents:0
+  };
+  const seen=new Set(), hasDollar=v=>/(?:\$|USD\s*[\d,]+(?:\.\d+)?)/i.test(String(v||""));
+  for(const m of messages){
+    const at=Date.parse(m.timestamp||"");
+    if(!Number.isFinite(at)||at<from||at>=to)continue;
+    const status=checkoutStatusFromDiscord(m);
+    if(status!=="confirmed"&&status!=="review_hold")continue;
+    stats.successMessages++;
+    const parsed=parseCheckout(m);
+    const id=checkoutIdentityFromDiscord(m).orderNumber;
+    const key=id?String(id).trim().toLowerCase():String(m.id);
+    seen.add(key);
+    const explicit=checkoutExplicitPaidTotal(m);
+    if(explicit!==null){
+      stats.explicitPaidMessages++;
+      stats.explicitPaidCents+=Math.round(explicit*100);
+    }
+    const embeds=Array.isArray(m.embeds)?m.embeds:[];
+    const fields=embeds.flatMap(e=>Array.isArray(e.fields)?e.fields:[]);
+    const all=[String(m.content||""),...embeds.flatMap(e=>[
+      String(e.title||""),String(e.description||""),String(e.footer?.text||"")]),
+      ...fields.map(f=>String(f.value||""))];
+    if(all.some(hasDollar))stats.withDollarAnywhere++;
+    if(hasDollar(m.content))stats.withDollarContent++;
+    if(embeds.some(e=>hasDollar(e.title)))stats.withDollarTitle++;
+    if(embeds.some(e=>hasDollar(e.description)))stats.withDollarDescription++;
+    if(embeds.some(e=>hasDollar(e.footer?.text)))stats.withDollarFooter++;
+    if(embeds.some(e=>/\]\(https?:\/\/[^)]+\).*[$]\s?\d/.test(String(e.description||""))))stats.withPriceInProductLink++;
+    if(embeds.some(e=>/(?:^|[^\d])\d{1,5}\.\d{2}(?:$|[^\d])/.test(String(e.description||""))))stats.withDecimalInDescription++;
+    let priceField=false,totalField=false,otherMoneyField=false;
+    for(const field of fields){
+      const label=String(field.name||"").toLowerCase().replace(/[*_]/g,"").trim();
+      const value=String(field.value||"");
+      const kind=/^(?:unit|item)?\s*price$/.test(label)?"unit-price":
+        /\b(?:order|checkout|grand|paid|charged|total|amount)\b/.test(label)?"total":
+        /(?:price|cost|subtotal)/.test(label)?"other-price":
+        /^(?:product|item)/.test(label)?"product":
+        /^(?:quantity|qty)/.test(label)?"quantity":
+        /^(?:site|store|retailer)/.test(label)?"retailer":"non-money";
+      addCount(stats.fieldLabelCounts,kind);
+      if(kind==="unit-price"){
+        priceField=true;
+        if(hasDollar(value))stats.withDollarPriceField++;
+        const simple=/^\s*(?:[$]|USD\s*)?\s*[\d,]+(?:\.\d{2})?\s*(?:USD)?\s*$/i.test(value);
+        addCount(stats.priceFieldFormats,simple?"simple_money":hasDollar(value)?"complex_money":"other");
+        const n=Number(value.replace(/[^\d.]/g,""));
+        if(simple&&Number.isFinite(n)&&n>0&&stats.simplePriceCents.length<35)stats.simplePriceCents.push(Math.round(n*100));
+      } else if(kind==="total"){
+        totalField=true;
+        addCount(stats.totalFieldFormats,hasDollar(value)?"has_currency":/^\s*[\d,.]+\s*$/.test(value)?"numeric":"other");
+      } else if(kind==="other-price") otherMoneyField=true;
+    }
+    if(priceField)stats.withUnitPriceField++;
+    if(totalField)stats.withTotalField++;
+    if(otherMoneyField)stats.withOtherMoneyField++;
+    addCount(stats.orderTotalBasis,String(parsed?.orderTotalBasis||"unparsed"));
+    for(const item of Array.isArray(parsed?.items)?parsed.items:[]){
+      const name=safeProduct(item?.name);
+      if(!name||!(Number(item?.price)>0))continue;
+      const product=communityProductKey(name,item.sku)||name.toLowerCase();
+      if(!stats.pricesByProduct[product])stats.pricesByProduct[product]={lines:0,cents:[]};
+      stats.pricesByProduct[product].lines++;
+      const v=Math.round(Number(item.price)*100);
+      if(!stats.pricesByProduct[product].cents.includes(v))stats.pricesByProduct[product].cents.push(v);
+    }
+  }
+  stats.uniqueOrderNumbers=seen.size;
+  stats.simplePriceCents.sort((a,b)=>a-b);
+  return stats;
+}
+
 export async function auditSlabsNGrabsTCSuccess({ token, parseCheckout }={}) {
   if (!token || typeof parseCheckout !== "function") {
     console.log(MARK + " " + JSON.stringify({error:"Discord bot credentials or source parser unavailable"}));
@@ -343,7 +424,8 @@ export async function auditSlabsNGrabsTCSuccess({ token, parseCheckout }={}) {
           pages,complete,earliestFetched,
           downloadedMessages:messages.length,
           wholeDay:summarize(messages,{from:DAY_START,to:DAY_END,name:"2026-11-13 full local day"},parseCheckoutSafe),
-          morning:summarize(messages,{from:DROP_START,to:DROP_END,name:"2026-11-13 03:00-08:00 Eastern"},parseCheckoutSafe)
+          morning:summarize(messages,{from:DROP_START,to:DROP_END,name:"2026-11-13 03:00-08:00 Eastern"},parseCheckoutSafe),
+          priceShape:priceShapeAudit(messages,DROP_START,DROP_END,parseCheckoutSafe)
         }));
       }catch(error){console.log(MARK+"_CHANNEL_ERROR "+JSON.stringify({channel:channel.name,error:String(error?.message||"read failed").slice(0,130)}))}
     }
