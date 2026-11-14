@@ -1,6 +1,5 @@
 import { sourcePriceIsLineTotal, retailerFromTrustedSourceImage } from "./discord-source-price-field-policy.js";
 import {registerDirectSourceRecapReview} from "./server-discord-source-recap-review.js";
-import {auditSlabsNGrabsTCSuccess} from "./discord-source-direct-audit.js";
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
@@ -50760,12 +50759,6 @@ await initializeArrayFile(
 
         appOrderNotifications.start();
         startLiveSuccessScheduler();
-        // Temporary, read-only original Discord Success totals audit.
-        // Never posts to Discord or changes stored checkout records.
-        void auditSlabsNGrabsTCSuccess({
-          token:String(process.env.DISCORD_BOT_TOKEN||"").trim(),
-          parseCheckout:discordCheckoutFromMessage
-        });
 
 
 
