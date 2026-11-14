@@ -50609,6 +50609,33 @@ async function logPrivateTargetRecapAudit20261112() {
     const all = visibleDiscordSuccessRecords(persisted, hitsChannelId, source.channels);
     const windowStart = Date.parse("2026-11-12T08:00:00.000Z");
     const windowEnd = Date.parse("2026-11-12T13:00:00.000Z");
+    const buckets = new Map();
+    for (const rec of all) {
+      const when = Date.parse(rec?.checkoutAt || "");
+      if (!Number.isFinite(when)) continue;
+      const d = new Date(when);
+      const date = new Intl.DateTimeFormat("en-CA", {
+        timeZone:"America/New_York", year:"numeric", month:"2-digit", day:"2-digit"
+      }).format(d);
+      if (date < "2026-11-09" || date > "2026-11-14") continue;
+      const hr = new Intl.DateTimeFormat("en-US", {
+        timeZone:"America/New_York", hour:"2-digit", hourCycle:"h23"
+      }).format(d);
+      const retailer = String(normalizeSuccessRetailer(rec?.retailer) || "").toUpperCase();
+      const key = date + " " + retailer + " " + hr;
+      const val = buckets.get(key) || {date,retailer,hour:hr,total:0,green:0,orange:0,red:0,unverified:0};
+      val.total++;
+      if (confirmedDiscordPurchase(rec)) val.green++;
+      else if (reviewHoldDiscordCheckout(rec)) val.orange++;
+      else if (cancelledOrder(rec)) val.red++;
+      else val.unverified++;
+      buckets.set(key,val);
+    }
+    console.log(tag + "_DAY_DIAGNOSTIC " + JSON.stringify({
+      recordsScanned:all.length,
+      buckets:[...buckets.values()].sort((a,b) => a.date.localeCompare(b.date) ||
+        a.retailer.localeCompare(b.retailer) || a.hour.localeCompare(b.hour))
+    }));
     const targetRecords = all.filter(order => {
       const at = Date.parse(order?.checkoutAt || "");
       return Number.isFinite(at) && at >= windowStart && at < windowEnd &&
