@@ -335,7 +335,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await reconcileAccountEvents(accounts, await getAccountUpdates());
       const active = new Set(accounts.filter(account => !account.disabled).map(account => String(account.id)));
       const eligible = new Set(records.filter(record => orderSnapshot(record).eligible).map(orderKey));
-      const cancelled = new Set(records.filter(notifiableCancellation).map(orderKey));
+      const cancelled = new Set(records.filter(record => notifiableCancellation(record)).map(orderKey));
       const holds = new Set(records.filter(record => record.status === "review_hold" && !cancelledOrder(record)).map(orderKey));
       await locked(async () => {
         const pending = [];
