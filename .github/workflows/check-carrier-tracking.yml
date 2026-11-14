@@ -21,7 +21,7 @@ on:
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
       - test/shipping-delivery-verification.test.mjs
-      - test/order-notifications.test.js test/customer-cancelled-history.test.mjs test/cancellation-tracking.test.mjs
+      - test/order-notifications.test.js
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -78,4 +78,4 @@ jobs:
           node --check public/operator-imap-health.js
           node --check public/admin-mobile.js
       - name: Carrier API contract and event tests
-        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs test/shipping-delivery-verification.test.mjs test/order-notifications.test.js
+        run: node --test tests/carrier-tracking.test.js test/success-source-policy.test.mjs test/shipping-sheet-live-state.test.mjs test/operator-imap-health.test.mjs test/shipping-delivery-verification.test.mjs test/order-notifications.test.js test/customer-cancelled-history.test.mjs test/cancellation-tracking.test.mjs
