@@ -12535,6 +12535,24 @@ async function saveDiscountCodes(records) {
 
 // Consult Stripe for limits on currently redeemable codes. Local records
 // preserve historical use counts if a code's coupon is edited/replaced.
+const activatedScheduledPromotionCodes=new Set();
+async function activateStartedScheduledPromotions() {
+  const records=await getDiscountCodes(),now=Date.now();
+  for(const record of records){
+    const id=String(record.stripePromotionCodeId||"");
+    if(!id||!record.startsAt||!record.active||record.discountScope==="extension"||
+       (record.expiresAt&&Date.parse(record.expiresAt)<=now)||
+       Date.parse(record.startsAt)>now||
+       activatedScheduledPromotionCodes.has(id))continue;
+    try{
+      const promotion=await stripe.promotionCodes.retrieve(id);
+      if(promotion.active!==true)await stripe.promotionCodes.update(id,{active:true});
+      activatedScheduledPromotionCodes.add(id);
+    }catch(error){
+      console.error("Scheduled promotion activation failed:",id,error?.code||error?.message);
+    }
+  }
+}
 async function discountCodesWithUsage() {
   const records = await getDiscountCodes();
   return Promise.all(records.map(async record => {
@@ -16735,7 +16753,8 @@ async function saveAdminDiscount(req, res, existingId = null) {
       // Extension-only codes are redeemed by the server's prepaid checkout.
       // Never expose them as Stripe promotion codes on normal signup.
       promotion = (recipientEmail || ogOnly || discountScope === "extension") ? null : await stripe.promotionCodes.create({
-        coupon: coupon.id, code, active: existing ? existing.active : true,
+        coupon: coupon.id, code,
+        active:(existing ? existing.active : true) && (!startsAt || startsAt.getTime()<=Date.now()),
         ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
         ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
       });
@@ -16827,7 +16846,9 @@ app.patch("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation(a
   if (!item) return res.status(404).json({ error: "Discount code was not found." });
   if (typeof req.body?.active !== "boolean") return res.status(400).json({ error: "Choose active or inactive." });
   try {
-    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, { active: req.body.active });
+    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, {
+      active:req.body.active && (!item.startsAt || Date.parse(item.startsAt)<=Date.now())
+    });
   } catch (error) {
     console.error("Stripe promotion code update failed:", error?.message);
     return res.status(502).json({ error: "Could not update this promotion code in Stripe." });
@@ -37464,6 +37485,7 @@ app.post(
       const consentFlowId = String(req.body.consentFlowId || "");
       let discountOptions;
       try {
+        await activateStartedScheduledPromotions();
         const paidForOgCheck = await readJson(PAID_FILE, []);
         const customerPaidForOgCheck = (Array.isArray(paidForOgCheck) ? paidForOgCheck : [])
           .filter(item => String(item.customerAccountId || "") === String(req.customerAccount.id));
@@ -50811,6 +50833,11 @@ await initializeArrayFile(
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
         startPoolAlerts();
+        void activateStartedScheduledPromotions().catch(error=>console.error("Initial promotion activation:",error?.message));
+        const scheduledPromotionCheck=setInterval(()=>{
+          void activateStartedScheduledPromotions().catch(error=>console.error("Scheduled promotion check:",error?.message));
+        },60*1000);
+        scheduledPromotionCheck.unref?.();
         startShippingTrackerScheduler();
         startOfficialCarrierTrackingScheduler();
         startCheckoutDmSummaryScheduler({
