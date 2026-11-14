@@ -192,8 +192,17 @@ function summarize(messages, bounds, parseCheckout) {
       const byProfile=candidates.filter(g=>Boolean(red.profile) && g.profile===red.profile);
       const byProduct=candidates.filter(g=>Boolean(red.product) && g.product===red.product);
       const strict=byProfile.filter(g=>Boolean(red.product) && g.product===red.product);
+      const redCandidate=sourceEvidence.filter(g=>g.parsed && g.status==="cancelled" &&
+        Boolean(red.email) && g.email===red.email);
+      const redProduct=redCandidate.filter(g=>Boolean(red.product) && g.product===red.product);
+      const redProfile=redCandidate.filter(g=>Boolean(red.profile) && g.profile===red.profile);
+      const redStrict=redProfile.filter(g=>Boolean(red.product) && g.product===red.product);
       const uniqueKeys=new Set(strict.map(g=>g.orderKey).filter(Boolean));
       return {
+        redParsedBySameLogin:redCandidate.length,
+        redParsedBySameLoginAndProfile:redProfile.length,
+        redParsedBySameLoginAndProduct:redProduct.length,
+        redParsedStrict:redStrict.length,
         greenBySameLogin:candidates.length,
         greenBySameLoginAndProfile:byProfile.length,
         greenBySameLoginAndProduct:byProduct.length,
@@ -204,6 +213,19 @@ function summarize(messages, bounds, parseCheckout) {
           groups.get(k)?.lastStatus==="confirmed" || groups.get(k)?.lastStatus==="review_hold").length
       };
     });
+  const redOnlyEvents=sourceEvidence.filter(g=>!g.parsed && g.status==="cancelled" && g.at<to);
+  const redOnlyGroupSizes = (() => {
+    const groups=new Map();
+    for(const r of redOnlyEvents){
+      const key=String(r.email||"")+"|"+String(r.profile||"")+"|"+String(r.product||"");
+      const arr=groups.get(key)||[];
+      arr.push(r.at);
+      groups.set(key,arr);
+    }
+    return [...groups.values()].map(arr=>({
+      messages:arr.length,spreadMinutes:Math.round((Math.max(...arr)-Math.min(...arr))/60000)
+    }));
+  })();
   const cohort=[...groups.values()].filter(g=>{
     const first=g.firstSuccessAt ?? g.firstAt;
     return first>=from && first<to;
@@ -264,6 +286,7 @@ function summarize(messages, bounds, parseCheckout) {
     fieldKinds,
     rejectedRedShapes,
     orphanRedCorrelation,
+    redOnlyGroupSizes,
     webhookTypes:messageAuthorTypes,
     retailerFieldsParsed:sourceRetailers,
     missingOrderNumbersInParsed:missingOrderNumber,
