@@ -4,12 +4,22 @@ on:
   push:
     paths:
       - discord-source-price-field-policy.js
+      - discord-source-recap-report.js
+      - discord-checkout-tax-inclusive-policy.js
+      - server-discord-source-recap-review.js
+      - tests/discord-source-recap-tax-shipping.test.js
+      - tests/discord-checkout-tax-inclusive-policy.test.js
       - tests/discord-source-price-field-policy.test.js
       - server.js
       - .github/workflows/verify-discord-success-recap.yml
   pull_request:
     paths:
       - discord-source-price-field-policy.js
+      - discord-source-recap-report.js
+      - discord-checkout-tax-inclusive-policy.js
+      - server-discord-source-recap-review.js
+      - tests/discord-source-recap-tax-shipping.test.js
+      - tests/discord-checkout-tax-inclusive-policy.test.js
       - tests/discord-source-price-field-policy.test.js
       - server.js
       - .github/workflows/verify-discord-success-recap.yml
@@ -30,5 +40,8 @@ jobs:
         run: |
           node --check server.js
           node --check discord-source-price-field-policy.js
+          node --check discord-source-recap-report.js
+          node --check discord-checkout-tax-inclusive-policy.js
+          node --check server-discord-source-recap-review.js
       - name: Run Discord source price and retailer regression tests
-        run: node --test tests/discord-source-price-field-policy.test.js
+        run: node --test tests/discord-source-price-field-policy.test.js tests/discord-source-recap-tax-shipping.test.js tests/discord-checkout-tax-inclusive-policy.test.js
