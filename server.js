@@ -1,4 +1,3 @@
-import { auditSlabsNGrabsTCSuccess } from "./discord-source-direct-audit.js";
 import { sourcePriceIsLineTotal, retailerFromTrustedSourceImage } from "./discord-source-price-field-policy.js";
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
@@ -50753,8 +50752,7 @@ await initializeArrayFile(
 
         appOrderNotifications.start();
         startLiveSuccessScheduler();
-        // Temporary read-only direct source field-format audit; never posts messages.
-        void auditSlabsNGrabsTCSuccess({token:String(process.env.DISCORD_BOT_TOKEN||"").trim(),parseCheckout:discordCheckoutFromMessage});
+
 
         startManagedExpirationScheduler();
         startShippingTrackerScheduler();
