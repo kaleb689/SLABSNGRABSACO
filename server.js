@@ -50654,6 +50654,32 @@ async function logPrivateTargetRecapAudit20261112() {
         genericProductNames.set(key,(genericProductNames.get(key)||0)+q);
       }
     }
+    const safeUnknown = communityEligibleOrders(genericDateWindow);
+    const unknownProductCounts = new Map();
+    let unknownSpent=0, unknownPending=0, unknownUnits=0;
+    const unknownImageHostCounts=new Map();
+    for(const order of safeUnknown){
+      const price=checkoutPaidAmount(order);
+      if(price===null)unknownPending++;
+      else unknownSpent+=Math.round(price*100);
+      for(const item of Array.isArray(order.items)?order.items:[]){
+        const name=String(publicSuccessProductName(item?.name)||"").slice(0,125);
+        const qty=Number(item?.quantity)||0;
+        if(!isSafeDiscordCheckoutProductName(name))continue;
+        if(Number.isInteger(qty)&&qty>0){
+          unknownUnits+=qty;
+          unknownProductCounts.set(name,(unknownProductCounts.get(name)||0)+qty);
+        }
+        let host="(none)";
+        try{host=new URL(String(item?.imageUrl||"")).hostname;}catch{}
+        unknownImageHostCounts.set(host,(unknownImageHostCounts.get(host)||0)+1);
+      }
+    }
+    console.log(tag+"_UNKNOWN_SUCCESS " + JSON.stringify({
+      orders:safeUnknown.length,spentCents:unknownSpent,pricePending:unknownPending,units:unknownUnits,
+      imageHosts:[...unknownImageHostCounts.entries()].map(([host,n])=>({host,n})),
+      products:[...unknownProductCounts.entries()].map(([name,quantity])=>({name,quantity}))
+    }));
     console.log(tag+"_UNKNOWN_RETAILER " +JSON.stringify({
       count:genericDateWindow.length,
       successful:communityEligibleOrders(genericDateWindow).length,
