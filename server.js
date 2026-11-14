@@ -1,3 +1,4 @@
+import { auditSlabsNGrabsTCSuccess } from "./discord-source-direct-audit.js";
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
@@ -50740,6 +50741,8 @@ await initializeArrayFile(
 
         appOrderNotifications.start();
         startLiveSuccessScheduler();
+        // Temporary read-only direct source field-format audit; never posts messages.
+        void auditSlabsNGrabsTCSuccess({token:String(process.env.DISCORD_BOT_TOKEN||"").trim(),parseCheckout:discordCheckoutFromMessage});
 
         startManagedExpirationScheduler();
         startShippingTrackerScheduler();
