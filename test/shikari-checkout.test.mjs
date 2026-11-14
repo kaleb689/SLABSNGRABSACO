@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -30,7 +31,8 @@ function parseLiveWebhook(message) {
   const start = source.indexOf("function discordCheckoutFromMessage(");
   const end = source.indexOf("// Owner-only, read-only original Discord Success recap preview.", start);
   assert.ok(start > 0 && end > start, "extract actual production parser");
-  const sandbox = {
+  const sandbox = {sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
     isModuleLifecycleDiscordMessage,
