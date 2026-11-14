@@ -1,7 +1,7 @@
 name: Verify carrier tracking (site and app)
 on:
   push:
-    branches: [feature/carrier-tracking-site-app-20261020, feat/customer-cancelled-order-history-20261113]
+    branches: [feature/carrier-tracking-site-app-20261020]
     paths:
       - carrier-tracking.js
       - order-notifications.js
