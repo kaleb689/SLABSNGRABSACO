@@ -12,7 +12,7 @@ import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
 // checkout layouts shown by Valor and Stellar AIO. No customer data or tokens.
 const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
 const start = source.indexOf("function discordCheckoutFromMessage(");
-const end = source.indexOf("const DISCORD_HIT_MIRROR_FILE", start);
+const end = source.indexOf("// Owner-only, read-only original Discord Success recap preview.", start);
 assert.ok(start > -1 && end > start);
 const channel = "1532179373292257290";
 function parse(message) {
