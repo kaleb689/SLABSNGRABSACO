@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,7 +20,8 @@ const green = 0x57f287;
 const noticeText = "The **PokemonCenter US** module has been unlocked. Running tasks will resume.";
 
 function parse(message) {
-  const context = {
+  const context = {sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    
     message, channel, parsed: null, isModuleLifecycleDiscordMessage,
     discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
