@@ -112,3 +112,26 @@ test("Admin website and installed Admin app both expose inbox management",()=>{
  assert.match(ui,/type="password"/);
  assert.match(ui,/Customer email accounts are not scanned for tracking/);
 });
+
+
+test("IMAP Refresh and Test expose immediate feedback and remain usable after a connection error",()=>{
+ const ui=read("public/operator-imap-health.js");
+ const css=read("public/operator-imap-health.css");
+ const dashboard=read("public/admin.html");
+ const installed=read("public/admin-app.html");
+ assert.match(ui,/data-imap-action="refresh"/);
+ assert.match(ui,/data-imap-action="test"/);
+ assert.match(ui,/state\.workingAction=action/);
+ assert.match(ui,/state\.message=action==="scan"/);
+ assert.match(ui,/render\(host\);\s*try \{\s*if\(action==="refresh"\)/);
+ assert.match(ui,/state\.message==="Loading approved inboxes…"/);
+ assert.match(ui,/state\.loadError=false/);
+ assert.match(ui,/const timeout=path\.endsWith\("\/test"\)\?60000:20000/);
+ assert.match(ui,/Admin session expired or access denied/);
+ assert.doesNotMatch(ui,/!item\.enabled\|\|!item\.passwordConfigured\?'disabled'/);
+ assert.match(ui,/App password missing in Render/);
+ assert.match(css,/pointer-events:auto/);
+ assert.match(css,/min-height:50px/);
+ assert.match(dashboard,/operator-imap-health\.js\?v=20261113-responsive-health-1/);
+ assert.match(installed,/operator-imap-health\.js\?v=20261113-responsive-health-1/);
+});
