@@ -253,3 +253,83 @@ body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-trackin
 body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-delivered .sng-row-value > small {
   color:#266449;
 }
+
+
+/* Cancelled orders are conspicuous, but remain informational until the
+   customer explicitly dismisses their own view. Nothing is deleted in Admin. */
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled {
+  background:linear-gradient(115deg,#40151e 0%,#6c1e2e 65%,#822537 100%);
+  border:2px solid #ff5f78;
+  border-left:5px solid #ff5f78;
+  color:#fff;
+  box-shadow:0 4px 18px rgba(152,19,50,.23);
+}
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-stage {
+  display:inline-flex;align-items:center;
+  margin-top:6px;padding:4px 10px;border-radius:999px;
+  background:#ffc4cf;border:1px solid #fff0f3;
+  color:#761229;font-size:11px;font-weight:900;letter-spacing:.03em;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-main > strong,
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-value > strong {
+  color:#fff;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-main > small:not(.sng-stage),
+body.app-dashboard #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-value > small {
+  color:#ffe1e7;
+}
+body.app-dashboard #my-profile #app-dashboard .sng-status-filters button[data-app-status="cancelled"][aria-pressed="true"] {
+  background:#982844;border-color:#ff98ad;color:#fff;
+}
+body.app-dashboard .sng-tracking-sheet.stage-cancelled .sng-sheet-hero {
+  background:linear-gradient(125deg,#531b2d,#3d1827);
+  border-color:#ff5f78;
+}
+body.app-dashboard .sng-tracking-sheet.stage-cancelled .sng-sheet-stage {
+  display:inline-block;padding:5px 10px;margin-top:5px;
+  background:#ffd0da;color:#7b1530;border-radius:999px;
+  font-size:12px;font-weight:900;
+}
+body.app-dashboard .sng-tracking-sheet .sng-sheet-cancelled-note {
+  color:#ffe1e8;font-size:13px;line-height:1.5;font-weight:700;
+  margin:15px 2px 0;
+}
+body.app-dashboard .sng-tracking-sheet .sng-sheet-actions .sng-sheet-remove-cancelled {
+  grid-column:1 / -1;min-height:52px;
+  background:#611f32;border:1px solid #ff748c;color:#fff;
+  font-size:13px;font-weight:800;
+}
+body.app-dashboard .sng-tracking-sheet .sng-sheet-actions .sng-sheet-remove-cancelled:disabled {
+  opacity:.6;cursor:wait;
+}
+body.app-dashboard .sng-tracking-sheet .sng-sheet-hide-feedback {
+  margin:5px 5px 16px;color:#c7aeba;font-size:12px;line-height:1.45;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled {
+  background:linear-gradient(115deg,#fff0f3,#ffe0e7);
+  color:#681b31;border-color:#d93459;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-stage {
+  background:#b71e45;border-color:#b71e45;color:#fff;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-main > strong,
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-value > strong {
+  color:#681b31;
+}
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-main > small:not(.sng-stage),
+body.app-dashboard[data-app-theme="day"] #my-profile #app-dashboard .sng-tracking-row.stage-cancelled .sng-row-value > small {
+  color:#844359;
+}
+body.app-dashboard[data-app-theme="day"] .sng-tracking-sheet.stage-cancelled .sng-sheet-hero {
+  background:linear-gradient(115deg,#fff0f3,#ffe4eb);
+  border-color:#d93459;
+}
+body.app-dashboard[data-app-theme="day"] .sng-tracking-sheet.stage-cancelled .sng-sheet-stage {
+  background:#b71e45;color:#fff;
+}
+body.app-dashboard[data-app-theme="day"] .sng-tracking-sheet .sng-sheet-cancelled-note {
+  color:#872543;
+}
+body.app-dashboard[data-app-theme="day"] .sng-tracking-sheet .sng-sheet-hide-feedback {
+  color:#775063;
+}
