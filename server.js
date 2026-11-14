@@ -50597,7 +50597,7 @@ async function hardenStoragePermissions() {
  * Remove this temporary audit after its private preview is verified.
  */
 async function logPrivateTargetRecapAudit20261112() {
-  const tag = "PRIVATE_TARGET_RECAP_AUDIT_20261112";
+  const tag = "PRIVATE_TARGET_RECAP_AUDIT_20261113";
   try {
     const source = await discordCheckoutSourceChannels();
     if (!source.channels.length) throw Error("Authoritative checkout source unavailable");
@@ -50607,8 +50607,8 @@ async function logPrivateTargetRecapAudit20261112() {
     } catch { /* Hits channel is optional for read-only audit. */ }
     const persisted = await getSuccessCheckouts();
     const all = visibleDiscordSuccessRecords(persisted, hitsChannelId, source.channels);
-    const windowStart = Date.parse("2026-11-12T08:00:00.000Z");
-    const windowEnd = Date.parse("2026-11-12T13:00:00.000Z");
+    const windowStart = Date.parse("2026-11-13T08:00:00.000Z");
+    const windowEnd = Date.parse("2026-11-13T13:00:00.000Z");
     const buckets = new Map();
     for (const rec of all) {
       const when = Date.parse(rec?.checkoutAt || "");
@@ -50635,6 +50635,30 @@ async function logPrivateTargetRecapAudit20261112() {
       recordsScanned:all.length,
       buckets:[...buckets.values()].sort((a,b) => a.date.localeCompare(b.date) ||
         a.retailer.localeCompare(b.retailer) || a.hour.localeCompare(b.hour))
+    }));
+    const genericDateWindow = all.filter(order => {
+      const at=Date.parse(order?.checkoutAt || "");
+      return Number.isFinite(at) && at>=windowStart && at<windowEnd &&
+        String(normalizeSuccessRetailer(order?.retailer)||"").toLowerCase()==="retailer";
+    });
+    const genericProductNames=new Map(),genericSiteNames=new Map();
+    for(const order of genericDateWindow){
+      const label=String(order?.sourceSite || "").trim().slice(0,90);
+      const safeSite=/^[a-z0-9& '-]{0,90}$/i.test(label) ? label||"(missing)" : "(unsafe)";
+      genericSiteNames.set(safeSite,(genericSiteNames.get(safeSite)||0)+1);
+      for(const item of Array.isArray(order?.items)?order.items:[]){
+        const name=publicSuccessProductName(item?.name);
+        if(!isSafeDiscordCheckoutProductName(name))continue;
+        const q=Number(item?.quantity)||0;
+        const key=String(name).slice(0,125);
+        genericProductNames.set(key,(genericProductNames.get(key)||0)+q);
+      }
+    }
+    console.log(tag+"_UNKNOWN_RETAILER " +JSON.stringify({
+      count:genericDateWindow.length,
+      successful:communityEligibleOrders(genericDateWindow).length,
+      siteLabels:[...genericSiteNames.entries()].map(([name,count])=>({name,count})),
+      products:[...genericProductNames.entries()].map(([name,quantity])=>({name,quantity}))
     }));
     const targetRecords = all.filter(order => {
       const at = Date.parse(order?.checkoutAt || "");
@@ -50672,10 +50696,10 @@ async function logPrivateTargetRecapAudit20261112() {
     const statuses = Object.fromEntries(["confirmed","review_hold","cancelled","unverified"]
       .map(status => [status, targetRecords.filter(order => String(order.status) === status).length]));
     console.log(tag + " " + JSON.stringify({
-      date:"2026-11-12",
+      date:"2026-11-13",
       retailer:"Target",
-      start:"2026-11-12T08:00:00.000Z",
-      endExclusive:"2026-11-12T13:00:00.000Z",
+      start:"2026-11-13T08:00:00.000Z",
+      endExclusive:"2026-11-13T13:00:00.000Z",
       localTimeZone:"America/New_York",
       generatedAt:new Date().toISOString(),
       authoritativeSources:source.channels.length,
