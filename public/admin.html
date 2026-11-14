@@ -18668,13 +18668,19 @@ function bindAdminNotificationLinks(){
 async function submitProfileActivation(profile,action){
  const managed=profile.managedActivation===true||profile.type!=="paid";
  const managedType=profile.managedType||(profile.type==="gifted"?"free":"rented");
+ if(managed&&!(managedType==="free"||managedType==="rented"))
+  throw Error("Profile source is unavailable. Refresh the activation tracker.");
  const endpoint=managed
   ? "/api/admin/managed-profile-activation/"+encodeURIComponent(managedType)+"/"+encodeURIComponent(profile.id)
   : "/api/admin/profile-activation/"+encodeURIComponent(profile.id);
- const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",
+ const response=await fetch(endpoint,{method:"POST",credentials:"same-origin",cache:"no-store",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action})});
  const data=await response.json().catch(()=>({}));
- if(!response.ok)throw Error(data.error||"Unable to update activation.");
+ if(!response.ok){
+  const error=Error(data.error||"Unable to update activation.");
+  error.status=response.status;
+  throw error;
+ }
 }
 function bindProfileActivationButtons() {
  profileActivationGroups?.querySelectorAll("[data-activation-customer-action]").forEach(button=>{
@@ -18688,18 +18694,29 @@ function bindProfileActivationButtons() {
    if(!window.confirm((action==="activate"?"Set active":"Deactivate")+" "+eligible.length+
     " eligible profile(s) for "+(group.customerName||"this customer")+"?"))return;
    button.disabled=true;const label=button.textContent;button.textContent="Updating…";
-   let changed=0,failed=null;
+   let changed=0;const failures=[];
    try{
     for(const profile of eligible){
      try{await submitProfileActivation(profile,action);changed++;}
-     catch(error){failed=error;break;}
+     catch(error){
+      failures.push({profile:profile.profileName||"Profile",reason:error.message});
+      // Missing/outdated assignments are skipped rather than blocking
+      // other eligible customer profiles. Stop on unexpected server errors.
+      if(error.status!==404)break;
+     }
     }
    }finally{
     adminLastActivationFingerprint=null;
     try{await loadProfileActivationTracker();}catch{}
     button.disabled=false;button.textContent=label;
    }
-   if(failed)window.alert(changed+" profile(s) updated. The remaining profiles were not updated: "+failed.message);
+   if(failures.length){
+    const first=failures[0];
+    window.alert(changed+" profile(s) updated for "+(group.customerName||"this customer")+
+      ". "+failures.length+" profile(s) could not be updated. "+
+      first.profile+": "+first.reason+
+      " The tracker has been refreshed. No missing profile was deleted.");
+   }
   });
  });
 }
