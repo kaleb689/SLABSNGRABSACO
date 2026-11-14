@@ -21,6 +21,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
+import { isCancelledCheckout, customerCancelledCheckouts, loadHiddenCancelledIds, hideCustomerCancelledOrder } from "./customer-cancelled-history.js";
 import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
 import { sameCheckout, reconcileWebhookCheckout, reconcileEmailCheckoutIdentity, uniqueCheckoutOwner } from "./webhook-success.js";
@@ -49454,6 +49455,40 @@ app.post(
   }
 );
 
+// A customer's "Remove from my view" preference changes only THEIR cancelled
+// history. The authoritative checkout, audits, reports and other users' views
+// are left untouched. Validate both ownership and the current cancelled status.
+app.post("/api/account/success/cancelled/hide", requireCustomer, async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const orderId = req.body?.orderId;
+  if (typeof orderId !== "string" || !/^discord:\\d{17,22}:\\d{17,22}$/.test(orderId))
+    return res.status(400).json({ error: "Invalid cancelled order." });
+  try {
+    const accountId = String(req.customerAccount.id);
+    let hitsChannelId = null;
+    try {
+      const token = discordSuccessConfig().token;
+      if (token) hitsChannelId = await resolveDiscordHitsChannelId(token);
+    } catch { hitsChannelId = null; }
+    const source = visibleDiscordSuccessRecords(
+      await getSuccessCheckouts(), hitsChannelId,
+      (await discordCheckoutSourceChannels()).channels
+    );
+    const owned = source.find(record =>
+      record.id === orderId &&
+      String(record.customerAccountId) === accountId &&
+      isCancelledCheckout(record)
+    );
+    if (!owned) return res.status(404).json({ error: "This cancelled order was not found." });
+    const changed = await hideCustomerCancelledOrder(DATA_DIR, accountId, orderId);
+    if (changed) announceSuccessCheckout(accountId);
+    return res.json({ ok: true, hidden: true });
+  } catch (error) {
+    console.error("Customer cancelled-order dismissal:", error?.code || error?.name || "error");
+    return res.status(500).json({ error: "Could not remove this order from your view." });
+  }
+});
+
 app.get(
   "/api/account/success",
   requireCustomer,
@@ -49676,9 +49711,17 @@ summary.range = {
 // Review holds are already included once in the customer's orders and value.
 const reviewHoldCheckouts = [];
 
-// Retain cancellations in the private source audit, but remove them from
-// customer pages and all confirmed checkout metrics immediately.
-const cancelledCheckouts = [];
+// Cancelled orders are a separate customer-only status history and NEVER
+// contribute to successful checkout totals, graphs, items, or spending.
+const cancelledCheckouts = req.query.appView === "1"
+  ? customerCancelledCheckouts(ownedRecords, {
+      accountId,
+      hiddenIds: await loadHiddenCancelledIds(DATA_DIR, accountId),
+      startDate: rangeStart,
+      endDate: rangeEnd,
+      preciseBounds
+    }).map(safeSuccessCheckout)
+  : [];
 
       return res.json({
         ok: true,
