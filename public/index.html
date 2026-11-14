@@ -3468,7 +3468,7 @@
             <p id="extensionCurrentRenewal">Your current renewal date will appear here.</p>
             <div class="member-extension-fields">
               <label>Extension period (months)
-                <input type="number" id="extensionMonths" min="1" max="12" step="1" value="1" required>
+                <input type="number" id="extensionMonths" min="1" max="1200" step="1" value="1" required>
               </label>
               <label>Membership tier
                 <select id="extensionTier" aria-label="Current or upgraded membership tier"></select>
@@ -5326,7 +5326,9 @@
   </form>
 </section>
 
+<link rel="stylesheet" href="/member-extension-actions.css?v=20261114">
 <script src="/app.js?v=20261112-nonpayment-account-code"></script>
+<script src="/member-extension-actions.js?v=20261114"></script>
 <script src="/membership-extension-customer.js?v=20261114-1" defer></script>
 <script type="module" src="/app-dashboard.js?v=20261113-cancelled-history-1"></script>
 <script src="/nested-details-reset.js?v=20261013"></script>
