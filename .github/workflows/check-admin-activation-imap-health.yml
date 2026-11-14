@@ -2,8 +2,7 @@ name: Verify Admin activation routing and IMAP controls
 
 on:
   push:
-    branches:
-      - fix/activation-source-and-imap-controls-20261113
+    branches: [main]
     paths:
       - 'server.js'
       - 'public/admin.html'
