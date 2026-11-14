@@ -359,7 +359,8 @@ export function registerMembershipExtensionCommerce(app, d) {
     if(amountCents<1)throw fail("This prepaid term has no unused balance to refund.",409);
     const subscription=await stripe.subscriptions.retrieve(purchase.subscriptionId);
     if(!isOurPrepaidPause(subscription) ||
-      subscription.metadata?.sng_last_paid_extension_session!==purchase.sessionId)
+      subscription.metadata?.sng_last_paid_extension_session!==purchase.sessionId ||
+      Number(subscription.pause_collection.resumes_at)*1000 !== Date.parse(purchase.renewalAt))
       throw fail("The live Stripe prepaid schedule no longer matches this purchase. Review it manually.",409);
     if(!purchase.stripePaymentIntentId)
       throw fail("The Stripe payment reference is unavailable. Review this payment manually.",409);
@@ -397,6 +398,8 @@ export function registerMembershipExtensionCommerce(app, d) {
       const result=await serialized(async()=>{
         const review=await refundReview(req.params.id,mode);
         const {purchases,purchase,subscription,amountCents}=review;
+        if (req.body?.expectedAmountCents !== amountCents)
+          throw fail("The refund amount has changed. Refresh the quote before approving.",409);
         const refund=purchase.refundId ? await stripe.refunds.retrieve(purchase.refundId)
           : await stripe.refunds.create({
             payment_intent:purchase.stripePaymentIntentId,amount:amountCents,
@@ -508,7 +511,8 @@ export function registerMembershipExtensionCommerce(app, d) {
     try {
       if (req.body?.confirm !== true) throw fail("Confirm that you want to stop automatic membership renewal.");
       const result = await serialized(() => cancel(req.customerAccount.id, "period_end"));
-      res.json({ok:true, cancelAtPeriodEnd:true, endAt:result.subscription.cancel_at ||
+      res.json({ok:true, cancelAtPeriodEnd:result.subscription.cancel_at_period_end===true ||
+        Boolean(result.subscription.cancel_at), endAt:result.subscription.cancel_at ||
         result.subscription.pause_collection?.resumes_at ||
         result.subscription.trial_end || result.subscription.current_period_end});
     } catch(error) { jsonError(res,error,"Customer cancellation"); }
