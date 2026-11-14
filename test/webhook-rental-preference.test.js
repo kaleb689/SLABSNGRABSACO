@@ -17,7 +17,7 @@ const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v 
 vm.createContext(context);
 vm.runInContext(section("function isPublicSuccessProduct", "const verifiedPublicProductImages") +
  section("function normalizeSuccessRetailer", "function safeSuccessImageUrl") +
- section("function discordCheckoutFromMessage", "const DISCORD_HIT_MIRROR_FILE") +
+ section("function discordCheckoutFromMessage", "// Owner-only, read-only original Discord Success recap preview.") +
  section("function discordCheckoutCandidateEligible", "let discordSuccessScanQueued") +
  section("function preferPreviouslyAssignedManagedAccounts", "// Membership-funded pool assignment"), context);
 const message = fields => ({id:"123",timestamp:"2026-09-30T16:00:00Z", embeds:[{title:"Successful Checkout!",fields}]});
