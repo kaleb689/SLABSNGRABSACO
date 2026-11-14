@@ -399,13 +399,21 @@ export function registerMembershipExtensionCommerce(app, d) {
       throw fail("Finish the original pending refund before changing its refund method.",409);
     if(amountCents<1)throw fail("This prepaid term has no unused balance to refund.",409);
     const subscription=await stripe.subscriptions.retrieve(purchase.subscriptionId);
-    if(!isOurPrepaidPause(subscription) ||
+    const alreadyReconciled=purchase.status==="refunding" && (
+      subscription.status==="canceled" ||
+      (purchase.previousPauseUntil &&
+        Number(subscription.pause_collection?.resumes_at)===Number(purchase.previousPauseUntil) &&
+        subscription.metadata?.sng_last_paid_extension_session===purchase.previousExtensionSessionId) ||
+      (!purchase.previousPauseUntil && !subscription.pause_collection &&
+        !subscription.metadata?.sng_last_paid_extension_session)
+    );
+    if(!alreadyReconciled && (!isOurPrepaidPause(subscription) ||
       subscription.metadata?.sng_last_paid_extension_session!==purchase.sessionId ||
-      Number(subscription.pause_collection.resumes_at)*1000 !== Date.parse(purchase.renewalAt))
+      Number(subscription.pause_collection.resumes_at)*1000 !== Date.parse(purchase.renewalAt)))
       throw fail("The live Stripe prepaid schedule no longer matches this purchase. Review it manually.",409);
     if(!purchase.stripePaymentIntentId)
       throw fail("The Stripe payment reference is unavailable. Review this payment manually.",409);
-    return {purchases,purchase,quote,subscription,amountCents,mode,
+    return {purchases,purchase,quote,subscription,amountCents,mode,alreadyReconciled,
       endsImmediately:quote.hasStarted,
       remainingPriorPaidTermUntil:quote.hasStarted?null:quote.serviceStartsAt};
   }
@@ -456,7 +464,8 @@ export function registerMembershipExtensionCommerce(app, d) {
         purchase.refundMode=mode;purchase.refundStartedAt=new Date().toISOString();
         await writePurchases(purchases);
         let updated;
-        if(review.endsImmediately) {
+        if(review.alreadyReconciled)updated=subscription;
+        else if(review.endsImmediately) {
           updated=await stripe.subscriptions.cancel(subscription.id,
             {invoice_now:false,prorate:false},
             {idempotencyKey:"sng-ext-refund-cancel-"+purchase.sessionId});
@@ -493,6 +502,21 @@ export function registerMembershipExtensionCommerce(app, d) {
         purchase.status="refunded";purchase.refundedAt=new Date().toISOString();
         await writePurchases(purchases);
         broadcast("membership-extension-refund");
+        try{
+          const accounts=await getCustomers();
+          const account=accounts.find(x=>String(x.id)===String(purchase.customerAccountId));
+          if(account){
+            notifyMember(account,{kind:"membership_refund",refundId:refund.id,
+              title:"Membership extension refund",
+              message:"A "+(amountCents/100).toLocaleString("en-US",{style:"currency",currency:"USD"})+
+                " refund was "+(refund.status==="succeeded"?"processed":"submitted")+
+                " for your prepaid membership extension. "+
+                (review.endsImmediately?"Your membership access has ended.":
+                  "Your earlier paid membership term remains available."),
+              createdAt:new Date().toISOString()});
+            await saveCustomers(accounts);
+          }
+        }catch(error){console.error("Customer prepaid refund notification:",error?.message);}
         try {await notifyAdminMobile("actionNeeded","Membership extension refunded",
           (review.purchase.customerAccountId)+" — "+(amountCents/100).toFixed(2)+
             " USD ("+mode+")","/admin-app.html","ext-refunded:"+refund.id);}
