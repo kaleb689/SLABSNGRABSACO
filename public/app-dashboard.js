@@ -1,4 +1,4 @@
-import { checkoutRequestRange, shippingStage, visibleLateCancellation, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges, displayProductName } from './app-dashboard-data.js';
+import { checkoutRequestRange, shippingStage, periodStart, periodBounds, customDateBounds, selectedOrders, dashboardTotals, dashboardProducts, dashboardActivity, metricChanges, displayProductName } from './app-dashboard-data.js';
 import { createCustomerDropEditor } from './app-drop-controls.js';
 
 const appEnabled = window.self === window.top && (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ||
@@ -77,7 +77,7 @@ if (appEnabled) {
     const {start:earliest, end:latest} = dateWindow();
     return cancelledOrders.filter(order => {
       const time = Date.parse(order.checkoutAt || "");
-      return visibleLateCancellation(order) &&
+      return shippingStage(order) === 'cancelled' &&
         Number.isFinite(time) && time >= earliest && time < latest;
     }).sort((a, b) => Date.parse(b.checkoutAt) - Date.parse(a.checkoutAt));
   }
@@ -240,9 +240,11 @@ if (appEnabled) {
             </div>
             <div class="sng-sheet-total"><strong>${e(total)}</strong></div>
           </div>
-          <div class="sng-sheet-progress" aria-label="Shipping progress">${steps.map((step, i) =>
-            '<span class="' + (i <= activeStep ? 'complete' : '') + '" title="' + e(stageLabels[step]) + '"></span>').join('')}</div>
-          ${provisional ? '<small class="sng-sheet-provisional">Merchandise subtotal — final total including tax is pending verification</small>' : ''}
+          ${status === 'cancelled'
+            ? '<div class="sng-sheet-cancelled-note" role="status">CANCELLED — this order is not included in your successful orders or totals.</div>'
+            : '<div class="sng-sheet-progress" aria-label="Shipping progress">' + steps.map((step, i) =>
+                '<span class="' + (i <= activeStep ? 'complete' : '') + '" title="' + e(stageLabels[step]) + '"></span>').join('') +
+              '</div>' + (provisional ? '<small class="sng-sheet-provisional">Merchandise subtotal — final total including tax is pending verification</small>' : '')}
         </section>
         <section class="sng-sheet-section">
           <div class="sng-sheet-section-heading"><strong>Items</strong><span>${quantity} total · ${products.length} product lines</span></div>
@@ -257,9 +259,13 @@ if (appEnabled) {
         <div class="sng-sheet-actions">
           <button type="button" data-app-copy-order ${orderNumber ? '' : 'disabled'}>Copy order #</button>
           <button type="button" data-app-copy-tracking ${trackingNumber ? '' : 'disabled'}>Copy tracking</button>
+          ${status === 'cancelled'
+            ? '<button type="button" class="sng-sheet-remove-cancelled" data-app-hide-cancelled="' + e(recordKey(order)) + '">Remove from my view</button>'
+            : ''}
           ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : '<span role="status" class="sng-tracking-pending">Carrier tracking link pending verification</span>'}
         </div>
         <p class="sng-sheet-copy-feedback" data-app-copy-feedback aria-live="polite"></p>
+        ${status === 'cancelled' ? '<p class="sng-sheet-hide-feedback" data-app-hide-feedback role="status" aria-live="polite">This only removes the order from your app view. The underlying order record is retained.</p>' : ''}
         <section class="sng-sheet-section"><div class="sng-sheet-section-heading"><strong>Order details</strong></div>
           <div class="sng-sheet-details">${detail('Retailer', order.retailer)}
             ${detail('Order #',orderNumber)}${detail('Order date',date)}
@@ -485,8 +491,38 @@ if (appEnabled) {
     if (view === 'drops' && !dropEditor.isDirty()) void dropEditor.load();
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
+  async function removeCancelledFromView(button) {
+    const orderId = String(button.dataset.appHideCancelled || '');
+    const currentAccount = String(state.customer?.id || '');
+    if (!currentAccount || !cancelledOrders.some(order =>
+      recordKey(order) === orderId && shippingStage(order) === 'cancelled')) return;
+    if (!window.confirm('Remove this cancelled order from your view? This will not delete the actual order record.')) return;
+    button.disabled = true;
+    const feedback = trackingSheet.querySelector('[data-app-hide-feedback]');
+    try {
+      const response = await fetch('/api/account/success/cancelled/hide', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({orderId})
+      });
+      const data = await readJson(response);
+      if (!response.ok || data.ok !== true)
+        throw new Error(data.error || 'Could not remove the order.');
+      if (String(state.customer?.id || '') !== currentAccount) return;
+      cancelledOrders = cancelledOrders.filter(order => recordKey(order) !== orderId);
+      closeTrackingSheet();
+      render();
+      void refresh();
+    } catch (error) {
+      button.disabled = false;
+      if (feedback) feedback.textContent = error?.message || 'Unable to remove this order. Please retry.';
+    }
+  }
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
+    if (button.hasAttribute('data-app-hide-cancelled')) {
+      void removeCancelledFromView(button); return;
+    }
     if (button.hasAttribute('data-app-order-open')) { openTrackingSheet(button.dataset.appOrderOpen); return; }
     if (button.hasAttribute('data-app-sheet-close')) { closeTrackingSheet(); return; }
     if (button.hasAttribute('data-app-copy-order') || button.hasAttribute('data-app-copy-tracking')) {
@@ -566,7 +602,8 @@ if (appEnabled) {
         if (state.customer?.id !== id) return;
         if (rangeKey !== JSON.stringify([days, customRange])) { queued = true; return; }
         orders = Array.isArray(data.checkouts) ? data.checkouts : data.recentCheckouts || [];
-        cancelledOrders = [];
+        cancelledOrders = Array.isArray(data.cancelledCheckouts) ?
+          data.cancelledCheckouts.filter(order => shippingStage(order) === 'cancelled') : [];
         reviewHoldOrders = Array.isArray(data.reviewHoldCheckouts) ?
           data.reviewHoldCheckouts.filter(order => order.status === 'review_hold') : [];
       }
