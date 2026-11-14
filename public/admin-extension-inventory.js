@@ -139,11 +139,79 @@
       }
     }catch(e){message(root,e.message);}
   }
+  async function drawPromotions(root){
+    const target=root.querySelector("[data-extension-promos]");
+    if(!target)return;
+    try{
+      const response=await api("/api/admin/discount-codes");
+      const codes=(response.codes||[]).filter(x=>x.discountScope==="extension");
+      target.replaceChildren();
+      if(!codes.length)textRow(target,"No extension-only discounts created yet.");
+      for(const code of codes.slice().reverse().slice(0,20)){
+        textRow(target,(code.discountLabel?code.discountLabel+" · ":"")+code.code+
+          " · "+code.percent+"% off · "+(code.extensionDiscountMonths||"all")+" discounted months"+
+          " · "+(code.startsAt?"from "+when(code.startsAt):"available immediately")+
+          " · "+(code.expiresAt?"until "+when(code.expiresAt):"no expiry")+
+          " · "+(code.active?"Active":"Inactive"));
+      }
+    }catch(error){message(root,error.message);}
+  }
+  function createPromoForm(root,body){
+    const form=el("form",null,"sng-pool-alert-row");
+    const addField=(text,type="text",defaultValue="")=>{
+      const l=el("label",text);
+      const input=el("input");input.type=type;if(defaultValue!==undefined)input.value=defaultValue;
+      if(type==="number")input.min="1";
+      l.append(input);form.append(l);return input;
+    };
+    const label=addField("Promotion label (e.g. Thanksgiving extension sale)");
+    const code=addField("Code (e.g. THANKS25)");code.required=true;code.maxLength=40;
+    const percent=addField("Percentage off","number","25");percent.min=1;percent.max=100;percent.required=true;
+    const months=addField("Discounted extension months: all or number","text","all");
+    const email=addField("Restrict to one member email (optional)","email","");
+    const tierLabel=el("label","Membership tier");
+    const tier=el("select");
+    tier.add(new Option("All tiers","all"));
+    const namesTier={1:"Starter",2:"Intermediate",3:"Advanced",4:"Pro",5:"High Volume",
+      6:"Power User",7:"Elite",8:"Ultimate"};
+    for(const [k,v] of Object.entries(namesTier))tier.add(new Option(v,k));
+    tierLabel.append(tier);form.append(tierLabel);
+    const uses=addField("Maximum redemptions (optional)","number","");
+    const starts=addField("Valid from (local date and time)","datetime-local","");
+    const expires=addField("Expires at (local date and time)","datetime-local","");
+    const save=addAction(form,"CREATE EXTENSION CODE",()=>{});
+    save.type="submit";
+    save.replaceWith(save.cloneNode(true));
+    const submit=form.lastElementChild;
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      submit.disabled=true;message(root,"Saving the extension-only code to Stripe and the website…");
+      try{
+        const discount={
+          code:code.value.trim().toUpperCase(),percent:Number(percent.value),
+          discountLabel:label.value.trim(),discountScope:"extension",
+          extensionDiscountMonths:months.value.trim().toLowerCase()||"all",
+          discountType:"percent",tier:tier.value,recipientEmail:email.value.trim().toLowerCase()||null,
+          sitewide:false,ogOnly:false,appliesToRentals:false,
+          maxUses:uses.value?Number(uses.value):null,
+          startsAt:starts.value?new Date(starts.value).toISOString():null,
+          expiresAt:expires.value?new Date(expires.value).toISOString():null,
+          duration:"once"
+        };
+        const result=await post("/api/admin/discount-codes",discount);
+        message(root,result.discount.code+" created. It becomes redeemable at the scheduled time.");
+        form.reset();months.value="all";percent.value="25";await drawPromotions(root);
+      }catch(error){message(root,error.message);}
+      finally{submit.disabled=false;}
+    });
+    body.append(form);
+    const list=el("div");list.dataset.extensionPromos="";body.append(list);
+  }
   function newPanel(kind){
     const shell=el("section",null,mobile?"panel sng-admin-pool-shell":"admin-feature-panel sng-admin-pool-shell");
     shell.dataset.extensionInventoryShell=kind;
     const details=el("details");
-    const title=el("summary",kind==="inventory"?"Pool availability alerts":"Prepaid extensions & refunds");
+    const title=el("summary",kind==="inventory"?"Pool availability alerts":kind==="promotion"?"Create extension discount codes":"Prepaid extensions & refunds");
     details.append(title);
     const body=el("div",null,"sng-admin-pool-body");
     const messageNode=el("p","",null);messageNode.setAttribute("role","status");
@@ -157,13 +225,18 @@
           message(shell,"Pool check complete.");}
         catch(e){message(shell,e.message);}finally{check.disabled=false;}
       });
+    }else if(kind==="promotion"){
+      textRow(body,"Create percentage codes for prepaid extensions. The default applies to every month the member purchases. Enter exact start/end times to schedule a sale.");
+      createPromoForm(shell,body);
     }else{
       textRow(body,"Refunds apply to the prepaid extension payment only. Stripe calculates the final payment status. Refunds change the remaining membership access.");
       const list=el("div");list.dataset.refundList="";body.append(list);
     }
     body.append(messageNode);details.append(body);shell.append(details);
     details.addEventListener("toggle",()=>{if(details.open){
-      if(kind==="inventory")void draw(shell);else void renderPurchases(shell);
+      if(kind==="inventory")void draw(shell);
+      else if(kind==="promotion")void drawPromotions(shell);
+      else void renderPurchases(shell);
     }});
     return shell;
   }
@@ -181,6 +254,8 @@
     if(!c||!["Profiles","More"].includes(heading))return;
     if(!c.querySelector('[data-extension-inventory-shell="inventory"]'))
       c.append(newPanel("inventory"));
+    if(heading==="More"&&!c.querySelector('[data-extension-inventory-shell="promotion"]'))
+      c.append(newPanel("promotion"));
     if(heading==="More"&&!c.querySelector('[data-extension-inventory-shell="refunds"]'))
       c.append(newPanel("refunds"));
   }
