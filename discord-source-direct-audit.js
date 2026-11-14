@@ -20,7 +20,7 @@ const normalize = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const snowflakeAt = t => ((BigInt(Math.floor(t)) - 1420070400000n) << 22n).toString();
 const cents = value => Number.isFinite(Number(value)) && Number(value) > 0
   ? Math.round(Number(value) * 100) : null;
-const addCount = (obj, key, by=1) => { obj[key] = (obj[key] || 0) + by; };
+const addCount = (obj, key, by=1) => { if (obj instanceof Map) obj.set(key, (obj.get(key) || 0) + by); else obj[key] = (obj[key] || 0) + by; };
 const safeProduct = n => {
   const s = communityProductName(n).trim();
   if (!s || s.length > 170 || /@|\b(?:password|account|address|phone|order\s*(?:id|number)|security code|email|login)\b/i.test(s)) return "";
@@ -80,7 +80,7 @@ function summarize(messages, bounds, parseCheckout) {
   const colorCounts = {}, parsedCounts = {}, missingParse = {}, sourceRetailers = {},
     messageAuthorTypes = {}, imageHosts = {}, hourCounts = {};
   const parsedEvents = [];
-  let missingOrderNumber = 0, moduleLifecycle = 0;
+  let missingOrderNumber = 0, moduleLifecycle = 0, rejectedRedWithOrderId = 0, rejectedRedWithoutOrderId = 0;
   for (const m of messages) {
     const timestamp = Date.parse(m.timestamp || "");
     if (!Number.isFinite(timestamp) || timestamp < from) continue;
@@ -107,15 +107,23 @@ function summarize(messages, bounds, parseCheckout) {
       if (!hourCounts[hour]) hourCounts[hour] = {};
       addCount(hourCounts[hour], status);
     }
-    if (raw && ["confirmed","review_hold","cancelled"].includes(raw.status)) {
+    // The original importer rejects red-only cancellation webhooks that lack
+    // product details. These still carry a labelled retailer order number and
+    // must be included in placed/cancelled attempts, without fabricating items.
+    if ((raw && ["confirmed","review_hold","cancelled"].includes(raw.status)) ||
+        (!raw && status === "cancelled" && m.webhook_id)) {
       const identity = checkoutIdentityFromDiscord(m);
-      const orderId = String(identity.orderNumber || raw.orderNumber || "").trim().toLowerCase();
+      const orderId = String(identity.orderNumber || raw?.orderNumber || "").trim().toLowerCase();
+      if (!raw && status === "cancelled" && timestamp < to) {
+        if (orderId.length >= 5) rejectedRedWithOrderId++;
+        else rejectedRedWithoutOrderId++;
+      }
       parsedEvents.push({
         timestamp,
-        status:raw.status,
+        status:raw?.status || status,
         key:orderId.length >= 5 ? "order:" + orderId : "message:" + String(m.id),
         orderNumberAvailable:orderId.length >= 5,
-        items:Array.isArray(raw.items) ? raw.items : [],
+        items:Array.isArray(raw?.items) ? raw.items : [],
         paidCents:cents(checkoutExplicitPaidTotal(m))
       });
     }
@@ -140,7 +148,7 @@ function summarize(messages, bounds, parseCheckout) {
   });
   const retained=cohort.filter(g=>g.lastStatus==="confirmed"||g.lastStatus==="review_hold");
   const products=new Map(), productNames=new Map(), statusUnique={}, paidCents={value:0};
-  let units=0,knownPrice=0,unknownPrice=0,eventsOfSameOrder=0,noNumberOrders=0;
+  let units=0,knownPrice=0,unknownPrice=0,eventsOfSameOrder=0,noNumberOrders=0, itemSubtotalCents=0, missingItemPriceCount=0, itemPriceKnownLines=0;
   for(const group of cohort) {
     addCount(statusUnique,group.lastStatus);
     if(group.events.length>1)eventsOfSameOrder+=group.events.length-1;
@@ -156,6 +164,9 @@ function summarize(messages, bounds, parseCheckout) {
       if(!name) continue;
       const key=communityProductKey(name,item.sku) || name.toLowerCase();
       addCount(products,key,q);
+      const itemPrice = cents(item.price);
+      if (itemPrice !== null) { itemSubtotalCents += itemPrice*q; itemPriceKnownLines++; }
+      else missingItemPriceCount++;
       if(!productNames.has(key))productNames.set(key,name);
       units+=q;
     }
@@ -174,6 +185,8 @@ function summarize(messages, bounds, parseCheckout) {
     webhookTypes:messageAuthorTypes,
     retailerFieldsParsed:sourceRetailers,
     missingOrderNumbersInParsed:missingOrderNumber,
+    unparsedRedWithOrderNumber:rejectedRedWithOrderId,
+    unparsedRedWithoutOrderNumber:rejectedRedWithoutOrderId,
     imageHosts,
     perHour:hourCounts,
     distinctAttemptGroups:cohort.length,
@@ -185,6 +198,9 @@ function summarize(messages, bounds, parseCheckout) {
     verifiedPaidCents:paidCents.value,
     paidPriceKnownOrders:knownPrice,
     priceMissingOrders:unknownPrice,
+    itemSubtotalCents,
+    itemPriceKnownLines,
+    missingItemPriceCount,
     topProducts
   };
 }
