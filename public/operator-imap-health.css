@@ -36,3 +36,39 @@
 .sng-imap-empty{font-size:12px}
 @media(max-width:520px){.sng-imap-edit{grid-template-columns:minmax(0,1fr)}.sng-imap-buttons button{flex:1}.sng-imap-times{gap:8px}}
 @media(min-width:750px){.sng-imap-overview{grid-template-columns:repeat(4,minmax(0,1fr))}.sng-imap-times{grid-template-columns:repeat(5,minmax(0,1fr))}}
+
+/* Keep the IMAP controls usable on narrow Admin/iPhone screens. Buttons are
+   disabled only while their own operation is in progress, never solely
+   because a previous scan failed. */
+.sng-operator-imap button:not(:disabled) {
+  pointer-events:auto;
+  opacity:1;
+  touch-action:manipulation;
+}
+.sng-operator-imap .sng-imap-feedback:not(:empty) {
+  padding:8px 10px;
+  border-radius:9px;
+  background:rgba(17,91,122,.24);
+  border:1px solid rgba(84,194,231,.38);
+  line-height:1.5;
+}
+.sng-operator-imap .sng-imap-actions button {
+  min-height:46px;
+}
+@media(max-width:520px) {
+  .sng-operator-imap .sng-imap-buttons {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+    width:100%;
+  }
+  .sng-operator-imap .sng-imap-buttons button {
+    min-width:0;
+    min-height:50px;
+    font-size:14px;
+    padding:11px;
+  }
+  .sng-operator-imap .sng-imap-buttons [data-imap-action="add"] {
+    grid-column:1/-1;
+  }
+}

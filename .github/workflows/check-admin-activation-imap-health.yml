@@ -1,0 +1,44 @@
+name: Verify Admin activation routing and IMAP controls
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'public/admin.html'
+      - 'public/admin-app.html'
+      - 'public/operator-imap-health.js'
+      - 'public/operator-imap-health.css'
+      - 'test/admin-activation-direct.test.mjs'
+      - 'test/operator-imap-health.test.mjs'
+      - '.github/workflows/check-admin-activation-imap-health.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server.js'
+      - 'public/admin.html'
+      - 'public/admin-app.html'
+      - 'public/operator-imap-health.js'
+      - 'public/operator-imap-health.css'
+      - 'test/admin-activation-direct.test.mjs'
+      - 'test/operator-imap-health.test.mjs'
+      - '.github/workflows/check-admin-activation-imap-health.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  admin-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check public/operator-imap-health.js
+      - name: Verify activation source and IMAP control contracts
+        run: node --test test/admin-activation-direct.test.mjs test/operator-imap-health.test.mjs

@@ -33432,6 +33432,8 @@ app.get(
           slot = null,
           type,
           status,
+          managedActivation = false,
+          managedType = null,
           expiresAt = null
         }
       ) => {
@@ -33502,6 +33504,12 @@ app.get(
             slot,
             type,
             status,
+            // Auto-assigned paid-pool profiles live in the managed assignment
+            // store, NOT retailer-profiles.json. Preserve the source routing
+            // metadata all the way to the Admin Activate/Deactivate buttons.
+            managedActivation: managedActivation === true,
+            managedType: managedActivation === true &&
+              ["free", "rented"].includes(managedType) ? managedType : null,
             label:
               profileActivationLabel(
                 status
