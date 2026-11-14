@@ -30,7 +30,26 @@ function prepaidWindow(sub, months) {
     stripeResumesAt:end};
 }
 
-export function calculatePaidExtensionOffer({ months, targetTier, currentTier, plans, code = null }) {
+function calculateUpgradeAdjustment(subscription,currentTier,targetTier,plans){
+  if(targetTier<=currentTier)return {amountCents:0,startsAt:null,endsAt:null};
+  const now=Math.floor(Date.now()/1000);
+  const prepaid=paidUntil(subscription)>now;
+  const end=prepaid?paidUntil(subscription):sumEnd(subscription);
+  const start=prepaid?now:Number(subscription.current_period_start ||
+    subscription.items?.data?.[0]?.current_period_start || 0);
+  if(!(end>now) || !(start>0) || !(end>start))
+    throw fail("Stripe did not provide a valid current billing period for the upgrade. No payment was started.",409);
+  const diff=amountCents(plans[targetTier])-amountCents(plans[currentTier]);
+  if(diff<=0)throw fail("The target membership is not a paid upgrade.",409);
+  const monthsEquivalent=prepaid?(end-now)/(365.2425/12*86400):
+    Math.min(1,(end-now)/(end-start));
+  const amount=Math.max(0,Math.round(diff*monthsEquivalent));
+  return {amountCents:amount,startsAt:new Date(now*1000).toISOString(),
+    endsAt:new Date(end*1000).toISOString()};
+}
+
+export function calculatePaidExtensionOffer({ months, targetTier, currentTier, plans, code = null,
+  upgradeAdjustmentCents=0 }) {
   const count = Number(months), desired = Number(targetTier), current = Number(currentTier);
   if (!Number.isSafeInteger(count) || count < 1 || count > 1200)
     throw fail("Choose 1–1200 prepaid months for this purchase.");
@@ -53,11 +72,17 @@ export function calculatePaidExtensionOffer({ months, targetTier, currentTier, p
     throw fail("The extension discount duration is invalid.");
   const regularCents = monthly * count;
   const savedCents = Math.round(monthly * discountedMonths * percent / 100);
-  const totalCents = regularCents - savedCents;
+  const prepaidCents = regularCents - savedCents;
+  if(!Number.isSafeInteger(upgradeAdjustmentCents)||upgradeAdjustmentCents<0)
+    throw fail("The upgrade amount could not be verified.");
+  const totalCents = prepaidCents + upgradeAdjustmentCents;
+  if(!Number.isSafeInteger(totalCents)||totalCents<0||totalCents>99999999)
+    throw fail("That prepaid purchase exceeds the maximum supported charge. Choose fewer months.");
   return {
     months: count, currentTier: current, targetTier: desired,
     tierName: plans[desired].name, profiles: plans[desired].profiles,
-    monthlyCents: monthly, regularCents, savedCents, totalCents,
+    monthlyCents: monthly, regularCents, savedCents, prepaidCents,
+    upgradeAdjustmentCents,totalCents,
     upgrade: desired > current, discountCode: code?.code || null,
     discountLabel: code?.discountLabel || null,
     discountPercent: percent, discountedMonths
@@ -134,9 +159,14 @@ export function registerMembershipExtensionCommerce(app, d) {
     const selection = await subscriptionFor(account.id);
     const targetTier = Number(body.tier || selection.tier);
     const code = await getEligibleCode(body.discountCode, targetTier, account, pending);
+    const upgradeAdjustment=calculateUpgradeAdjustment(
+      selection.subscription,selection.tier,targetTier,plans);
     const quote = calculatePaidExtensionOffer({
-      months: body.months, targetTier, currentTier: selection.tier, plans, code
+      months: body.months, targetTier, currentTier: selection.tier, plans, code,
+      upgradeAdjustmentCents:upgradeAdjustment.amountCents
     });
+    quote.upgradeAdjustmentStartsAt=upgradeAdjustment.startsAt;
+    quote.upgradeAdjustmentEndsAt=upgradeAdjustment.endsAt;
     let term;
     try {
       term = prepaidWindow(selection.subscription,quote.months);
@@ -179,6 +209,8 @@ export function registerMembershipExtensionCommerce(app, d) {
              p.status === "pending" && Date.parse(p.checkoutExpiresAt || "") > Date.now()))
           throw fail("You already have an extension checkout in progress. Finish it or try again after it expires.", 409);
         const { selection, code, quote, term } = await build(req.customerAccount, req.body, true);
+        if (req.body?.expectedTotalCents !== quote.totalCents)
+          throw fail("The extension price has changed. Preview the total again before payment.",409);
         const expiresAt = Math.floor(Date.now() / 1000) + 30 * 60;
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
@@ -335,8 +367,16 @@ export function registerMembershipExtensionCommerce(app, d) {
         !Number.isSafeInteger(total) || total < 0)
       throw fail("The prepaid purchase dates or amount could not be verified.",409);
     const unusedFraction = Math.max(0,Math.min(1,(end-Math.max(start,at))/(end-start)));
-    return {totalCents:total, unusedCents:Math.round(total*unusedFraction),
-      usedCents:total-Math.round(total*unusedFraction),
+    const prepaidCents=Number(purchase.quote?.prepaidCents ?? total);
+    const upgradeCents=Number(purchase.quote?.upgradeAdjustmentCents || 0);
+    const upgradeStart=Date.parse(purchase.quote?.upgradeAdjustmentStartsAt || "");
+    const upgradeEnd=Date.parse(purchase.quote?.upgradeAdjustmentEndsAt || "");
+    const upgradeFraction=Number.isFinite(upgradeStart)&&Number.isFinite(upgradeEnd)&&upgradeEnd>upgradeStart?
+      Math.max(0,Math.min(1,(upgradeEnd-Math.max(at,upgradeStart))/(upgradeEnd-upgradeStart))):0;
+    const unusedCents=Math.max(0,Math.min(total,
+      Math.round(prepaidCents*unusedFraction)+Math.round(upgradeCents*upgradeFraction)));
+    return {totalCents:total, unusedCents,
+      usedCents:total-unusedCents,
       serviceStartsAt:purchase.serviceStartsAt,prepaidUntil:purchase.renewalAt,
       unusedFraction,hasStarted:at>=start,now:new Date(at).toISOString()};
   }
