@@ -260,10 +260,10 @@ if (appEnabled) {
         <div class="sng-sheet-actions">
           <button type="button" data-app-copy-order ${orderNumber ? '' : 'disabled'}>Copy order #</button>
           <button type="button" data-app-copy-tracking ${trackingNumber ? '' : 'disabled'}>Copy tracking</button>
+          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : '<span role="status" class="sng-tracking-pending">Carrier tracking link pending verification</span>'}
           ${status === 'cancelled'
             ? '<button type="button" class="sng-sheet-remove-cancelled" data-app-hide-cancelled="' + e(recordKey(order)) + '">Remove from my view</button>'
             : ''}
-          ${carrierUrl ? '<a target="_blank" rel="noopener noreferrer" href="' + e(carrierUrl) + '">Track with carrier ↗</a>' : '<span role="status" class="sng-tracking-pending">Carrier tracking link pending verification</span>'}
         </div>
         <p class="sng-sheet-copy-feedback" data-app-copy-feedback aria-live="polite"></p>
         ${status === 'cancelled' ? '<p class="sng-sheet-hide-feedback" data-app-hide-feedback role="status" aria-live="polite">This only removes the order from your app view. The underlying order record is retained.</p>' : ''}
