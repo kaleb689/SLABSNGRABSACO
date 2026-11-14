@@ -101,3 +101,9 @@ test("customer Success returns cancelled history separately from successful purc
   assert.match(app, /shippingStage\(order\) === 'cancelled'/);
   assert.match(server, /matchVerifiedWebhookEmail\(records/);
 });
+
+test("cancellation notification tap opens the Tracking tab", async () => {
+  const worker = await fs.readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.match(worker, /"success", "tracking", "membership", "notifications", "drops"/);
+  assert.match(worker, /notificationclick/);
+});
