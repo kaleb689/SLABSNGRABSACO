@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -28,7 +29,8 @@ function stellarMessage(){
     content:'',embeds:[{color:0x57f287,fields}]};
 }
 function parse(msg){
- const context={msg,sourceChannel,result:null,discordCheckoutIdentity:checkoutIdentityFromDiscord,
+ const context={sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    msg,sourceChannel,result:null,discordCheckoutIdentity:checkoutIdentityFromDiscord,
   checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal:()=>null,
   isModuleLifecycleDiscordMessage,
   publicSuccessProductName:s=>String(s||'').slice(0,240),
