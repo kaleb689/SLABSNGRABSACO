@@ -234,6 +234,7 @@ export function registerMembershipExtensionCommerce(app, d) {
         purchases.push({
           requestId, sessionId:session.id, sessionUrl:session.url,
           status:"pending", customerAccountId:req.customerAccount.id,
+          customerEmail:req.customerAccount.email||"",
           subscriptionId:selection.subscription.id, currentTier:selection.tier,
           targetTier:quote.targetTier, months:quote.months,
           amountCents:quote.totalCents, discountId:code?.id || null,
@@ -423,8 +424,9 @@ export function registerMembershipExtensionCommerce(app, d) {
     try{
       const rows=await readPurchases();
       res.set("Cache-Control","no-store").json({ok:true,
-        purchases:(Array.isArray(rows)?rows:[]).filter(p=>p.status==="completed"||p.status==="refunded")
+        purchases:(Array.isArray(rows)?rows:[]).filter(p=>["completed","refunded","refunding"].includes(p.status))
           .map(p=>({id:p.requestId,customerAccountId:p.customerAccountId,
+            customerEmail:p.customerEmail||"",
             status:p.status,months:p.months,amountCents:p.amountCents,
             paidAt:p.completedAt,serviceStartsAt:p.serviceStartsAt,renewalAt:p.renewalAt,
             discountCode:p.quote?.discountCode||null,refundCents:p.refundCents||0}))
