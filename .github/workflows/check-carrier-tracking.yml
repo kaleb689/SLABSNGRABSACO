@@ -5,6 +5,9 @@ on:
     paths:
       - carrier-tracking.js
       - order-notifications.js
+      - customer-cancelled-history.js
+      - test/customer-cancelled-history.test.mjs
+      - test/cancellation-tracking.test.mjs
       - server.js
       - operator-imap-policy.js
       - public/operator-imap-health.js
@@ -18,7 +21,7 @@ on:
       - test/success-source-policy.test.mjs
       - test/shipping-sheet-live-state.test.mjs
       - test/shipping-delivery-verification.test.mjs
-      - test/order-notifications.test.js
+      - test/order-notifications.test.js test/customer-cancelled-history.test.mjs test/cancellation-tracking.test.mjs
       - public/app.js
       - public/app-dashboard.js
       - public/index.html
@@ -30,6 +33,9 @@ on:
     paths:
       - carrier-tracking.js
       - order-notifications.js
+      - customer-cancelled-history.js
+      - test/customer-cancelled-history.test.mjs
+      - test/cancellation-tracking.test.mjs
       - server.js
       - operator-imap-policy.js
       - public/operator-imap-health.js
@@ -64,6 +70,7 @@ jobs:
           node --check carrier-tracking.js
           node --check shipping-tracking-policy.js
           node --check order-notifications.js
+          node --check customer-cancelled-history.js
           node --check server.js
           node --check public/app.js
           node --check public/app-dashboard.js
