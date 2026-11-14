@@ -9,7 +9,7 @@ import {checkoutAssignmentContains, recoverCheckoutAssignmentOwners} from '../di
 
 const server=readFileSync(new URL('../server.js',import.meta.url),'utf8');
 const checkoutParser=server.slice(server.indexOf('function discordCheckoutFromMessage('),
-  server.indexOf('const DISCORD_HIT_MIRROR_FILE'));
+  server.indexOf('// Owner-only, read-only original Discord Success recap preview.'));
 const sourceChannel='1532179373292257290';
 const sampleEmail='testpkc001@example.test';
 
