@@ -118,12 +118,14 @@ export function registerMembershipExtensionCommerce(app, d) {
     if (found.ogOnly && !account.ogMemberGrantedAt) throw fail("This code is limited to OG members.");
     if (found.exhausted || found.usageUnavailable)
       throw fail("This discount has reached its use limit or its availability cannot be verified.");
-    if (pending && found.maxUses !== null && found.maxUses !== undefined) {
+    if (found.maxUses !== null && found.maxUses !== undefined) {
       const purchases = await readPurchases();
+      const extensionUses = (Array.isArray(purchases) ? purchases : []).filter(p =>
+        p.discountId === found.id && ["completed","refunding","refunded"].includes(p.status)).length;
       const held = (Array.isArray(purchases) ? purchases : []).filter(p =>
         p.discountId === found.id && p.status === "pending" &&
         Date.parse(p.checkoutExpiresAt || "") > Date.now()).length;
-      if (Number(found.redemptions || 0) + held >= Number(found.maxUses))
+      if (Number(found.redemptions || 0) + extensionUses + held >= Number(found.maxUses))
         throw fail("This promotion has no remaining redemptions.");
     }
     return found;
@@ -205,7 +207,11 @@ export function registerMembershipExtensionCommerce(app, d) {
           amountCents:quote.totalCents, discountId:code?.id || null,
           quote, createdAt:new Date().toISOString(),
           checkoutExpiresAt:new Date(expiresAt * 1000).toISOString(),
-          quotedStartAt:term.startsAt,expectedRenewalAt:term.expiresAt
+          quotedStartAt:term.startsAt,expectedRenewalAt:term.expiresAt,
+          previousPauseUntil:paidUntil(selection.subscription),
+          previousExtensionSessionId:selection.subscription.metadata?.sng_last_paid_extension_session || "",
+          previousExtensionStartAt:selection.subscription.metadata?.sng_last_paid_extension_start || "",
+          previousExtensionEndAt:selection.subscription.metadata?.sng_last_paid_extension_until || ""
         });
         await writePurchases(purchases);
         return {url:session.url,quote};
@@ -223,14 +229,14 @@ export function registerMembershipExtensionCommerce(app, d) {
       const purchase = purchases.find(p => p.sessionId === session.id &&
         p.requestId === session.metadata.extension_request_id);
       if (!purchase) throw fail("Paid extension has no matching checkout record. Manual billing review required.", 409);
-      if (purchase.status === "completed") return true;
+      if (["completed","refunded","refunding"].includes(purchase.status)) return true;
       if (Number(session.amount_total || 0) !== purchase.amountCents)
         throw fail("Stripe payment total does not match the saved extension quote.", 409);
       const customer = (await getCustomers()).find(x => String(x.id) === String(purchase.customerAccountId));
       if (!customer || customer.disabled) throw fail("The paid extension account is no longer active.", 409);
       const sub = await stripe.subscriptions.retrieve(purchase.subscriptionId);
       if (!["active", "trialing"].includes(sub.status) || sub.cancel_at_period_end ||
-          sub.cancel_at || sub.pause_collection || sub.items?.data?.length !== 1)
+          sub.cancel_at || (sub.pause_collection && !isOurPrepaidPause(sub)) || sub.items?.data?.length !== 1)
         throw fail("The Stripe subscription changed before extension fulfillment.", 409);
       const current = planForStripePriceId(priceId(sub));
       if (!current || Number(current.tier) > purchase.targetTier)
@@ -339,14 +345,17 @@ export function registerMembershipExtensionCommerce(app, d) {
     const records=await readPurchases();
     const purchases=Array.isArray(records)?records:[];
     const purchase=purchases.find(p=>p.requestId===purchaseId);
-    if(!purchase||purchase.status!=="completed")
+    if(!purchase || !["completed","refunding"].includes(purchase.status))
       throw fail("Completed paid extension not found or already refunded.",404);
     const subsequent=purchases.some(p=>p.subscriptionId===purchase.subscriptionId &&
       p.status==="completed" &&
       Date.parse(p.completedAt || "")>Date.parse(purchase.completedAt || ""));
     if(subsequent)throw fail("A newer extension exists. Reconcile newer purchased terms before refunding this one.",409);
     const quote=refundQuote(purchase);
-    const amountCents=mode==="full"?quote.totalCents:quote.unusedCents;
+    const amountCents=purchase.status==="refunding" ? Number(purchase.refundCents) :
+      mode==="full"?quote.totalCents:quote.unusedCents;
+    if(purchase.status==="refunding" && mode!==purchase.refundMode)
+      throw fail("Finish the original pending refund before changing its refund method.",409);
     if(amountCents<1)throw fail("This prepaid term has no unused balance to refund.",409);
     const subscription=await stripe.subscriptions.retrieve(purchase.subscriptionId);
     if(!isOurPrepaidPause(subscription) ||
@@ -388,12 +397,13 @@ export function registerMembershipExtensionCommerce(app, d) {
       const result=await serialized(async()=>{
         const review=await refundReview(req.params.id,mode);
         const {purchases,purchase,subscription,amountCents}=review;
-        const refund=await stripe.refunds.create({
-          payment_intent:purchase.stripePaymentIntentId,amount:amountCents,
-          reason:"requested_by_customer",
-          metadata:{sng_extension_request:purchase.requestId,
-            sng_refund_mode:mode}
-        },{idempotencyKey:"sng-ext-refund-"+mode+"-"+purchase.sessionId});
+        const refund=purchase.refundId ? await stripe.refunds.retrieve(purchase.refundId)
+          : await stripe.refunds.create({
+            payment_intent:purchase.stripePaymentIntentId,amount:amountCents,
+            reason:"requested_by_customer",
+            metadata:{sng_extension_request:purchase.requestId,
+              sng_refund_mode:mode}
+          },{idempotencyKey:"sng-ext-refund-"+mode+"-"+purchase.sessionId});
         if (!["succeeded","pending"].includes(refund.status))
           throw fail("Stripe did not accept the refund. Review payment status before updating access.",502);
         purchase.status="refunding";
@@ -407,13 +417,15 @@ export function registerMembershipExtensionCommerce(app, d) {
             {idempotencyKey:"sng-ext-refund-cancel-"+purchase.sessionId});
         }else{
           updated=await stripe.subscriptions.update(subscription.id,{
-            pause_collection:"",proration_behavior:"none",
+            pause_collection:purchase.previousPauseUntil ?
+              {behavior:"void",resumes_at:purchase.previousPauseUntil} : "",
+            proration_behavior:"none",
             items:[{id:subscription.items.data[0].id,
               price:plans[purchase.currentTier].priceId,quantity:1}],
             metadata:{...subscription.metadata,
-              sng_last_paid_extension_session:"",
-              sng_last_paid_extension_until:"",
-              sng_last_paid_extension_start:""}
+              sng_last_paid_extension_session:purchase.previousExtensionSessionId || "",
+              sng_last_paid_extension_until:purchase.previousExtensionEndAt || "",
+              sng_last_paid_extension_start:purchase.previousExtensionStartAt || ""}
           },{idempotencyKey:"sng-ext-refund-restore-"+purchase.sessionId});
         }
         const paid=await getPaid();
@@ -425,7 +437,12 @@ export function registerMembershipExtensionCommerce(app, d) {
             rec.plan={tier:purchase.currentTier,name:plans[purchase.currentTier].name,
               profiles:plans[purchase.currentTier].profiles,amount:plans[purchase.currentTier].amount};
           }
-          delete rec.prepaidThrough;delete rec.billingDeferredUntil;
+          if (purchase.previousPauseUntil && !review.endsImmediately) {
+            rec.prepaidThrough=new Date(purchase.previousPauseUntil*1000).toISOString();
+            rec.billingDeferredUntil=rec.prepaidThrough;
+            rec.currentPeriodEnd=rec.prepaidThrough;
+            rec.subscriptionEndDate=rec.prepaidThrough;
+          } else {delete rec.prepaidThrough;delete rec.billingDeferredUntil;}
         }
         await savePaid(paid);
         purchase.status="refunded";purchase.refundedAt=new Date().toISOString();
@@ -446,9 +463,14 @@ export function registerMembershipExtensionCommerce(app, d) {
     const selection = await subscriptionForCancellation(accountId);
     const sub = selection.subscription;
     if (mode === "period_end") {
-      if (sub.cancel_at_period_end) return {already:true, subscription:sub};
-      const updated = await stripe.subscriptions.update(sub.id, {cancel_at_period_end:true},
-        {idempotencyKey:"sng-cancel-end-" + sub.id + "-" + (sub.current_period_end || sub.trial_end || "active")});
+      if (sub.cancel_at_period_end || sub.cancel_at) return {already:true, subscription:sub};
+      // A prepaid term can continue past Stripe's normal monthly invoice cycle.
+      // Cancel exactly at the prepaid end, not at an earlier unbilled month.
+      const prepaidEnd=isOurPrepaidPause(sub)?paidUntil(sub):0;
+      const params=prepaidEnd ? {cancel_at:prepaidEnd,proration_behavior:"none"} :
+        {cancel_at_period_end:true};
+      const updated = await stripe.subscriptions.update(sub.id, params,
+        {idempotencyKey:"sng-cancel-end-" + sub.id + "-" + (prepaidEnd || sub.current_period_end || sub.trial_end || "active")});
       await recordCancellation(accountId, updated, false);
       return {subscription:updated};
     }
@@ -487,6 +509,7 @@ export function registerMembershipExtensionCommerce(app, d) {
       if (req.body?.confirm !== true) throw fail("Confirm that you want to stop automatic membership renewal.");
       const result = await serialized(() => cancel(req.customerAccount.id, "period_end"));
       res.json({ok:true, cancelAtPeriodEnd:true, endAt:result.subscription.cancel_at ||
+        result.subscription.pause_collection?.resumes_at ||
         result.subscription.trial_end || result.subscription.current_period_end});
     } catch(error) { jsonError(res,error,"Customer cancellation"); }
   });
@@ -498,7 +521,9 @@ export function registerMembershipExtensionCommerce(app, d) {
       if (!account) throw fail("Customer account not found.",404);
       const result = await serialized(() => cancel(account.id,mode));
       res.json({ok:true, mode,already:result.already === true,
-        status:result.subscription.status,cancelAtPeriodEnd:result.subscription.cancel_at_period_end === true});
+        status:result.subscription.status,
+        cancelAt:result.subscription.cancel_at || null,
+        cancelAtPeriodEnd:result.subscription.cancel_at_period_end === true});
     } catch(error) { jsonError(res,error,"Admin cancellation"); }
   });
 
