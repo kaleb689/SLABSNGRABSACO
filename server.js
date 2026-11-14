@@ -8254,12 +8254,10 @@ app.post(
             ).toLowerCase();
 
           const currentCancelAtPeriodEnd =
-            record
-              .cancelAtPeriodEnd ===
-            true ||
-            subscription
-              ?.cancel_at_period_end ===
-            true;
+            record.cancelAtPeriodEnd === true ||
+            Boolean(record.cancelAt) ||
+            subscription?.cancel_at_period_end === true ||
+            Boolean(subscription?.cancel_at);
 
           /*
             Notify immediately when the member first
@@ -37873,6 +37871,11 @@ app.post(
           });
       }
 
+      if (subscription.pause_collection?.resumes_at &&
+          Number(subscription.pause_collection.resumes_at) > Date.now()/1000) {
+        return res.status(409).json({error:"This membership already has a prepaid extension. Use Extend Membership to choose additional prepaid time and an upgraded tier."});
+      }
+
       if (
         subscription
           .cancel_at_period_end ===
@@ -50158,7 +50161,9 @@ const ownedOrders =
           cancelAtPeriodEnd:
             selected
               .cancelAtPeriodEnd ===
-            true
+            true,
+          cancelAt:selected.cancelAt || null,
+          prepaidThrough:selected.prepaidThrough || null
         };
         // Subscription billing can be active before the owner has finished
         // setting up any of this customer's ACO profiles.
