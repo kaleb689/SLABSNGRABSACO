@@ -6,6 +6,7 @@ import {checkoutOrderValue, checkoutPaidAmount} from '../checkout-price-policy.j
 import {checkoutAssignmentContains, recoverCheckoutAssignmentOwners} from '../discord-checkout-owner-evidence.js';
 import {checkoutRequestRange, selectedOrders, dashboardTotals, dashboardActivity} from '../public/app-dashboard-data.js';
 import {reconcileWebhookCheckout, uniqueCheckoutOwner} from '../webhook-success.js';
+import {customerCancelledCheckouts} from '../customer-cancelled-history.js';
 
 const server = fs.readFileSync(new URL('../server.js',import.meta.url),'utf8');
 const now = new Date('2026-10-15T20:00:00.000Z');
@@ -24,6 +25,7 @@ function customerHandler(records) {
   let handler;
   const context = {console, Date, URLSearchParams,
     app:{get:(_route,_guard,fn)=>{handler=fn;}},requireCustomer:()=>{},
+    customerCancelledCheckouts,loadHiddenCancelledIds:async()=>[],DATA_DIR:'/tmp/sng-checkout-handler-test',
     discordSuccessConfig:()=>({token:''}),discordCheckoutSourceChannels:async()=>({channels:['source']}),
     getSuccessCheckouts:async()=>records,visibleDiscordSuccessRecords:rows=>rows,
     clean:(value,n)=>String(value||'').slice(0,n),
@@ -43,11 +45,13 @@ function customerHandler(records) {
 
 test('real customer handler includes preorders, removes cancels, isolates owners and agrees with app totals',async()=>{
   const rows=[{...base,id:'preorder'}, {...base,id:'charged',orderTotal:75.56,orderTotalBasis:'retailer_receipt'},
-    {...base,id:'cancelled',status:'cancelled',cancelledAt:'2026-10-15T19:10:00Z'},
+    {...base,id:'discord:1532179373292257290:1580000000000000001',status:'cancelled',cancelledAt:'2026-10-15T19:10:00Z'},
     {...base,id:'other-customer',customerAccountId:'other'}, {...base,id:'review',status:'review_hold'}];
   const {code,payload}=await customerHandler(rows)({appView:'1',...checkoutRequestRange(1,now)});
   assert.equal(code,200);assert.equal(payload.totalCheckouts,3);assert.equal(payload.checkoutValue,235.52);
-  assert.equal(payload.cancelledCheckouts.length,0);assert.equal(payload.checkouts.find(r=>r.id==='preorder').verifiedPaidTotal,null);
+  assert.equal(payload.cancelledCheckouts.length,1); // visible in customer Tracking, never in Success totals
+  assert.equal(payload.cancelledCheckouts[0].status,'cancelled');
+  assert.equal(payload.checkouts.find(r=>r.id==='preorder').verifiedPaidTotal,null);
   assert.equal(payload.checkouts.find(r=>r.id==='preorder').orderTotal,79.98); // running older apps also update
   const selected=selectedOrders(payload.checkouts,1,now);
   assert.equal(dashboardTotals(selected).spend,235.52);

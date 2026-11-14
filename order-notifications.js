@@ -21,6 +21,16 @@ export function lateCancellation(record) {
   return Number.isFinite(placed) && Number.isFinite(cancelled) &&
     cancelled - placed >= 24 * 60 * 60 * 1000 && cancelled <= Date.now() + 60 * 1000;
 }
+// Notify on verified, recent cancellations regardless of whether checkout
+// happened less than 24 hours ago; do not replay old historical events.
+export function notifiableCancellation(record, now = Date.now()) {
+  if (!cancelledOrder(record)) return false;
+  const checkout = Date.parse(record?.checkoutAt || "");
+  const cancelled = Date.parse(record?.cancelledAt || record?.canceledAt || "");
+  return Number.isFinite(checkout) && Number.isFinite(cancelled) &&
+    cancelled >= checkout && cancelled <= now + 60 * 1000 &&
+    cancelled >= now - 24 * 60 * 60 * 1000;
+}
 export function orderKey(record) {
   return `${record.customerAccountId}:${String(record.retailer || "").toLowerCase()}:${record.id}`;
 }
@@ -268,7 +278,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
           const inbox = state.inbox[record.customerAccountId] ||= [];
           state.inbox[record.customerAccountId] = inbox.filter(item =>
             item.orderKey !== key || item.kind === "order_cancelled");
-          if ((previous?.eligible || previous?.reviewHold) && !previous.cancelled && lateCancellation(record) &&
+          if ((previous?.eligible || previous?.reviewHold) && !previous.cancelled && notifiableCancellation(record) &&
               !state.eventHistory[key + ":order_cancelled"] &&
               Date.now() - Date.parse(record.cancelledAt || record.canceledAt) < 24 * 60 * 60 * 1000) {
             const retailer = String(record.retailer || "Retailer").slice(0, 50);
@@ -325,7 +335,7 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await reconcileAccountEvents(accounts, await getAccountUpdates());
       const active = new Set(accounts.filter(account => !account.disabled).map(account => String(account.id)));
       const eligible = new Set(records.filter(record => orderSnapshot(record).eligible).map(orderKey));
-      const cancelled = new Set(records.filter(lateCancellation).map(orderKey));
+      const cancelled = new Set(records.filter(record => notifiableCancellation(record)).map(orderKey));
       const holds = new Set(records.filter(record => record.status === "review_hold" && !cancelledOrder(record)).map(orderKey));
       await locked(async () => {
         const pending = [];

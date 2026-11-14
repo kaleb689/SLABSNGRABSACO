@@ -190,6 +190,8 @@ test("all Success aggregate and customer endpoints use an authoritative-source f
   assert.match(server, /visibleDiscordSuccessRecords\((?:await getSuccessCheckouts\(\)|saved), hitsChannelId, chosen\.channels\)/);
   assert.ok(server.includes("const [saved, customers, paidRaw] = await Promise.all(["));
   assert.ok(server.includes(".filter(record => record.customerAccountId &&"));
-  assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 5);
-  assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 3);
+  // Customer-owned cancellation dismissal also checks the authorized Discord source.
+  assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 6);
+  // One additional authorized source check protects the customer hide endpoint.
+  assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 4);
 });

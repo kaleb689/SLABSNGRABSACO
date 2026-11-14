@@ -87,12 +87,23 @@ test("managed business mailbox cannot create a checkout or match other customers
   assert.equal(matchVerifiedWebhookEmail([confirmed], { ...evidence, senders: ["account@gmail.com"] }), null);
 });
 
-test("customer Success API removes cancellations immediately while preserving private source history", async () => {
+test("customer Success returns cancelled history separately from successful purchases", async () => {
   const server = await fs.readFile(new URL("../server.js", import.meta.url), "utf8");
   const app = await fs.readFile(new URL("../public/app-dashboard.js", import.meta.url), "utf8");
   const route = server.slice(server.indexOf('  "/api/account/success",'),server.indexOf('/* -------------------------------------------------------\n   MY PROFILE'));
-  assert.match(route, /const cancelledCheckouts = \[\]/);
-  assert.doesNotMatch(route, /ownedRecords\.filter\(lateCancellation\)/);
-  assert.match(app, /cancelledOrders = \[\]/);
+  assert.match(route, /customerCancelledCheckouts\(ownedRecords/);
+  assert.match(route, /hiddenIds: await loadHiddenCancelledIds/);
+  assert.match(route, /\.map\(safeSuccessCheckout\)/);
+  assert.match(server, /app\.post\("\/api\/account\/success\/cancelled\/hide", requireCustomer/);
+  assert.match(server, /String\(record\.customerAccountId\) === accountId/);
+  assert.match(app, /cancelledOrders = Array\.isArray\(data\.cancelledCheckouts\)/);
+  assert.match(app, /data-app-hide-cancelled/);
+  assert.match(app, /shippingStage\(order\) === 'cancelled'/);
   assert.match(server, /matchVerifiedWebhookEmail\(records/);
+});
+
+test("cancellation notification tap opens the Tracking tab", async () => {
+  const worker = await fs.readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.match(worker, /"success", "tracking", "membership", "notifications", "drops"/);
+  assert.match(worker, /notificationclick/);
 });
