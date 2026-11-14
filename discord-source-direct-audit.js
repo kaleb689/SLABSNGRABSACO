@@ -322,7 +322,7 @@ function priceShapeAudit(messages, from, to, parseCheckout) {
     withTotalField:0,withOtherMoneyField:0,withPriceInProductLink:0,
     withDecimalInDescription:0,fieldLabelCounts:{},orderTotalBasis:{},
     pricesByProduct:{},priceFieldFormats:{},totalFieldFormats:{},
-    simplePriceCents:[],explicitPaidCents:0
+    simplePriceCents:[],explicitPaidCents:0,priceQuantityPairs:{},rawQuantityStrings:{}
   };
   const seen=new Set(), hasDollar=v=>/(?:\$|USD\s*[\d,]+(?:\.\d+)?)/i.test(String(v||""));
   for(const m of messages){
@@ -353,6 +353,12 @@ function priceShapeAudit(messages, from, to, parseCheckout) {
     if(embeds.some(e=>/\]\(https?:\/\/[^)]+\).*[$]\s?\d/.test(String(e.description||""))))stats.withPriceInProductLink++;
     if(embeds.some(e=>/(?:^|[^\d])\d{1,5}\.\d{2}(?:$|[^\d])/.test(String(e.description||""))))stats.withDecimalInDescription++;
     let priceField=false,totalField=false,otherMoneyField=false;
+    const parsedItemQuantities=(Array.isArray(parsed?.items)?parsed.items:[]).map(item=>Number(item?.quantity));
+    const originalQtyFields=fields.filter(field=>/^(?:quantity|qty)$/i.test(String(field.name||"").replace(/[*_]/g,"").trim()));
+    for(const field of originalQtyFields){
+      const val=String(field.value||"").replace(/[^a-zA-Z0-9]/g,"").toLowerCase();
+      addCount(stats.rawQuantityStrings,val.slice(0,35)||"empty");
+    }
     for(const field of fields){
       const label=String(field.name||"").toLowerCase().replace(/[*_]/g,"").trim();
       const value=String(field.value||"");
@@ -370,6 +376,11 @@ function priceShapeAudit(messages, from, to, parseCheckout) {
         addCount(stats.priceFieldFormats,simple?"simple_money":hasDollar(value)?"complex_money":"other");
         const n=Number(value.replace(/[^\d.]/g,""));
         if(simple&&Number.isFinite(n)&&n>0&&stats.simplePriceCents.length<35)stats.simplePriceCents.push(Math.round(n*100));
+        if(simple&&Number.isFinite(n)&&n>0){
+          const q=parsedItemQuantities.length===1?parsedItemQuantities[0]:"multi";
+          const amt=Math.round(n*100);
+          addCount(stats.priceQuantityPairs,String(q)+"x"+String(amt));
+        }
       } else if(kind==="total"){
         totalField=true;
         addCount(stats.totalFieldFormats,hasDollar(value)?"has_currency":/^\s*[\d,.]+\s*$/.test(value)?"numeric":"other");
