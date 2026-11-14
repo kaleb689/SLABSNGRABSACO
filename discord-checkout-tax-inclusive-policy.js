@@ -13,6 +13,35 @@
  */
 import { checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
 
+// Owner-confirmed recap checkout pricing rules (2026-11-14).
+// All amounts are integer cents to avoid floating-point money errors.
+// Apply on EACH individual GREEN/ORANGE order before aggregating.
+// Sales tax is 7% of merchandise; shipping is $5.99 if pre-tax
+// merchandise subtotal is strictly below $35.00, else free.
+// This yields a rule-calculated total. A checkout's retailer-confirmed
+// paid amount, if present, must be retained separately for comparison.
+export const OWNER_RECAP_TAX_BASIS_POINTS = 700;
+export const OWNER_RECAP_SHIPPING_THRESHOLD_CENTS = 3500;
+export const OWNER_RECAP_SHIPPING_FEE_CENTS = 599;
+
+export function ownerRecapExpectedChargeCents(merchandiseSubtotalCents) {
+  const subtotalCents=Number(merchandiseSubtotalCents);
+  if (!Number.isSafeInteger(subtotalCents) || subtotalCents<=0 ||
+      subtotalCents>100000000) return null;
+  const taxCents=Math.round(subtotalCents*OWNER_RECAP_TAX_BASIS_POINTS/10000);
+  const shippingCents=subtotalCents<OWNER_RECAP_SHIPPING_THRESHOLD_CENTS
+    ? OWNER_RECAP_SHIPPING_FEE_CENTS : 0;
+  return Object.freeze({
+    subtotalCents,
+    taxCents,
+    shippingCents,
+    totalCents:subtotalCents+taxCents+shippingCents,
+    basis:"owner_confirmed_7pct_tax_shipping_under_35",
+    taxAppliesTo:"merchandise",
+    shippingThresholdCents:OWNER_RECAP_SHIPPING_THRESHOLD_CENTS
+  });
+}
+
 const GROUP_LABELS = Object.freeze({
   subtotal: /^(?:items?\s+subtotal|merchandise\s+subtotal|order\s+subtotal|subtotal)$/i,
   tax: /^(?:sales\s+tax|tax|tax\s+total)$/i,
