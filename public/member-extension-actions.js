@@ -83,6 +83,8 @@
       addText(quoteBox,"strong",q.upgrade?"Prepaid extension + tier upgrade":"Prepaid membership extension");
       addText(quoteBox,"p",q.tierName+" · "+q.months+" month(s) · "+q.profiles+" ACO profiles");
       addText(quoteBox,"p","Regular total: "+USD(q.regularCents));
+      if(q.upgradeAdjustmentCents) addText(quoteBox,"p",
+        "Upgrade difference for remaining already-paid time: "+USD(q.upgradeAdjustmentCents));
       if(q.discountCode){
         addText(quoteBox,"p",(q.discountLabel?q.discountLabel+" · ":"")+q.discountCode+
           ": "+q.discountPercent+"% off "+q.discountedMonths+" month(s)");
@@ -109,7 +111,7 @@
         method:"POST",credentials:"same-origin",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({months:verifiedQuote.months,tier:verifiedQuote.tier,
-          discountCode:verifiedQuote.discountCode,requestId,confirm:true})
+          discountCode:verifiedQuote.discountCode,requestId,confirm:true,expectedTotalCents:q.totalCents})
       }));
       if(!data.url||!/^https:\/\//.test(data.url))throw Error("Stripe did not provide a valid checkout link.");
       location.assign(data.url);
