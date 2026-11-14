@@ -184,6 +184,7 @@ if (appEnabled) {
     const itemCount = products.reduce((sum, product) => sum + Math.max(0, Number(product.quantity) || 0), 0);
     const quantity = Math.max(itemCount, Math.max(0, Number(order.itemCount) || 0));
     const status = shippingStage(order);
+    trackingSheet.classList.toggle('stage-cancelled', status === 'cancelled');
     const steps = ['ordered', 'shipped', 'in_transit', 'delivered'];
     const activeStep = status === 'out_for_delivery' ? 2 : Math.max(0, steps.indexOf(status));
     const value = Number(order.checkoutValueKnown === true ? order.checkoutValue :
