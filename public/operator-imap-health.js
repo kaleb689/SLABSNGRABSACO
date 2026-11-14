@@ -22,10 +22,22 @@
     mailbox_scan_failed:"Mailbox scan failed. Check Render logs."
   };
   async function api(path,method="GET",body) {
-    const response=await fetch(path,{
-      method,credentials:"same-origin",cache:"no-store",
-      ...(body===undefined?{}:{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
-    });
+    // A mailbox test can take longer than a health read, but no failed
+    // request should leave the Admin buttons silently unresponsive.
+    const timeout=path.endsWith("/test")?60000:20000;
+    let response;
+    try {
+      response=await fetch(path,{
+        method,credentials:"same-origin",cache:"no-store",
+        ...(typeof AbortSignal!=="undefined"&&typeof AbortSignal.timeout==="function"
+          ?{signal:AbortSignal.timeout(timeout)}:{}),
+        ...(body===undefined?{}:{headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      });
+    }catch(error){
+      if(error?.name==="TimeoutError"||error?.name==="AbortError")
+        throw Error("The request timed out. The server may still be checking IMAP. Try Refresh health again.");
+      throw error;
+    }
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw Error(data.error||"The IMAP request failed.");
     return data;
@@ -41,12 +53,16 @@
     const list=Array.isArray(snapshot.inboxes)?snapshot.inboxes:[];
     const connected=list.filter(item=>item.status==="healthy").length;
     const failed=list.filter(item=>item.status==="error"||item.status==="not_configured").length;
+    const busy=state.working;
+    const busyDisabled=busy?' disabled aria-busy="true"':'';
+    const activeAction=state.workingAction||"";
     const top='<div class="sng-imap-header"><div><h3>IMAP Health</h3>'+
       '<p>Only the inboxes you authorize below are scanned. Customer email accounts are not scanned for tracking.</p></div>'+
-      '<div class="sng-imap-buttons"><button type="button" data-imap-action="refresh">Refresh health</button>'+
-      '<button type="button" data-imap-action="scan" '+(snapshot.running?'disabled':'')+'>'
-      +(snapshot.running?'Scanning…':'Scan shipping now')+'</button>'+
-      '<button type="button" class="sng-imap-main-button" data-imap-action="add">Add IMAP inbox</button></div></div>'+
+      '<div class="sng-imap-buttons"><button type="button" data-imap-action="refresh"'+busyDisabled+'>'+
+      (activeAction==="refresh"?'Refreshing…':'Refresh health')+'</button>'+
+      '<button type="button" data-imap-action="scan" '+(snapshot.running||busy?'disabled':'')+'>'
+      +(snapshot.running?'Scan running…':activeAction==="scan"?'Requesting scan…':'Scan shipping now')+'</button>'+
+      '<button type="button" class="sng-imap-main-button" data-imap-action="add"'+busyDisabled+'>Add IMAP inbox</button></div></div>'+
       '<div class="sng-imap-overview">'+stat("Approved inboxes",list.length)+
       stat("Healthy scanners",connected)+stat("Need attention",failed)+
       stat("Scan interval",Math.round((snapshot.scanIntervalSeconds||180)/60)+" minutes")+'</div>';
@@ -65,8 +81,10 @@
         '<span>Matched <strong>'+enc(item.matchedMessages||0)+'</strong></span>'+
         '<span>Updates found <strong>'+enc(item.candidateUpdates||0)+'</strong></span></div>'+
         (detail?'<p class="sng-imap-error">'+enc(detail)+'</p>':'')+
-        '<div class="sng-imap-actions"><button type="button" data-imap-action="test" data-imap-id="'+enc(item.id)+'" '+(!item.enabled||!item.passwordConfigured?'disabled':'')+'>Test connection</button>'+
-        (environment?'<span class="sng-imap-managed">Configured in Render · cannot edit here</span>':
+        '<div class="sng-imap-actions"><button type="button" data-imap-action="test" data-imap-id="'+enc(item.id)+'"'+busyDisabled+'>'+
+        (activeAction==="test"&&state.workingId===item.id?'Testing connection…':'Test connection')+'</button>'+
+        (environment?'<span class="sng-imap-managed">Configured in Render · cannot edit here'+
+          (!item.passwordConfigured?' · App password missing in Render':'')+'</span>':
         '<button type="button" data-imap-action="edit" data-imap-id="'+enc(item.id)+'">Edit</button>'+
         '<button type="button" data-imap-action="toggle" data-imap-id="'+enc(item.id)+'">'+(item.enabled?'Pause':'Resume')+'</button>'+
         '<button type="button" class="sng-imap-danger" data-imap-action="delete" data-imap-id="'+enc(item.id)+'">Remove</button>')+
@@ -95,8 +113,14 @@
     if(!state||!host.isConnected||state.working)return;
     if(!force && (state.editing!==null||host.contains(document.activeElement) &&
       document.activeElement?.matches("input, select")))return;
-    try {state.snapshot=await api(url);render(host);}
-    catch(error){state.message=error.message;render(host);}
+    try {
+      state.snapshot=await api(url);
+      // The first load used to leave "Loading approved inboxes…" visible
+      // indefinitely, even after the actual inbox data arrived.
+      if(state.message==="Loading approved inboxes…"||state.loadError)state.message="";
+      state.loadError=false;
+      render(host);
+    }catch(error){state.loadError=true;state.message=error.message;render(host);}
   }
   async function act(host,button){
     const state=sessions.get(host);
@@ -108,9 +132,12 @@
       state.message="";render(host);return;
     }
     if(action==="delete"&&!confirm("Remove this owner IMAP inbox from all future shipping scans?"))return;
-    state.working=true;button.disabled=true;
+    state.working=true;state.workingAction=action;state.workingId=id;
     state.message=action==="scan"?"Requesting a read-only shipping scan…":
-      action==="test"?"Testing secure inbox access…":"Saving IMAP inbox settings…";
+      action==="test"?"Testing secure inbox access…":
+      action==="refresh"?"Refreshing inbox health…":"Saving IMAP inbox settings…";
+    // Show status immediately; without this iOS appears to ignore the tap.
+    render(host);
     try {
       if(action==="refresh"){await api(url).then(data=>state.snapshot=data);state.message="Health refreshed.";}
       else if(action==="scan"){
@@ -135,7 +162,10 @@
       else return;
       state.snapshot=await api(url);
     }catch(error){state.message=error.message;}
-    finally{state.working=false;render(host);}
+    finally{
+      state.working=false;state.workingAction="";state.workingId="";
+      render(host);
+    }
   }
   async function submit(host,form){
     const state=sessions.get(host);
@@ -169,7 +199,8 @@
   function mount(host){
     if(!host)return;
     if(sessions.has(host))return;
-    sessions.set(host,{snapshot:null,editing:null,message:"Loading approved inboxes…",working:false});
+    sessions.set(host,{snapshot:null,editing:null,message:"Loading approved inboxes…",
+      loadError:false,working:false,workingAction:"",workingId:""});
     host.setAttribute("data-imap-health-root","");
     host.addEventListener("click",event=>{
       const button=event.target.closest("button[data-imap-action]");
