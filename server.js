@@ -10,6 +10,8 @@ import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, merg
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
+import { registerMembershipExtensionCommerce } from "./membership-extension-commerce.js";
+import { registerPoolAlertMonitoring } from "./pool-availability-alerts.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -248,6 +250,7 @@ const SUBSCRIPTION_EXTENSIONS_FILE =
 
 const DISCOUNT_CODES_FILE =
   path.join(DATA_DIR, "discount-codes.json");
+const PAID_MEMBERSHIP_EXTENSION_PURCHASES_FILE = path.join(DATA_DIR, "membership-extension-purchases.json");
 
 const SITE_NOTIFICATION_FILE =
   path.join(DATA_DIR, "site-notification.json");
@@ -7238,6 +7241,7 @@ function preferManagedAccountsMatchingAssignedPoolEmails(
 
 let privateStudioLicensing;
 let billingReceiptHandler;
+let membershipExtensionCommerce;
 
 /* -------------------------------------------------------
    STRIPE WEBHOOK
@@ -7281,6 +7285,11 @@ app.post(
       // Standalone desktop licensing only; customer vault data is never accessed.
       if (privateStudioLicensing) await privateStudioLicensing.onStripeEvent(event);
       if (billingReceiptHandler) await billingReceiptHandler.onStripeEvent(event);
+      if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type) &&
+          event.data.object?.metadata?.purchase_type === "membership_extension") {
+        if (!membershipExtensionCommerce) throw Error("Membership extension commerce is not initialized.");
+        await membershipExtensionCommerce.fulfill(event.data.object);
+      }
 
       /* CHECKOUT COMPLETED */
 
@@ -12519,25 +12528,35 @@ async function saveDiscountCodes(records) {
 
 // Consult Stripe for limits on currently redeemable codes. Local records
 // preserve historical use counts if a code's coupon is edited/replaced.
+async function getPaidExtensionPurchases() {
+  const records = await readJson(PAID_MEMBERSHIP_EXTENSION_PURCHASES_FILE, []);
+  return Array.isArray(records) ? records : [];
+}
 async function discountCodesWithUsage() {
-  const records = await getDiscountCodes();
+  const [records, purchases] = await Promise.all([getDiscountCodes(), getPaidExtensionPurchases()]);
+  const extensionUses = new Map();
+  for (const purchase of purchases) {
+    if (purchase?.status !== "completed" || !purchase.discountId) continue;
+    const id = String(purchase.discountId);
+    extensionUses.set(id, (extensionUses.get(id) || 0) + 1);
+  }
   return Promise.all(records.map(async record => {
-    if (record.maxUses == null) return record;
-    if (!record.stripeCouponId) return { ...record, usageUnavailable: true };
+    const extensionRedemptions = extensionUses.get(String(record.id)) || 0;
+    if (record.maxUses == null) return {...record, extensionRedemptions};
+    if (!record.stripeCouponId) return {...record, extensionRedemptions, usageUnavailable:true};
     try {
       const coupon = await stripe.coupons.retrieve(record.stripeCouponId);
-      if (!Number.isSafeInteger(coupon?.times_redeemed) || coupon.times_redeemed < 0) {
-        return { ...record, usageUnavailable: true };
-      }
-      const redemptions = Number(record.usesBeforeCurrentCoupon || 0) + coupon.times_redeemed;
-      return { ...record, redemptions, exhausted: redemptions >= Number(record.maxUses) };
-    } catch (error) {
-      console.error("Discount usage check failed:", error?.message);
-      return { ...record, usageUnavailable: true };
+      if (!Number.isSafeInteger(coupon?.times_redeemed) || coupon.times_redeemed < 0)
+        return {...record, extensionRedemptions, usageUnavailable:true};
+      const redemptions = Number(record.usesBeforeCurrentCoupon || 0) +
+        coupon.times_redeemed + extensionRedemptions;
+      return {...record, extensionRedemptions, redemptions, exhausted:redemptions >= Number(record.maxUses)};
+    } catch(error) {
+      console.error("Discount usage check failed:",error?.message);
+      return {...record, extensionRedemptions, usageUnavailable:true};
     }
   }));
 }
-
 
 async function getFreeAssignments() {
   const records =
@@ -16575,6 +16594,14 @@ async function saveAdminDiscount(req, res, existingId = null) {
   try {
     const code = String(req.body?.code || "").trim().toUpperCase();
     const discountType = req.body?.discountType === "fixed-price" ? "fixed-price" : "percent";
+    const discountScope = ["signup","extension","both"].includes(req.body?.discountScope)
+      ? req.body.discountScope : "signup";
+    const discountLabel = String(req.body?.discountLabel || "").trim().slice(0,80);
+    const extensionDiscountMonths = Number(req.body?.extensionDiscountMonths ?? 1);
+    if (discountScope !== "signup" &&
+        (!Number.isSafeInteger(extensionDiscountMonths) || extensionDiscountMonths < 1 ||
+         extensionDiscountMonths > 12 || discountType !== "percent"))
+      return res.status(400).json({error:"Extension promotions require a percentage and a 1–12-month discount length."});
     const requestedPercent = Number(req.body?.percent);
     const requestedFixedPrice = Number(req.body?.fixedPrice);
     const maxUsesInput = req.body?.maxUses;
@@ -16592,7 +16619,10 @@ async function saveAdminDiscount(req, res, existingId = null) {
     if ((sitewide && ogOnly) || ((sitewide || ogOnly) && recipientEmail) || (recipientEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail))) {
       return res.status(400).json({ error: "Choose a sitewide sale or enter a valid recipient email for a private code." });
     }
-    const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+    const rawExpiration = String(req.body?.expiresAt || "");
+    const expiration = rawExpiration ?
+      new Date(/^\\d{4}-\\d{2}-\\d{2}$/.test(rawExpiration) ? rawExpiration + "T23:59:59Z" : rawExpiration)
+      : null;
     if (!/^[A-Z0-9]{3,40}$/.test(code) ||
         (tier !== "all" && !PLANS[tier]) ||
         (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
@@ -16650,7 +16680,12 @@ async function saveAdminDiscount(req, res, existingId = null) {
         error: `This code already has ${usesBeforeCurrentCoupon} uses. Enter a higher total limit or deactivate it.`
       });
     }
-    const remainingUses = maxUses === null ? null : maxUses - usesBeforeCurrentCoupon;
+    const verifiedExtensionUses = existing ? (await getPaidExtensionPurchases())
+      .filter(item=>item.discountId===existing.id && item.status==="completed").length : 0;
+    if (maxUses !== null && usesBeforeCurrentCoupon + verifiedExtensionUses >= maxUses)
+      return res.status(400).json({error:"The discount has already reached this redemption limit."});
+    const remainingUses = maxUses === null ? null :
+      maxUses - usesBeforeCurrentCoupon - verifiedExtensionUses;
     const amountOffCents = discountType === "fixed-price" ? regularPriceCents - fixedPriceCents : null;
     const percent = discountType === "fixed-price"
       ? Number((amountOffCents / regularPriceCents * 100).toFixed(4))
@@ -16663,7 +16698,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
       ...(duration === "repeating" ? {duration_in_months:durationMonths} : {}),
       applies_to: { products: productIds },
       ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
-      name: `SLABSNGRABSACO ${code}`
+      name: `SLABSNGRABSACO ${code}${discountLabel ? " — " + discountLabel : ""}`
     });
     let promotion;
     let oldPromotionDisabled = false;
@@ -16674,7 +16709,8 @@ async function saveAdminDiscount(req, res, existingId = null) {
       }
       // Private and OG-only discounts are redeemed only through authenticated checkout.
       // No public Stripe promotion code is created for either restricted audience.
-      promotion = (recipientEmail || ogOnly) ? null : await stripe.promotionCodes.create({
+      // Extension-only promotions must not become redeemable in signup Stripe Checkout.
+      promotion = (recipientEmail || ogOnly || discountScope === "extension") ? null : await stripe.promotionCodes.create({
         coupon: coupon.id, code, active: existing ? existing.active : true,
         ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
         ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
@@ -16692,6 +16728,7 @@ async function saveAdminDiscount(req, res, existingId = null) {
     }
     const discount = {
       id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration, durationMonths,
+       discountScope,discountLabel,extensionDiscountMonths,
       discountType, fixedPrice: fixedPriceCents === null ? null : fixedPriceCents / 100,
       amountOffCents, maxUses, usesBeforeCurrentCoupon,
       expiresAt: expiration?.toISOString() || null,
@@ -16774,6 +16811,23 @@ app.patch("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation(a
   await saveDiscountCodes(records);
   return res.json({ ok: true, discount: item });
 }));
+
+// Paid extension checkout is separate from staff-issued no-charge extensions.
+membershipExtensionCommerce = registerMembershipExtensionCommerce(app, {
+  stripe,plans:PLANS,baseUrl:BASE_URL,requireCustomer,requireAdmin,
+  readPurchases:getPaidExtensionPurchases,
+  writePurchases:records=>writeJson(PAID_MEMBERSHIP_EXTENSION_PURCHASES_FILE,records),
+  getPaid:()=>readJson(PAID_FILE,[]),savePaid:records=>writeJson(PAID_FILE,records),
+  getCustomers:getCustomerAccounts,saveCustomers:saveCustomerAccounts,
+  getDiscounts:getDiscountCodes,getDiscountsWithUsage:discountCodesWithUsage,
+  saveDiscounts:saveDiscountCodes,applySubscriptionInfo,subscriptionAllowsProfiles,planForStripePriceId,
+  requestedMembershipDuration,
+  notifyMember:(account,notice)=>customerNotifications(account).push({id:crypto.randomUUID(),...notice}),
+  notifyAdminMobile,sendDiscordPayment:sendDiscordAdminPaymentNotification,
+  notifyScheduledCancel:notifyScheduledMembershipCancellation,
+  provisionPaidPool:record=>queuePaidPoolAutoAssignment(()=>provisionPaidMembershipPool(record)),
+  broadcast:broadcastLiveDataChange
+});
 
 /* One prominent announcement at a time, visible throughout the public site. */
 async function getSiteNotification() {
@@ -18516,6 +18570,14 @@ app.get(
 
 
 
+
+const startPoolAvailabilityAlerts = registerPoolAlertMonitoring(app, {
+  dataDir:DATA_DIR,requireAdmin,getAvailability:getManagedAvailability,
+  notifyAdminMobile,readJson,writeJson,
+  discordWebhookUrl:()=>String(process.env.DISCORD_ADMIN_POOL_WEBHOOK_URL ||
+    process.env.DISCORD_ADMIN_PROFILE_WEBHOOK_URL ||
+    process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || "").trim()
+});
 
 function normalizeManagedPoolRetailer(
   value
@@ -50741,6 +50803,7 @@ await initializeArrayFile(
         appOrderNotifications.start();
         startLiveSuccessScheduler();
         startManagedExpirationScheduler();
+        startPoolAvailabilityAlerts();
         startShippingTrackerScheduler();
         startOfficialCarrierTrackingScheduler();
         startCheckoutDmSummaryScheduler({
