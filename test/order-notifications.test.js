@@ -172,7 +172,7 @@ test('one-time notification migration removes historical email-derived order ale
   assert.equal(saved.webhookOnlyNotificationsVersion, 1);
 });
 
-test('quickly cancelled checkout under 24 hours is absent from inbox and sends no cancellation push', async t => {
+test('quickly cancelled checkout under 24 hours sends one cancellation notification', async t => {
   const placed = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
   const f = await fixture(t, [order('quick-cancel', { checkoutAt: placed })]);
   await f.service.subscribe('a', subscription);
@@ -180,8 +180,9 @@ test('quickly cancelled checkout under 24 hours is absent from inbox and sends n
   f.records[0].cancelledAt = new Date().toISOString();
   await f.service.tick();
   await f.service.tick();
-  assert.equal((await f.service.list('a')).length, 0);
-  assert.equal(f.sent.length, 0);
+  assert.equal((await f.service.list('a')).filter(item => item.kind === 'order_cancelled').length, 1);
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].title, 'Target order cancelled');
 });
 
 test('a verified checkout cancelled after 24 hours notifies its owner once, including after restart', async t => {
