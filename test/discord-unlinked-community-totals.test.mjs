@@ -15,7 +15,7 @@ import { planDiscordCommunityHits } from "../discord-hit-mirror-policy.js";
 const server = fs.readFileSync(new URL("../server.js",import.meta.url),"utf8");
 const sourceChannelId = "1532179373292257290";
 const parserStart = server.indexOf("function discordCheckoutFromMessage(");
-const parserEnd = server.indexOf("const DISCORD_HIT_MIRROR_FILE",parserStart);
+const parserEnd = server.indexOf("// Owner-only, read-only original Discord Success recap preview.",parserStart);
 assert.ok(parserStart >= 0 && parserEnd > parserStart);
 
 function parse(message) {
