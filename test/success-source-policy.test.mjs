@@ -192,5 +192,6 @@ test("all Success aggregate and customer endpoints use an authoritative-source f
   assert.ok(server.includes(".filter(record => record.customerAccountId &&"));
   // Customer-owned cancellation dismissal also checks the authorized Discord source.
   assert.equal((server.match(/visibleDiscordSuccessRecords\(/g) || []).length, 6);
-  assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 3);
+  // One additional authorized source check protects the customer hide endpoint.
+  assert.equal((server.match(/\(await discordCheckoutSourceChannels\(\)\)\.channels/g) || []).length, 4);
 });
