@@ -49461,7 +49461,7 @@ app.post(
 app.post("/api/account/success/cancelled/hide", requireCustomer, async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const orderId = req.body?.orderId;
-  if (typeof orderId !== "string" || !/^discord:\\d{17,22}:\\d{17,22}$/.test(orderId))
+  if (typeof orderId !== "string" || !/^discord:\d{17,22}:\d{17,22}$/.test(orderId))
     return res.status(400).json({ error: "Invalid cancelled order." });
   try {
     const accountId = String(req.customerAccount.id);
