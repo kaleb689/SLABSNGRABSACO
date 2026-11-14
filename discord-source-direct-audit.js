@@ -3,7 +3,7 @@
  * Do not post messages, store payloads, emit order numbers, or access website ledgers.
  * Uses only the bot's existing Discord read credentials in server process memory.
  */
-import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord } from "./discord-checkout-identity.js";
+import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord } from "./discord-checkout-identity.js";
 import { isModuleLifecycleDiscordMessage } from "./discord-checkout-event-policy.js";
 import { checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
 import { communityProductKey, communityProductName } from "./community-product-identity.js";
@@ -80,6 +80,7 @@ function summarize(messages, bounds, parseCheckout) {
   const colorCounts = {}, parsedCounts = {}, missingParse = {}, sourceRetailers = {},
     messageAuthorTypes = {}, imageHosts = {}, hourCounts = {};
   const parsedEvents = [];
+  const sourceEvidence = [];
   const rejectedRedShapes = [], fieldKinds = {};
   const fieldKind = (value) => {
     const label=String(value||"").toLowerCase().replace(/[*_`]/g,"").trim();
@@ -99,6 +100,15 @@ function summarize(messages, bounds, parseCheckout) {
     if (isModuleLifecycleDiscordMessage(m)) { if (timestamp < to) moduleLifecycle++; continue; }
     const status = checkoutStatusFromDiscord(m) || "unknown";
     const raw = parseCheckout(m);
+    const transientIdentity=checkoutIdentityFromDiscord(m);
+    const descriptionProduct=safeProduct(checkoutProductFromDiscord(m));
+    sourceEvidence.push({
+      at:timestamp,status,parsed:Boolean(raw),
+      email:transientIdentity.email || "",
+      profile:transientIdentity.profileName || "",
+      product:descriptionProduct ? communityProductKey(descriptionProduct) : "",
+      orderKey:raw?.orderNumber ? "order:"+String(raw.orderNumber).toLowerCase().trim() : ""
+    });
     if (timestamp < to) {
       addCount(colorCounts, status);
       addCount(messageAuthorTypes, m.webhook_id ? "webhook" : "not_webhook");
@@ -173,6 +183,27 @@ function summarize(messages, bounds, parseCheckout) {
     }
     groups.set(event.key,prior);
   }
+  const orphanRedCorrelation=sourceEvidence
+    .filter(item=>!item.parsed && item.status==="cancelled" && item.at<to)
+    .map(red=>{
+      const candidates=sourceEvidence.filter(g=>
+        g.parsed && (g.status==="confirmed" || g.status==="review_hold") &&
+        Boolean(red.email) && g.email===red.email && g.at<=red.at);
+      const byProfile=candidates.filter(g=>Boolean(red.profile) && g.profile===red.profile);
+      const byProduct=candidates.filter(g=>Boolean(red.product) && g.product===red.product);
+      const strict=byProfile.filter(g=>Boolean(red.product) && g.product===red.product);
+      const uniqueKeys=new Set(strict.map(g=>g.orderKey).filter(Boolean));
+      return {
+        greenBySameLogin:candidates.length,
+        greenBySameLoginAndProfile:byProfile.length,
+        greenBySameLoginAndProduct:byProduct.length,
+        strictCandidateEvents:strict.length,
+        strictUniqueOrderNumbers:uniqueKeys.size,
+        strictAlreadyCancelled:[...uniqueKeys].filter(k=>groups.get(k)?.lastStatus==="cancelled").length,
+        strictStillActive:[...uniqueKeys].filter(k=>
+          groups.get(k)?.lastStatus==="confirmed" || groups.get(k)?.lastStatus==="review_hold").length
+      };
+    });
   const cohort=[...groups.values()].filter(g=>{
     const first=g.firstSuccessAt ?? g.firstAt;
     return first>=from && first<to;
@@ -232,6 +263,7 @@ function summarize(messages, bounds, parseCheckout) {
     ignoredMessagesByColor:missingParse,
     fieldKinds,
     rejectedRedShapes,
+    orphanRedCorrelation,
     webhookTypes:messageAuthorTypes,
     retailerFieldsParsed:sourceRetailers,
     missingOrderNumbersInParsed:missingOrderNumber,
