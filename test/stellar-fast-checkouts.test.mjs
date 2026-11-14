@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -9,7 +10,7 @@ import {checkoutAssignmentContains, recoverCheckoutAssignmentOwners} from '../di
 
 const server=readFileSync(new URL('../server.js',import.meta.url),'utf8');
 const checkoutParser=server.slice(server.indexOf('function discordCheckoutFromMessage('),
-  server.indexOf('const DISCORD_HIT_MIRROR_FILE'));
+  server.indexOf('// Owner-only, read-only original Discord Success recap preview.'));
 const sourceChannel='1532179373292257290';
 const sampleEmail='testpkc001@example.test';
 
@@ -28,7 +29,8 @@ function stellarMessage(){
     content:'',embeds:[{color:0x57f287,fields}]};
 }
 function parse(msg){
- const context={msg,sourceChannel,result:null,discordCheckoutIdentity:checkoutIdentityFromDiscord,
+ const context={sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    msg,sourceChannel,result:null,discordCheckoutIdentity:checkoutIdentityFromDiscord,
   checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal:()=>null,
   isModuleLifecycleDiscordMessage,
   publicSuccessProductName:s=>String(s||'').slice(0,240),

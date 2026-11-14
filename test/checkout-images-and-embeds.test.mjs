@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,12 +13,13 @@ import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-polic
 
 const src=readFileSync(new URL("../server.js",import.meta.url),"utf8");
 const start=src.indexOf("function discordCheckoutFromMessage(");
-const end=src.indexOf("const DISCORD_HIT_MIRROR_FILE",start);
+const end=src.indexOf("// Owner-only, read-only original Discord Success recap preview.",start);
 assert.ok(start>0 && end>start);
 const parseSource=src.slice(start,end);
 const channel="1532179373292257290";
 function parse(message) {
-  const scope = {
+  const scope = {sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    
     message,channel,parsed:null,
     discordCheckoutIdentity:checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,

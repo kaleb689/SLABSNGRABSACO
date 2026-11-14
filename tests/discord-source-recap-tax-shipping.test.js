@@ -119,3 +119,49 @@ test("November Target local 3-8 AM window follows Eastern DST offset",()=>{
   assert.equal(easternLocalInstant("2026-11-13",8),TO);
   assert.equal(easternLocalInstant("2026-07-13",3),"2026-07-13T07:00:00.000Z");
 });
+
+test("a late successful checkout is retained even if an earlier tracker snapshot missed it",()=>{
+  const early=webhook({id:"1511111111111111111",order:"TGT00119",price:24.99});
+  const extra=webhook({id:"1511111111111111112",order:"TGT00120",
+    at:"2026-11-13T12:59:00.000Z",price:24.99});
+  const result=recap([early,extra]);
+  assert.equal(result.ordersPlaced,2);
+  assert.equal(result.totalUnits,2);
+  assert.equal(result.totalSpentCents,6546);
+  assert.equal(result.distinctWindowSuccessfulOrderIds,2);
+  assert.equal(result.sourceWindowMessageCount,2);
+});
+
+test("reconciliation distinguishes raw webhooks, distinct attempts, and retained orders",()=>{
+  const first=webhook({id:"1511111111111111113",order:"TGT00121",price:24.99});
+  const repeated=webhook({id:"1511111111111111114",order:"TGT00121",
+    at:"2026-11-13T09:00:00.000Z",price:24.99});
+  const identifiedRed=webhook({id:"1511111111111111115",order:"TGT00122",
+    at:"2026-11-13T10:00:00.000Z",state:"red"});
+  const unidentifiedRed=webhook({id:"1511111111111111116",order:null,
+    at:"2026-11-13T10:01:00.000Z",state:"red"});
+  const late=webhook({id:"1511111111111111117",order:"TGT00123",
+    at:"2026-11-13T12:59:00.000Z",price:24.99});
+  const report=recap([late,first,repeated,identifiedRed,unidentifiedRed]);
+  assert.deepEqual(report.sourceWindowColorMessages,{green:3,orange:0,red:2});
+  assert.equal(report.sourceWindowMessageCount,5);
+  assert.equal(report.distinctWindowSuccessfulOrderIds,2);
+  assert.equal(report.distinctWindowCancelledOrderIds,1);
+  assert.equal(report.distinctWindowAttemptOrderIds,3);
+  assert.equal(report.redOnlyIdentifiedAttempts,1);
+  assert.equal(report.redWithoutOrderIdIgnored,1);
+  assert.equal(report.ordersPlaced,2);
+  assert.equal(report.totalUnits,2);
+});
+
+test("post-window cancellation changes net orders but not in-window source counts",()=>{
+  const kept=webhook({id:"1511111111111111118",order:"TGT00124",price:24.99});
+  const laterRed=webhook({id:"1511111111111111119",order:"TGT00124",
+    at:"2026-11-13T15:00:00.000Z",state:"red"});
+  const report=recap([kept,laterRed]);
+  assert.deepEqual(report.sourceWindowColorMessages,{green:1,orange:0,red:0});
+  assert.equal(report.sourceWindowMessageCount,1);
+  assert.equal(report.distinctWindowSuccessfulOrderIds,1);
+  assert.equal(report.ordersPlaced,0);
+  assert.equal(report.deduplicatedCancelledOrders,1);
+});

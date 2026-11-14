@@ -88,6 +88,10 @@ export function buildDiscordSourceRecap(messages,{
   const selected=retailer==="All"?null:retailerName(retailer);
   if(retailer!=="All"&&!selected)throw Error("Unknown recap retailer");
   const grouped=new Map(),catalog=new Map();
+  // Keep raw Discord messages, identified attempts and retained checkouts
+  // separate; none of these is interchangeable with the other counters.
+  const sourceWindowColorMessages={green:0,orange:0,red:0};
+  const windowSuccessfulOrderIds=new Set(),windowCancelledOrderIds=new Set();
   let redWithoutId=0,greenWithoutId=0,unknownRetailer=0,green=0,orange=0,red=0;
   const ordered=(Array.isArray(messages)?messages:[]).filter(msg=>{
     const at=millis(msg?.timestamp);
@@ -102,14 +106,19 @@ export function buildDiscordSourceRecap(messages,{
     const retailerValue=canonicalRetailer(msg,checkout,channelId);
     if(!retailerValue){if(status!=="cancelled")unknownRetailer++;continue;}
     if(selected&&retailerValue!==selected)continue;
-    if(status==="confirmed")green++;
-    else if(status==="review_hold")orange++;
-    else red++;
+    const at=millis(msg.timestamp);
+    const inWindow=at>=start&&at<end;
+    if(status==="confirmed"){green++;if(inWindow)sourceWindowColorMessages.green++;}
+    else if(status==="review_hold"){orange++;if(inWindow)sourceWindowColorMessages.orange++;}
+    else{red++;if(inWindow)sourceWindowColorMessages.red++;}
     const identity=checkoutIdentityFromDiscord(msg);
     const number=String(identity?.orderNumber||checkout?.orderNumber||"").trim().replace(/^#/,"").toLowerCase();
     if(!number){if(status==="cancelled")redWithoutId++;else if(at>=start&&at<end)greenWithoutId++;continue;}
     const id=retailerValue+":"+number;
-    const at=millis(msg.timestamp);
+    if(inWindow){
+      if(status==="cancelled")windowCancelledOrderIds.add(id);
+      else windowSuccessfulOrderIds.add(id);
+    }
     const items=validItems(checkout?.items);
     const old=grouped.get(id)||{placedAt:null,status:"unverified",items:[],paidCents:null};
     if(status!=="cancelled"){
@@ -199,6 +208,17 @@ export function buildDiscordSourceRecap(messages,{
     periodEndExclusive:new Date(end).toISOString(),
     asOf:new Date(cutoff).toISOString(),
     sourceColorMessages:{green,orange,red},
+    // Within-period event counts are distinct from the all-time-as-of event
+    // counts and the net successful checkouts shown on the recap.
+    sourceWindowColorMessages,
+    sourceWindowMessageCount:Object.values(sourceWindowColorMessages)
+      .reduce((count,n)=>count+n,0),
+    distinctWindowSuccessfulOrderIds:windowSuccessfulOrderIds.size,
+    distinctWindowCancelledOrderIds:windowCancelledOrderIds.size,
+    distinctWindowAttemptOrderIds:new Set([...windowSuccessfulOrderIds,
+      ...windowCancelledOrderIds]).size,
+    redOnlyIdentifiedAttempts:[...windowCancelledOrderIds]
+      .filter(id=>!windowSuccessfulOrderIds.has(id)).length,
     ordersPlaced:valid.length,
     totalUnits:unitMissing?null:units,
     // Displayable spend uses the owner-confirmed tax/shipping rules only when

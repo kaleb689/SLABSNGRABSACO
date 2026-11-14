@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,9 +29,10 @@ const makeMessage = (color, id, timestamp, orderId = "102003802680520") => ({
 function parseLiveWebhook(message) {
   const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
   const start = source.indexOf("function discordCheckoutFromMessage(");
-  const end = source.indexOf("const DISCORD_HIT_MIRROR_FILE", start);
+  const end = source.indexOf("// Owner-only, read-only original Discord Success recap preview.", start);
   assert.ok(start > 0 && end > start, "extract actual production parser");
-  const sandbox = {
+  const sandbox = {sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
     isModuleLifecycleDiscordMessage,
@@ -213,5 +215,7 @@ test("preorder and review hold values parse explicit unit prices in description 
   }
   const message=makeMessage(0x57f287,'1580000000000000301','2026-10-15T18:00:00Z');
   message.embeds[0].fields=[{name:'Price',value:'||$12.99||'}];
-  assert.equal(parseLiveWebhook(message).orderTotal,25.98);
+  // Original Success source labels bare Price as the extended line amount;
+  // multiplying quantity again would overstate this two-unit checkout.
+  assert.equal(parseLiveWebhook(message).orderTotal,12.99);
 });
