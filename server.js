@@ -1,4 +1,5 @@
 import { auditSlabsNGrabsTCSuccess } from "./discord-source-direct-audit.js";
+import { sourcePriceIsLineTotal, retailerFromTrustedSourceImage } from "./discord-source-price-field-policy.js";
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
@@ -38735,7 +38736,14 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
       .match(/(?:^|\n)\s*(?:unit price|item price|price)\s*(?::\s*|\n\s*)([^\n]+)/i)?.[1];
     numbered.set("1", { product: priceMatch ? rawItem.slice(0, priceMatch.index) : rawItem,
       quantity: fieldValue(quantityField?.value) || descriptionQuantity || "",
-      price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice, priceIsLineTotal: Boolean(priceMatch) });
+      price: priceMatch?.[1] || fieldValue(priceField?.value) || descriptionPrice,
+      // SLABSNGRABSTC #success uses "Price" as the combined line price
+      // for 2-unit orders. Do not double it. Explicit Unit Price stays per-unit.
+      priceIsLineTotal: Boolean(priceMatch) || sourcePriceIsLineTotal({
+        channelId,
+        fieldLabel: priceField?.name,
+        quantity: fieldValue(quantityField?.value) || descriptionQuantity || ""
+      }) });
   }
   // A thumbnail on a one-item embed belongs ONLY to that item.
   if (numbered.size === 1 && messageImageUrl)
@@ -38878,7 +38886,11 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
     // for a transient owner lookup and is never copied into this stored record.
     orderNumber: identity.orderNumber,
     sourceProfileLabel: identity.profileName,
-    retailer: normalizeSuccessRetailer(retailer),
+    retailer: normalizeSuccessRetailer(retailerFromTrustedSourceImage({
+      channelId,
+      retailerLabel: retailer,
+      imageUrl: messageImageUrl
+    })),
     checkoutAt: eventAt, statusUpdatedAt: eventAt,
     ...(status === "cancelled" ? { cancelledAt: eventAt } : {}),
     orderTotal: paidTotal !== null ? paidTotal : completePrices ? subtotalCents / 100 : 0,
