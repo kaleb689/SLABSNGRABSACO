@@ -99,14 +99,14 @@ export function buildDiscordSourceRecap(messages,{
     let checkout=null;
     try{checkout=parseCheckout(msg,String(channelId));}catch{/* Do not infer an order. */}
     const retailerValue=canonicalRetailer(msg,checkout,channelId);
-    if(!retailerValue){unknownRetailer++;continue;}
+    if(!retailerValue){if(status!=="cancelled")unknownRetailer++;continue;}
     if(selected&&retailerValue!==selected)continue;
     if(status==="confirmed")green++;
     else if(status==="review_hold")orange++;
     else red++;
     const identity=checkoutIdentityFromDiscord(msg);
     const number=String(identity?.orderNumber||checkout?.orderNumber||"").trim().replace(/^#/,"").toLowerCase();
-    if(!number){if(status==="cancelled")redWithoutId++;else greenWithoutId++;continue;}
+    if(!number){if(status==="cancelled")redWithoutId++;else if(at>=start&&at<end)greenWithoutId++;continue;}
     const id=retailerValue+":"+number;
     const at=millis(msg.timestamp);
     const items=validItems(checkout?.items);
@@ -187,7 +187,7 @@ export function buildDiscordSourceRecap(messages,{
       ...(unitMissing?["missing_item_quantities"]:[]),
       ...(greenWithoutId?["green_or_orange_missing_order_id"]:[]),
       ...(unknownRetailer?["unknown_retailer"]:[]),
-      ...(!valid.length?["no_success_orders"]:[{}/**/].slice(0,0))
+      ...(!valid.length?["no_success_orders"]:[])
     ]
   };
 }
