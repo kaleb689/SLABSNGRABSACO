@@ -127,7 +127,7 @@
                 const text=prompt("To confirm a "+amount+" Stripe refund, type REFUND:");
                 if(text!=="REFUND"){message(root,"Refund not submitted.");return;}
                 const result=await post("/api/admin/membership-extensions/refunds/"+
-                  encodeURIComponent(item.id),{mode,confirmed:true});
+                  encodeURIComponent(item.id),{mode,confirmed:true,expectedAmountCents:quote.refundCents});
                 message(root,"Refund "+result.refundStatus+": "+money(result.refundCents)+
                   ". Stripe reference: "+result.refundId);
                 lastData=null;await renderPurchases(root,true);
