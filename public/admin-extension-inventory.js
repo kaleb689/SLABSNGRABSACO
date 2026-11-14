@@ -40,7 +40,8 @@
       let chip=document.getElementById("sng-pool-alert-badge");
       if(!chip&&mobile){chip=el("span","","sng-pool-alert-badge");
         chip.id="sng-pool-alert-badge";document.querySelector("header")?.append(chip);}
-      if(chip){chip.textContent=attention.length?attention.length+" LOW POOLS":"";chip.hidden=!attention.length;}
+      if(chip){const label=attention.length?attention.length+" LOW POOLS":"";
+        if(chip.textContent!==label)chip.textContent=label;chip.hidden=!attention.length;}
       return lastData;
     }finally{readBusy=false;}
   }
@@ -104,12 +105,12 @@
       if(!purchases.length)textRow(list,"No prepaid extension purchases yet.");
       for(const item of purchases){
         const row=el("div",null,"sng-extension-purchase");
-        textRow(row,(item.customerAccountId||"Customer")+" · "+item.months+" month(s) · "+
+        textRow(row,(item.customerEmail||item.customerAccountId||"Customer")+" · "+item.months+" month(s) · "+
           money(item.amountCents),"strong");
         textRow(row,(item.discountCode?item.discountCode+" · ":"")+
           "Paid "+when(item.paidAt)+" · Term through "+when(item.renewalAt)+
           (item.status==="refunded"?" · Refunded "+money(item.refundCents):""));
-        if(item.status==="completed"){
+        if(item.status==="completed"||item.status==="refunding"){
           for(const mode of ["full","unused"]){
             const button=addAction(row,mode==="full"?"Full refund":"Refund unused time",async()=>{
               button.disabled=true;message(root,"Checking exact refund amount and Stripe term…");
