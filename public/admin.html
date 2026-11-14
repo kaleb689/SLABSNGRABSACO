@@ -5714,18 +5714,23 @@ PAID SUBSCRIPTIONS
         <label>Visibility<br><select name="audience"><option value="code">Shareable code</option><option value="private">One user's code</option><option value="og">All OG Members</option><option value="sitewide">Sitewide membership sale</option></select></label>
         <label>User's account email (for one user's code)<br><input name="recipientEmail" type="email" placeholder="user@example.com"></label>
         <label>Code<br><input name="code" required minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" placeholder="CARD20"></label>
+        <label>Promotion label<br><input name="discountLabel" maxlength="100" placeholder="Thanksgiving extension sale"></label>
+        <label>Valid for<br><select name="discountScope"><option value="extension" selected>Membership extensions only</option><option value="both">New memberships and extensions</option><option value="signup">New memberships only</option></select></label>
+        <label>Discount applies to extension months<br><input name="extensionDiscountMonths" type="text" value="all" pattern="all|[0-9]+" placeholder="all or number of months" title="Enter all to discount every purchased month, or a number such as 3"></label>
         <label>Discount type<br><select name="discountType"><option value="percent">Percentage off</option><option value="fixed-price">Set membership price</option></select></label>
         <label data-discount-percent>Discount %<br><input name="percent" type="number" min="1" max="100" required style="width:90px"></label>
         <label data-discount-fixed hidden>New tier price ($)<br><input name="fixedPrice" type="number" min="0.01" step="0.01" placeholder="e.g. 50.00" style="width:110px"></label>
         <label>Tier<br><select name="tier"><option value="all">All tiers</option><option value="1">Starter</option><option value="2">Intermediate</option><option value="3">Advanced</option><option value="4">Pro</option><option value="5">High Volume</option><option value="6">Power User</option><option value="7">Elite</option><option value="8">Ultimate</option></select></label>
         <label>Maximum uses (optional)<br><input name="maxUses" type="number" min="1" max="100000" step="1" placeholder="Unlimited" style="width:110px"></label>
         <label>Membership discount<br><select name="duration"><option value="once">First payment</option><option value="repeating">Limited months</option><option value="forever">Every renewal</option></select></label><label>Discount months (when limited)<br><input type="number" name="durationMonths" min="1" max="36" step="1" placeholder="e.g. 3" style="width:100px"></label>
-        <label>Expires<br><input name="expiresAt" type="date"></label>
+        <label>Promotion starts (local time)<br><input name="startsAt" type="datetime-local"></label>
+        <label>Promotion expires (local time)<br><input name="expiresAt" type="datetime-local"></label>
         <label><input name="appliesToRentals" type="checkbox"> Include rentals</label>
         <button type="submit" class="admin-edit-button">Create code</button>
         <button type="button" id="cancelDiscountEdit" class="admin-edit-button" hidden>Cancel edit</button>
       </form>
-      <p>Choose <strong>Set membership price</strong> to charge an exact discounted dollar amount for one membership tier. Set a <strong>Maximum uses</strong> to cap total customer redemptions (blank = unlimited); renewals of subscriptions already using the code do not count again. Edits and deletion affect new checkouts, not subscriptions already discounted.</p>
+      <p>For Thanksgiving, choose <strong>Membership extensions only</strong>, enter a label and percentage, set <strong>all</strong> for every month purchased, and choose the exact start and expiration times. Extension discounts apply to the prepaid purchase only, not the customer's recurring monthly rate.</p>
+       <p>Choose <strong>Set membership price</strong> to charge an exact discounted dollar amount for one membership tier. Set a <strong>Maximum uses</strong> to cap total customer redemptions (blank = unlimited); renewals of subscriptions already using the code do not count again. Edits and deletion affect new checkouts, not subscriptions already discounted.</p>
       <div id="discountCodeFeedback" role="status"></div>
       <div id="discountCodeList"></div>
     </details>
@@ -7162,7 +7167,8 @@ function renderOrder(x) {
   >
     ${escapeHtml(subscriptionState.label)}
   </span>
-  <button type="button" class="admin-edit-button" data-admin-extend-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Extend membership and defer Stripe renewal">EXTEND</button></div>
+  <button type="button" class="admin-edit-button" data-admin-extend-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Extend membership and defer Stripe renewal">EXTEND</button>
+   <button type="button" class="admin-edit-button" data-admin-cancel-membership="${escapeHtml(x.customerAccountId || x.id)}" title="Cancel membership renewal">CANCEL</button></div>
 
   <div class="order-status-subline">
     ${escapeHtml(activeThrough)}
@@ -24099,7 +24105,7 @@ async function loadMembershipTools() {
     discountList.replaceChildren();
     for (const discount of (discountData.codes || []).slice().reverse()) {
       const row = document.createElement("p");
-      row.textContent = `${discount.code} · ${discount.discountType === "fixed-price" ? "$" + Number(discount.fixedPrice).toFixed(2) + "/month" : discount.percent + "% off"} · ${discount.sitewide ? "Sitewide sale" : discount.ogOnly ? "All OG Members" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : discount.duration === "repeating" ? `${discount.durationMonths} monthly payments` : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.maxUses != null ? (discount.redemptions ?? "?") + "/" + discount.maxUses + " uses" : "Unlimited uses"} · ${discount.active ? "Active" : "Inactive"} `;
+      row.textContent = `${discount.discountLabel ? discount.discountLabel + " · " : ""}${discount.code} · ${discount.discountScope === "extension" ? "Extensions only" : discount.discountScope === "both" ? "New + extensions" : "New memberships"} · ${discount.discountType === "fixed-price" ? "$" + Number(discount.fixedPrice).toFixed(2) + "/month" : discount.percent + "% off"} · ${discount.sitewide ? "Sitewide sale" : discount.ogOnly ? "All OG Members" : discount.recipientEmail ? "Only " + discount.recipientEmail : "Shareable code"} · ${discount.tier === "all" ? "All tiers" : "Tier " + discount.tier} · ${discount.duration === "forever" ? "Every renewal" : discount.duration === "repeating" ? `${discount.durationMonths} monthly payments` : "First payment"}${discount.appliesToRentals ? " + rentals" : ""} · ${discount.maxUses != null ? (discount.redemptions ?? "?") + "/" + discount.maxUses + " uses" : "Unlimited uses"} · ${discount.startsAt ? " · Starts " + new Date(discount.startsAt).toLocaleString() : ""}${discount.expiresAt ? " · Ends " + new Date(discount.expiresAt).toLocaleString() : ""} · ${discount.active ? "Active" : "Inactive"} `;
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = discount.active ? "Deactivate" : "Activate";
@@ -24121,13 +24127,15 @@ async function loadMembershipTools() {
       edit.onclick = () => {
         const form = document.getElementById("discountCodeForm");
         form.dataset.editId = discount.id;
-        for (const name of ["code", "percent", "tier", "duration", "recipientEmail"]) form.elements.namedItem(name).value = discount[name] ?? "";
+        for (const name of ["code", "percent", "tier", "duration", "recipientEmail", "discountLabel", "discountScope"]) form.elements.namedItem(name).value = discount[name] ?? "";
         form.elements.namedItem("durationMonths").value = discount.durationMonths ?? "";
+        form.elements.namedItem("extensionDiscountMonths").value = discount.extensionDiscountMonths ?? "all";
+        form.elements.namedItem("startsAt").value = discount.startsAt ? toLocalDateTime(discount.startsAt) : "";
         form.elements.namedItem("discountType").value = discount.discountType || "percent";
         form.elements.namedItem("fixedPrice").value = discount.fixedPrice ?? "";
         form.elements.namedItem("maxUses").value = discount.maxUses ?? "";
         syncDiscountFields(form);
-        form.elements.namedItem("expiresAt").value = discount.expiresAt?.slice(0, 10) || "";
+        form.elements.namedItem("expiresAt").value = discount.expiresAt ? toLocalDateTime(discount.expiresAt) : "";
         form.elements.namedItem("appliesToRentals").checked = discount.appliesToRentals === true;
         form.elements.namedItem("audience").value = discount.sitewide ? "sitewide" : discount.ogOnly ? "og" : discount.recipientEmail ? "private" : "code";
         form.querySelector('[type="submit"]').textContent = "Save changes";
@@ -24307,6 +24315,11 @@ document.getElementById("giftTierForm")?.addEventListener("submit", async event 
   finally { button.disabled = false; }
 });
 
+function toLocalDateTime(iso) {
+  const date=new Date(iso);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset()*60000).toISOString().slice(0,16);
+}
 function syncDiscountFields(form) {
   const fixed = form.elements.namedItem("discountType").value === "fixed-price";
   const percentField = form.elements.namedItem("percent");
@@ -24348,18 +24361,23 @@ document.getElementById("discountCodeForm")?.addEventListener("submit", async ev
   button.disabled = true;
   try {
     const fields = new FormData(form);
+    const startAt = fields.get("startsAt") ? new Date(fields.get("startsAt")).toISOString() : null;
+    const expirationAt = fields.get("expiresAt") ? new Date(fields.get("expiresAt")).toISOString() : null;
     if (fields.get("audience") === "private" && !String(fields.get("recipientEmail") || "").trim()) throw new Error("Enter the user's account email for their private code.");
     const data = await membershipApi(form.dataset.editId ? `/api/admin/discount-codes/${encodeURIComponent(form.dataset.editId)}` : "/api/admin/discount-codes", {
       method: form.dataset.editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code: fields.get("code"), percent: Number(fields.get("percent")), tier: fields.get("tier"),
+        discountLabel:fields.get("discountLabel"),discountScope:fields.get("discountScope"),
+        extensionDiscountMonths:fields.get("extensionDiscountMonths") || "all",
+        startsAt:startAt,
         discountType: fields.get("discountType"),
         fixedPrice: fields.get("discountType") === "fixed-price" ? Number(fields.get("fixedPrice")) : null,
         maxUses: fields.get("maxUses") ? Number(fields.get("maxUses")) : null,
         sitewide: fields.get("audience") === "sitewide",
         ogOnly: fields.get("audience") === "og",
         recipientEmail: fields.get("audience") === "private" ? fields.get("recipientEmail") : null,
-        expiresAt: fields.get("expiresAt") || null, duration: fields.get("duration"), durationMonths: fields.get("durationMonths") ? Number(fields.get("durationMonths")) : null, appliesToRentals: fields.has("appliesToRentals")
+        expiresAt: expirationAt, duration: fields.get("duration"), durationMonths: fields.get("durationMonths") ? Number(fields.get("durationMonths")) : null, appliesToRentals: fields.has("appliesToRentals")
       })
     });
     feedback.textContent = `${data.discount.code} is ready for Stripe Checkout.`;
@@ -24719,5 +24737,6 @@ document.addEventListener("click", event => {
 <script>
   window.SNGOperatorImapHealth?.mount(document.getElementById("operator-imap-health-desktop-root"));
 </script>
+<script src="/admin-extension-inventory.js?v=20261114"></script>
 </body>
 </html>
