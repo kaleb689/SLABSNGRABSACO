@@ -1,3 +1,4 @@
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -19,7 +20,8 @@ const parserEnd = server.indexOf("// Owner-only, read-only original Discord Succ
 assert.ok(parserStart >= 0 && parserEnd > parserStart);
 
 function parse(message) {
-  const scope = {
+  const scope = {sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
+    
     message, channelId: sourceChannelId, result: null,
     checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord,
     checkoutExplicitPaidTotal,
