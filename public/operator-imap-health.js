@@ -14,7 +14,7 @@
   const reasonText={
     authentication_failed:"Authentication failed — verify this inbox's app password.",
     connection_timeout:"Connection timed out — check provider availability and IMAP settings.",
-    connection_closed:"Connection closed unexpectedly.",
+    connection_closed:"Inbox connection closed before the scan finished. Try Test connection. If it repeats, verify Gmail IMAP and the app password in Render.",
     tls_failed:"Secure IMAP connection failed.",
     dns_failed:"IMAP host could not be reached.",
     unsupported_provider:"This provider is not supported.",
@@ -39,7 +39,10 @@
       throw error;
     }
     const data=await response.json().catch(()=>({}));
+    if(response.status===401||response.status===403)
+      throw Error("Admin session expired or access denied. Sign in again to manage IMAP Health.");
     if(!response.ok)throw Error(data.error||"The IMAP request failed.");
+    if(data.ok!==true)throw Error("IMAP Health did not return valid data. Refresh or sign in again.");
     return data;
   }
   const url="/api/admin/imap-health";
