@@ -153,7 +153,7 @@
           " · "+code.percent+"% off · "+(code.extensionDiscountMonths||"all")+" discounted months"+
           " · "+(code.startsAt?"from "+when(code.startsAt):"available immediately")+
           " · "+(code.expiresAt?"until "+when(code.expiresAt):"no expiry")+
-          " · "+(code.active?"Active":"Inactive"));
+          " · "+(code.active ? (code.startsAt && Date.parse(code.startsAt)>Date.now() ? "Scheduled" : code.expiresAt && Date.parse(code.expiresAt)<=Date.now() ? "Expired" : "Active") : "Inactive"));
       }
     }catch(error){message(root,error.message);}
   }
