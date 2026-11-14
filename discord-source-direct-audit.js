@@ -7,6 +7,7 @@ import { checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProduct
 import { isModuleLifecycleDiscordMessage } from "./discord-checkout-event-policy.js";
 import { checkoutExplicitPaidTotal } from "./checkout-price-policy.js";
 import { communityProductKey, communityProductName } from "./community-product-identity.js";
+import {buildDiscordSourceRecap} from "./discord-source-recap-report.js";
 
 const MARK = "DIRECT_DISCORD_SLABSNGRABSTC_AUDIT_20261113";
 const GUILD_KEY = "slabsngrabstc";
@@ -429,6 +430,12 @@ export async function auditSlabsNGrabsTCSuccess({ token, parseCheckout }={}) {
         const parseCheckoutSafe=message=>{
           try{return parseCheckout(message,String(channel.id))}catch{return null}
         };
+        const ownerRuleReport=buildDiscordSourceRecap(messages,{
+          channelId:String(channel.id),from:new Date(DROP_START).toISOString(),
+          toExclusive:new Date(DROP_END).toISOString(),asOf:Date.now(),
+          retailer:"Target",parseCheckout:parseCheckoutSafe,historyComplete:complete
+        });
+        console.log(MARK+"_RULE_TOTAL "+JSON.stringify(ownerRuleReport));
         console.log(MARK+"_RESULT "+JSON.stringify({
           guild:target[0].name,
           channel:channel.name,
