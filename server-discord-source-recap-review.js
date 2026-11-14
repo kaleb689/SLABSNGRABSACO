@@ -126,12 +126,17 @@ export function registerDirectSourceRecapReview({app,requireAdmin,parseCheckout,
         ...report,
         mode:selection.mode,
         partialPeriod:selection.partial,
-        readyToPublish:report.readyToPublish&&!selection.partial,
+        calculationReadyForReview:report.readyToPublish&&!selection.partial,
+        // No automatic publication: only the owner may approve a final post.
+        // The source audit never creates, schedules, or sends Discord messages.
+        readyToPublish:false,
+        ownerApprovalRequired:true,
         sourceScan:{pages:historical.pages,
           checkedMessages:historical.messages.length,
           reachedWindowStart:historical.historyComplete},
         blockedReasons:[...report.blockedReasons,
-          ...(selection.partial?["unfinished_calendar_month"]:[])]
+          ...(selection.partial?["unfinished_calendar_month"]:[]),
+          "owner_approval_pending"]
       });
     }catch(error){
       const status=/Discord.*HTTP 401|Discord.*HTTP 403/.test(String(error.message||""))
