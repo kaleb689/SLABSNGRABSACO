@@ -194,7 +194,8 @@ export function createDiscordDropRecapController({
           "The verified "+spec.name+" drop recap has been posted.",
         sourceUrl:link,retailer:record.retailer,tab:"drops"},
         eventKey:"drop:"+record.id+":"+kind,messageId:message.id});
-    }catch(error){console.error("Drop mobile alert:",error?.message||"unavailable");}
+      return true;
+    }catch(error){console.error("Drop mobile alert:",error?.message||"unavailable");return false;}
   }
   async function startRetailer(retailer){
     return serialized(async()=>{
@@ -222,7 +223,8 @@ export function createDiscordDropRecapController({
       }
       record.status="scheduled";record.liveMessageId=String(posted.id);
       await save(data);
-      await notify("live",record,posted);
+      record.liveAppDelivered=await notify("live",record,posted);
+      await save(data);
       return record;
     });
   }
@@ -245,6 +247,20 @@ export function createDiscordDropRecapController({
       for(const record of data.drops.filter(d=>["posting","posting_error","publishing","publishing_error"].includes(d.status))){
         try{await reconcileAmbiguous(record,data);}
         catch(error){console.error("Drop post reconciliation:",error?.message);}
+      }
+      // Retry only the app leg of a previously posted Discord event.
+      // The persistent app inbox deduplicates per drop/recipient on restart.
+      for(const record of data.drops){
+        let changed=false;
+        if(record.liveMessageId&&!record.liveAppDelivered){
+          record.liveAppDelivered=await notify("live",record,{id:record.liveMessageId});
+          changed=true;
+        }
+        if(record.recapMessageId&&!record.recapAppDelivered){
+          record.recapAppDelivered=await notify("recap",record,{id:record.recapMessageId});
+          changed=true;
+        }
+        if(changed)await save(data);
       }
       for(const record of data.drops.filter(d=>["scheduled","blocked"].includes(d.status)&&
         Date.parse(d.dueAt)<=time&&(!d.retryAt||Date.parse(d.retryAt)<=time))){
@@ -296,7 +312,8 @@ export function createDiscordDropRecapController({
         record.recapMessageId=String(posted.id);
         record.postedAt=stamp(now());
         await save(data);
-        await notify("recap",record,posted);
+        record.recapAppDelivered=await notify("recap",record,posted);
+        await save(data);
       }
     });
   }
