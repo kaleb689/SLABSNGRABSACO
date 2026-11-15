@@ -188,7 +188,7 @@ export function createDiscordDropRecapController({
     const spec=DROP_RECAP_RETAILERS[record.retailer];
     const link="https://discord.com/channels/"+guildId+"/"+generalChannelId+"/"+message.id;
     try{
-      await onDropNotification({notification:{kind:"drop_announcement",retailers:[record.retailer],
+      await onDropNotification({notification:{kind:"drop_broadcast",eventType:kind,retailers:[record.retailer],
         title:kind==="live"?"DROP IS LIVE — "+spec.name:"DROP RECAP — "+spec.name,
         message:kind==="live"?"The "+spec.name+" drop is live. Recap in 12 hours.":
           "The verified "+spec.name+" drop recap has been posted.",
