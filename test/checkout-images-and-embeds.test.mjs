@@ -12,7 +12,8 @@ import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-polic
 
 const src=readFileSync(new URL("../server.js",import.meta.url),"utf8");
 const start=src.indexOf("function discordCheckoutFromMessage(");
-const end=src.indexOf("const DISCORD_HIT_MIRROR_FILE",start);
+// Parse only the pure checkout parser section; skip the live recap route registration.
+const end=src.indexOf("registerDirectSourceRecapReview({",start);
 assert.ok(start>0 && end>start);
 const parseSource=src.slice(start,end);
 const channel="1532179373292257290";
