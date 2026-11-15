@@ -82,7 +82,8 @@ test("Dashboard remains a single summarized message; full list and management pa
   const view=targetMasterView(master,1);
   assert.equal(view.flags,64);
   assert.ok(view.embeds[0].description.length<4096);
-  assert.equal((view.embeds[0].description.match(/\n/g)||[]).length,14);
+  // Each of the 15 visible SKUs includes a second price line (29 line breaks).
+  assert.equal((view.embeds[0].description.match(/\n/g)||[]).length,29);
   const manage=targetMasterManage(master,1);
   const selector=manage.components[0].components[0];
   assert.equal(selector.type,3);
