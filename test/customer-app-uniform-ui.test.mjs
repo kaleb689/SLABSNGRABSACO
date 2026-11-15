@@ -16,9 +16,11 @@ test("approved customer app stylesheet loads after premium controls", () => {
   assert.match(page, /src="\/app-dashboard\.js\?v=\d{8}-[a-z0-9-]+"/);
 });
 
-test("six navigation tiles have real spacing and readable labels", () => {
-  assert.match(dashboard, /const navLabels = \['home', 'success', 'tracking', 'profile', 'products', 'history'\]/);
+test("Customer navigation tiles have real spacing and readable labels", () => {
+  assert.match(dashboard, /const navLabels = \['home', 'success', 'tracking', 'profile', 'products', 'history'(?:, 'messages')?\]/);
   assert.match(style, /\.sng-app-nav \{\s*grid-template-columns:repeat\(6,minmax\(0,1fr\)\);\s*gap:/);
+  const messagesStyle=readFileSync(new URL('../public/app-messages.css',import.meta.url),'utf8');
+  assert.match(messagesStyle,/grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/);
   assert.match(style, /\.sng-app-nav > button span \{[^}]*font-size:clamp\(9px/);
   assert.match(style, /@media\(max-width:360px\)/);
 });
