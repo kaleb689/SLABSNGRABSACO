@@ -249,3 +249,18 @@ test('Email Bank batch rendering initiates retry after delayed unlock',()=>{
  assert.match(html,/id="randomMailCredentialsCheckBackups"/);
  assert.match(html,/id="randomMailBackupRestore"/);
 });
+
+test('Diagnose One Unverified Email sends exactly one test and leaves other saved aliases untouched',async()=>{
+ const rows=Array.from({length:800},(_,i)=>({alias:'onecheck'+i+'@sng.sarl',randomGenerated:true,batchId:'recent',target:'inbox@gmail.com',status:'draft'}));
+ const h=harness(rows,[{mailbox:'inbox@gmail.com',sender:'different.sender@gmail.com'}]);
+ await h.ctx.run({all:true,limit:1});
+ assert.equal(h.ctx.testState.total,1);
+ assert.equal(h.ctx.testState.done,1);
+ assert.equal(h.calls.length,1);
+ assert.equal(h.calls[0].aliases.length,1);
+ assert.equal(h.ctx.testState.passed,1);
+ assert.equal(rows.filter(r=>r.forwardingTestedAt).length,1);
+ assert.equal(rows.filter(r=>r.status==='draft').length,799);
+ assert.match(html,/id="randomAliasTestOne"/);
+ assert.match(app,/runAutomaticEmailTests\(\{limit:1\}\)/);
+});
