@@ -192,10 +192,14 @@
  async function runAutomaticEmailTests({batchId=null,all=false,automatic=false}={}){
   if(mailTestState.active||mailTestState.starting||randomGenBusy){
    if(automatic&&batchId)mailTestState.autoPendingBatch=batchId;
+   else if(!automatic)mailUIElement('randomTestStatus').textContent='A test or email generation is already running. Stop or finish it before starting another batch.';
    return;
   }
+  mailTestState.total=0;mailTestState.done=0;mailTestState.passed=0;mailTestState.failed=0;mailTestState.unconfirmed=0;
+  mailTestState.recent=[];mailTestState.paused=false;
+  renderAutoTestProgress();
   mailTestState.starting=true;
-  let profileBuckets=new Map(),missing=new Set(),total=0;
+  let profileBuckets=new Map(),missing=new Set(),total=0,skippedRouting=0,skippedAlreadyVerified=0;
   try{
    requireOwner();
    if(!unlocked)return;
@@ -204,6 +208,8 @@
    const unverifiedAll=(batch?batch.rows:records).filter(r=>r.randomGenerated===true&&
     (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target));
    const candidates=collectTestCandidates({batchId,all});
+   skippedRouting=unverifiedAll.filter(r=>validEmail(r.target)&&!catchallForMailbox(r.target)&&r.status!=='live').length;
+   skippedAlreadyVerified=(batch?batch.rows:records).filter(r=>r.randomGenerated===true&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
    for(const row of candidates){
     const selected=findSavedMailPair(row.target);
     if(!selected){missing.add(row.target);continue;}
@@ -216,10 +222,12 @@
     const status=mailUIElement('randomTestStatus');
     if(unverifiedAll.length){
      const targets=[...new Set(unverifiedAll.map(r=>r.target))];
-     status.textContent='Automatic test pending for '+unverifiedAll.length+' emails. Save a matching sender and receiver app-password pair and confirm catch-all forwarding for draft addresses. Inbox(es): '+targets.join(', ')+'.';
+     status.textContent='NO EMAILS TESTED. '+unverifiedAll.length+' unverified email(s), '+skippedRouting+
+      ' draft(s) excluded because catch-all testing is not enabled for their forwarding receiver. '+
+      'Choose the correct batch, verify its destination and saved sender/receiver configuration, then confirm Cloudflare catch-all is ACTIVE before checking the catch-all box. Inbox(es): '+targets.join(', ')+'.';
      mailUIElement('randomTestSettings').open=true;
      if(batchId)mailTestState.autoPendingBatch=batchId;
-    }else status.textContent='All eligible saved addresses are already delivery verified.';
+    }else status.textContent='No emails tested. All saved addresses in this selection are already delivery verified.';
     return;
    }
   }catch(error){
@@ -238,7 +246,9 @@
   mailTestState.paused=false;mailTestState.cleanupPending=0;
   for(const bucket of profileBuckets.values())for(const row of bucket.rows)mailTestState.statuses.set(String(row.alias).toLowerCase(),'pending');
   const status=mailUIElement('randomTestStatus'),stop=mailUIElement('randomAliasTestStop');
-  stop.hidden=false;status.textContent='Testing '+total+' addresses automatically. Confirmed receipts are green; SMTP send errors are red; messages not found in Inbox are amber. A short preflight checks routing before bulk testing.';
+  stop.hidden=false;status.textContent='Testing '+total+' eligible addresses automatically. '+skippedRouting+
+   ' draft(s) skipped because catch-all testing is not enabled; '+missing.size+' forwarding inbox(es) lack saved login pairs. '+
+   'Confirmed receipts are green; SMTP errors red; missing Inbox receipts amber. A preflight checks routing before bulk testing.';
   renderAutoTestProgress();
   const stopTest=()=>mailTestState.cancel=true;
   try{
@@ -273,7 +283,7 @@
      if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
      // Persist after each 25; do not rebuild the 10,000-row bank table on each result.
      refreshEmailBatchUI();
-     if(preflight&&Number(response.delivered||0)===0&&Number(response.sentButUnconfirmed||0)>0){
+     if(preflight&&Number(response.delivered||0)===0){
       mailTestState.paused=true;
       status.textContent='Paused after '+set.length+' preflight messages: NONE reached '+profile.mailbox+' Inbox. '+
        'Check Cloudflare catch-all is Active, with Send to an email and destination '+profile.mailbox+'. '+
@@ -293,6 +303,7 @@
    if(!mailTestState.paused){
     status.textContent=(mailTestState.cancel?'Stopped after current group. ':'Finished automated testing. ')+
       mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
+      ' Skipped '+skippedRouting+' draft(s) without catch-all testing enabled, '+skippedAlreadyVerified+' already verified.'+
       (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
@@ -324,9 +335,11 @@
   mailUIElement('randomAliasTestAll').addEventListener('click',()=>void runAutomaticEmailTests({all:true}));
   mailUIElement('randomAliasTestBatch').addEventListener('click',()=>{
    const group=emailBatchCurrentGroup();
-   if(!group)return;
-   // Legacy time-based batches are addressed by the current selection.
-   void runAutomaticEmailTests({all:false});
+   if(!group){mailUIElement('randomTestStatus').textContent='Choose a batch to test first.';return;}
+   // The picker in the test section and the lower batch-manager picker share emailBatchState.
+   // Exact generation batches use an ID; legacy time-grouped batches use the selected group.
+   if(group.key.startsWith('batch:'))void runAutomaticEmailTests({batchId:group.key.slice(6)});
+   else void runAutomaticEmailTests({all:false});
   });
   mailUIElement('randomAliasTestStop').addEventListener('click',()=>{
    mailTestState.cancel=true;
