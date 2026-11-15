@@ -158,8 +158,12 @@
  </div>
 
  <section id="emailBatchSingleDeleteArea" style="margin-top:14px;padding:12px;border:1px solid #705358;border-radius:10px">
-  <div class="buttons" style="justify-content:space-between;align-items:center"><strong style="font-size:13px">Remove one failed / unwanted email</strong><button type="button" class="btn slim danger" id="emailBatchRemoveOneReview">Remove One Selected Email...</button></div>
-  <p class="tiny" style="margin-top:6px">Select exactly one generated email in the batch list above. Only unassigned emails can be removed here; existing profile cards, security codes, addresses and retailer accounts are never deleted. For an email attached to a profile, use Profiles → Replace email from unused pool instead. Published Cloudflare routes must be handled separately.</p>
+  <strong style="font-size:13px">Remove one failed / unwanted email</strong>
+  <label for="emailBatchRemoveOneExact" class="tiny" style="display:block;margin:9px 0 4px">Enter the exact email address to remove (from any batch, including manually saved emails)</label>
+  <input id="emailBatchRemoveOneExact" type="email" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="name@sng.sarl" aria-label="Exact Email Bank address to remove" style="width:100%;margin-bottom:7px">
+  <div class="buttons"><button type="button" class="btn slim danger" id="emailBatchRemoveOneReview">Review removal of this email</button></div>
+  <p id="emailBatchRemoveOneStatus" class="tiny" aria-live="polite" role="status" style="margin:7px 0;color:#ffbaab">Enter the full email above, or leave it blank and select exactly one checkbox in the batch list. The failed email does not have to be in the currently selected batch.</p>
+  <p class="tiny" style="margin-top:6px">Only removes a LOCAL Email Bank record, not a live retailer profile, card, address or security code. Profiles already assigned to a retailer must be updated from Profiles. Cloudflare routing must be removed separately.</p>
   <div id="emailBatchRemoveOneConfirmArea" hidden style="margin-top:9px;border:1px solid #cf7569;padding:11px;border-radius:8px">
    <p id="emailBatchRemoveOneSummary" class="tiny" style="margin-bottom:8px;color:#ffb6b4"></p>
    <label class="tiny" style="display:block;margin:6px 0">Type DELETE to confirm<input type="text" id="emailBatchRemoveOneTyped" autocomplete="off" placeholder="DELETE" style="width:100%"></label>
