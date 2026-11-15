@@ -26,9 +26,19 @@
   <label for="randomTestBatchSelect" class="tiny" style="display:block;margin:9px 0 4px">Choose batch to test (newest first)</label>
   <select id="randomTestBatchSelect" aria-label="Choose exact generated email batch to test" style="width:100%;margin-bottom:7px"><option value="">Unlock the Email Bank to choose a batch</option></select>
   <p id="randomTestBatchMeta" class="tiny" role="status" style="margin:2px 0 9px">Each batch can be tested independently. An older failed email does not need to be deleted to test a new batch.</p>
+  <details style="margin:7px 0 10px;padding:10px;border:1px solid #365168;border-radius:9px" open>
+   <summary style="font-weight:700;cursor:pointer">Select multiple batches for testing</summary>
+   <div class="test-controls" style="margin:7px 0">
+    <button type="button" id="randomTestSelectAllBatches" class="btn slim secondary">Select all batches</button>
+    <button type="button" id="randomTestClearBatches" class="btn slim plain">Clear batches</button>
+   </div>
+   <div id="randomTestMultiBatchList" aria-label="Select batches to test" style="max-height:180px;overflow:auto;margin:7px 0"></div>
+   <p id="randomTestMultiBatchSummary" class="tiny" style="margin:4px 0">Choose one or more saved batches.</p>
+  </details>
   <div class="test-controls">
    <button type="button" class="btn primary" id="randomAliasTestAll">Test All Unverified</button>
    <button type="button" class="btn secondary" id="randomAliasTestBatch">Test Selected Batch</button>
+   <button type="button" class="btn secondary" id="randomAliasTestMulti">Test Checked Batches</button>
    <button type="button" class="btn danger" id="randomAliasTestStop" hidden>Stop after this group</button>
   </div>
   <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:11px">
@@ -46,6 +56,10 @@
    <label class="tiny">Saved sender / receiver configurations
     <select id="randomMailPreset" aria-label="Saved sending and receiving email pairs" style="width:100%;margin:5px 0 8px"><option value="">New sender / forwarding inbox pair</option></select>
    </label>
+   <p class="tiny" style="margin:8px 0">Save multiple verified sender/receiver pairs, then choose which sender accounts the tester may use for each actual forwarding receiver. It rotates between available accounts and pauses on provider limits when no permitted sender is available.</p>
+   <div class="test-controls"><button type="button" id="randomTestAllSenders" class="btn slim secondary">Use all saved sender accounts</button><button type="button" id="randomTestClearSenders" class="btn slim plain">Clear sender choices</button></div>
+   <div id="randomTestSenderPoolList" aria-label="Choose saved sending accounts for testing" style="max-height:170px;overflow:auto;margin:6px 0"></div>
+   <p id="randomTestSenderPoolStatus" class="tiny" style="margin:3px 0 10px">Save and select sender/receiver pairs to rotate testing.</p>
    <div class="test-form">
     <label>Forwarding receiver (IMAP inbox to check)<input id="randomTestReceiver" type="email" autocomplete="off" spellcheck="false" placeholder="slabsngrabs@gmail.com"></label>
     <label>Separate sending email<input id="randomTestSender" type="email" autocomplete="off" spellcheck="false" placeholder="other@gmail.com"></label>
@@ -69,6 +83,20 @@
     <span class="tiny">I checked in Cloudflare that catch-all is ACTIVE, action Send to an email, and the verified destination is this receiver. ACO Studio cannot enable or confirm that setting from this checkbox alone. Testing of unpublished aliases starts with 3 preflight emails and pauses if none arrive.</span>
    </label>
   </details>
+ </section>
+ <section id="randomReceiverSplitPanel" style="padding:11px;border:1px solid #365168;border-radius:10px;margin:0 0 14px">
+  <strong style="font-size:14px">Split forwarding receivers (unpublished drafts only)</strong>
+  <p class="tiny" style="margin:7px 0">Choose at least two saved IMAP receivers. Preview an even split across checked batches. This changes LOCAL DRAFT destinations only, not live Cloudflare routing. Publish individual routes (limit 200/domain) or configure an Email Worker before testing. Live, published, assigned, or verified aliases are excluded.</p>
+  <div id="randomTestReceiverPoolList" aria-label="Select forwarding receivers for draft allocation" style="max-height:125px;overflow:auto;margin:6px 0"></div>
+  <div class="test-controls">
+   <button type="button" id="randomReceiverSplitPreview" class="btn slim secondary">Preview receiver split</button>
+   <button type="button" id="randomReceiverSplitCancel" class="btn slim plain">Cancel</button>
+  </div>
+  <p id="randomReceiverSplitSummary" class="tiny" role="status" style="margin:8px 0"></p>
+  <div id="randomReceiverSplitConfirmArea" hidden>
+   <label class="check" style="display:flex;gap:6px;align-items:start"><input type="checkbox" id="randomReceiverSplitAck"><span class="tiny">I understand this saves only local unpublished drafts. Actual Cloudflare forwarding must be configured and verified separately.</span></label>
+   <button type="button" class="btn slim primary" id="randomReceiverSplitCommit">Save draft destination plan</button>
+  </div>
  </section>
  <h3 style="margin:0 0 9px;font-size:15px;color:#b5fdf3">Email Bank totals &amp; batches</h3>
  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 11px">
