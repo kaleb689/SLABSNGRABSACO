@@ -88,7 +88,7 @@
 .app-dashboard .account-topbar-right { width:100%; }.app-dashboard .account-topbar { gap:20px; }.app-dashboard .member-lifetime-stats { width:100%; grid-template-columns:repeat(2,minmax(0,1fr)); }
 @media(max-width:380px) { .app-dashboard .sng-range > span { display:none; }.app-dashboard .sng-metric { padding:17px 12px; }.app-dashboard .sng-product-row,.app-dashboard .sng-order-card summary { gap:9px; padding:13px; }.app-dashboard .sng-row-value { max-width:80px; }.app-dashboard .sng-product-image { width:40px; height:40px; } }
 /* App insights and display preferences. */
-.app-dashboard .sng-app-nav { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.app-dashboard .sng-app-nav { grid-template-columns:repeat(6,minmax(0,1fr)); }
 .app-dashboard .sng-range { overflow-x:auto; max-width:100%; gap:6px; margin-bottom:5px; scrollbar-width:none; }
 .app-dashboard .sng-range button { padding:10px 13px; }
 .app-dashboard .sng-period-label { font-size:11px; color:#a7abba; margin:0 0 16px; }
@@ -125,6 +125,7 @@
 
 /* Brighter app palette + persistent tab accents, especially in day mode. */
 .app-dashboard .sng-app-nav button[data-app-view="home"] svg { color:#8b5cff; }
+.app-dashboard .sng-app-nav button[data-app-view="success"] svg { color:#b879ff; }
 .app-dashboard .sng-app-nav button[data-app-view="tracking"] svg { color:#00c8ff; }
 .app-dashboard .sng-app-nav button[data-app-view="products"] svg { color:#ff4db8; }
 .app-dashboard .sng-app-nav button[data-app-view="profile"] svg { color:#24d6a3; }
@@ -161,6 +162,7 @@
 }
 .app-dashboard[data-app-theme="day"] .sng-app-nav button { color:#66708a; }
 .app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="home"] { color:#7547ff; }
+.app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="success"] { color:#8a42d8; }
 .app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="tracking"] { color:#009fd5; }
 .app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="products"] { color:#e92a9b; }
 .app-dashboard[data-app-theme="day"] .sng-app-nav button[data-app-view="profile"] { color:#07986f; }
@@ -353,3 +355,9 @@
  .app-dashboard .sng-sheet-item-stage {font-size:9px;padding:5px}
  .app-dashboard .sng-tracking-row {gap:8px;padding-inline:10px}
 }
+
+/* The dedicated Success tab shares the current app design in both themes. */
+.app-dashboard button.sng-success-period { width:100%; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.app-dashboard button.sng-success-period[aria-pressed="true"] { border-color:#b879ff; box-shadow:inset 0 0 0 1px #b879ff,0 0 14px #b879ff33; }
+.app-dashboard button.sng-success-period small { display:block; margin-top:9px; color:#b6bdd1; font-size:11px; }
+.app-dashboard[data-app-theme="day"] button.sng-success-period small { color:#66708a; }
