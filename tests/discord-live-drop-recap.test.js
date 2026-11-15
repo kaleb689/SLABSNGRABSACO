@@ -94,6 +94,19 @@ test("public live announcement goes to @everyone only after owner confirmation",
   assert.equal((await h.controller.statusText()).includes("recap scheduled"),true);
 });
 
+test("verified owner can confirm through a private Discord DM fallback",async t=>{
+  const h=await harness(t);
+  const msg={
+    type:3,id:"1611111111111111555",token:"dm-token",
+    user:{id:OWNER},channel_id:CONTROL,
+    application_id:"1611111111111111441",
+    data:{custom_id:"sngdrop:confirm:target"}
+  };
+  await h.controller.handleInteraction(msg);
+  assert.equal(publicPosts(h).length,1);
+  assert.ok(h.requests.some(x=>x.url.includes("/webhooks/")));
+});
+
 test("owner gate rejects arbitrary members without public messages",async t=>{
   const h=await harness(t);
   await h.controller.handleInteraction({
