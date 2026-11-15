@@ -400,6 +400,86 @@
    if(pending)void runAutomaticEmailTests({batchId:pending,automatic:true});
   },120);
  }
+
+ let receiverSplitPlan=null;
+ function cancelReceiverSplitPlan(){
+  receiverSplitPlan=null;
+  const panel=mailUIElement('randomReceiverSplitConfirmArea');if(panel)panel.hidden=true;
+  const ack=mailUIElement('randomReceiverSplitAck');if(ack)ack.checked=false;
+ }
+ function receiverSplitEligible(row){
+  return row&&row.randomGenerated===true&&row.status==='draft'&&!row.remoteId&&
+   !row.poolTarget&&!row.poolImportedAt&&!row.forwardingTestedAt&&!row.catchAllVerifiedAt;
+ }
+ function previewReceiverSplit(){
+  requireOwner();
+  if(!unlocked||randomGenBusy||mailTestState.active)throw Error('Unlock the bank and finish any active test first.');
+  cancelReceiverSplitPlan();
+  const batchKeys=[...mailTestState.selectedBatchKeys];
+  if(!batchKeys.length)throw Error('Choose the batches to split using the checkboxes above.');
+  const receivers=[...mailTestState.selectedReceiverTargets].sort();
+  if(receivers.length<2)throw Error('Select at least two saved receiver inboxes.');
+  const valid=new Set(mailTestState.profiles.map(p=>p.mailbox));
+  if(receivers.some(x=>!valid.has(x)))throw Error('A receiver is no longer saved and IMAP verified. Refresh accounts.');
+  const chosen=testRowsForSelection({batchKeys});
+  const rows=chosen.filter(receiverSplitEligible).sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+  if(!rows.length)throw Error('No unpublished, unassigned drafts in the checked batches. Live, verified and imported emails were left unchanged.');
+  if(rows.length>200)throw Error('This plan contains '+rows.length+' aliases; Cloudflare allows only 200 individual routing rules per domain (including existing rules). Use an Email Worker or smaller eligible selection before splitting.');
+  if(new Set(rows.map(r=>r.alias)).size!==rows.length)throw Error('Duplicate aliases need review before a split.');
+  const changes=rows.map((row,i)=>({row,alias:row.alias,from:row.target,to:receivers[i%receivers.length]}));
+  const counts=receivers.map(r=>r+': '+changes.filter(x=>x.to===r).length).join(' · ');
+  receiverSplitPlan={batchKeys:batchKeys.slice().sort(),receivers,changes,snapshot:changes.map(x=>({
+   alias:x.alias,target:x.row.target,status:x.row.status,remoteId:x.row.remoteId||null,
+   poolTarget:x.row.poolTarget||null,poolImportedAt:x.row.poolImportedAt||null,forwardingTestedAt:x.row.forwardingTestedAt||null
+  }))};
+  mailUIElement('randomReceiverSplitSummary').textContent='PREVIEW: '+changes.length+' unpublished drafts split evenly: '+counts+
+   '. Only local forwarding destinations would change. Cloudflare individual rules must be published separately; current 200-rule capacity may be lower if rules already exist. No live routing changes have occurred.';
+  mailUIElement('randomReceiverSplitConfirmArea').hidden=false;
+ }
+ async function commitReceiverSplit(){
+  requireOwner();
+  if(!unlocked||randomGenBusy||mailTestState.active)throw Error('Finish active testing before saving a split.');
+  const plan=receiverSplitPlan;
+  if(!plan||!mailUIElement('randomReceiverSplitAck').checked)throw Error('Preview and acknowledge the draft-only split first.');
+  if(JSON.stringify([...mailTestState.selectedBatchKeys].sort())!==JSON.stringify(plan.batchKeys)||
+     JSON.stringify([...mailTestState.selectedReceiverTargets].sort())!==JSON.stringify(plan.receivers))
+   throw Error('Batch or receiver selection changed. Preview again.');
+  const current=testRowsForSelection({batchKeys:plan.batchKeys}).filter(receiverSplitEligible).sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+  if(current.length!==plan.snapshot.length||current.some((row,i)=>row!==plan.changes[i].row||
+     row.alias!==plan.snapshot[i].alias||row.target!==plan.snapshot[i].target||
+     row.status!==plan.snapshot[i].status||(row.remoteId||null)!==plan.snapshot[i].remoteId||
+     (row.poolTarget||null)!==plan.snapshot[i].poolTarget||(row.poolImportedAt||null)!==plan.snapshot[i].poolImportedAt||
+     (row.forwardingTestedAt||null)!==plan.snapshot[i].forwardingTestedAt))
+   throw Error('Email Bank drafts changed since preview. Review again; nothing updated.');
+  const previous=localStorage.getItem(KEY);
+  if(!previous)throw Error('Encrypted Email Bank unavailable. No destinations changed.');
+  const entropy=crypto.getRandomValues(new Uint8Array(8));
+  const backupKey=KEY+'.receiver-split-backup.'+Date.now()+'.'+Array.from(entropy,x=>x.toString(16).padStart(2,'0')).join('');
+  if(localStorage.getItem(backupKey)!==null)throw Error('Encrypted backup collision. No destinations changed.');
+  localStorage.setItem(backupKey,previous);
+  if(localStorage.getItem(backupKey)!==previous)throw Error('Encrypted backup verification failed. No destinations changed.');
+  randomGenBusy=true;
+  const before=plan.changes.map(x=>({row:x.row,target:x.row.target,forwardingTestedAt:x.row.forwardingTestedAt,
+   forwardingTestTarget:x.row.forwardingTestTarget,catchAllVerifiedAt:x.row.catchAllVerifiedAt}));
+  try{
+   for(const change of plan.changes){
+    change.row.target=change.to;change.row.forwardingTestedAt=null;
+    change.row.forwardingTestTarget=null;change.row.catchAllVerifiedAt=null;
+   }
+   if(!await store())throw Error('Encrypted save failed.');
+  }catch(error){
+   for(const x of before){
+    x.row.target=x.target;x.row.forwardingTestedAt=x.forwardingTestedAt;
+    x.row.forwardingTestTarget=x.forwardingTestTarget;x.row.catchAllVerifiedAt=x.catchAllVerifiedAt;
+   }
+   try{if(localStorage.getItem(KEY)!==previous)localStorage.setItem(KEY,previous);}catch{}
+   throw Error('Draft receiver split was not saved. Encrypted original backup retained: '+String(error?.message||error));
+  }finally{randomGenBusy=false;}
+  cancelReceiverSplitPlan();
+  mailUIElement('randomReceiverSplitSummary').textContent='Saved draft-only receiver allocation for '+before.length+
+   ' emails. Encrypted backup preserved. NO Cloudflare routing changed, and NO email is marked verified. Publish allowed routing rules or configure a Worker, then run tests against the actual receiver.';
+  refreshEmailBatchUI();refreshRandomChooser();
+ }
  function setupAutoMailTests(){
   const apiMethod=api()?.onEmailTestProgress;
   if(typeof apiMethod==='function')apiMethod(handleMailTestProgress);
@@ -417,6 +497,40 @@
    // Exact generation batches use an ID; legacy time-grouped batches use the selected group.
    if(group.key.startsWith('batch:'))void runAutomaticEmailTests({batchId:group.key.slice(6)});
    else void runAutomaticEmailTests({all:false});
+  });
+  const senderList=mailUIElement('randomTestSenderPoolList');
+  senderList.addEventListener('change',event=>{
+   const check=event.target;if(!check?.matches?.('input[data-test-sender]'))return;
+   if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   if(check.checked)mailTestState.selectedSenderKeys.add(check.value);
+   else mailTestState.selectedSenderKeys.delete(check.value);
+   renderMailAccountPools();
+  });
+  mailUIElement('randomTestAllSenders').addEventListener('click',()=>{
+   if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.selectedSenderKeys=new Set(mailTestState.profiles.map(mailPairKey));renderMailAccountPools();
+  });
+  mailUIElement('randomTestClearSenders').addEventListener('click',()=>{
+   if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.selectedSenderKeys.clear();renderMailAccountPools();
+  });
+  mailUIElement('randomTestReceiverPoolList').addEventListener('change',event=>{
+   const check=event.target;if(!check?.matches?.('input[data-split-receiver]'))return;
+   if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   if(check.checked)mailTestState.selectedReceiverTargets.add(check.value);
+   else mailTestState.selectedReceiverTargets.delete(check.value);
+   cancelReceiverSplitPlan();renderMailAccountPools();
+  });
+  mailUIElement('randomReceiverSplitPreview').addEventListener('click',()=>{
+   try{previewReceiverSplit();}catch(error){cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent=String(error?.message||error);}
+  });
+  mailUIElement('randomReceiverSplitCommit').addEventListener('click',async()=>{
+   const button=mailUIElement('randomReceiverSplitCommit');button.disabled=true;
+   try{await commitReceiverSplit();}catch(error){cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent=String(error?.message||error);}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomReceiverSplitCancel').addEventListener('click',()=>{
+   cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent='Cancelled. No destinations changed.';
   });
   mailUIElement('randomAliasTestStop').addEventListener('click',()=>{
    mailTestState.cancel=true;
