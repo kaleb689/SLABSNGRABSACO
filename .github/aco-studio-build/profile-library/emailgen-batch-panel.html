@@ -23,6 +23,9 @@
  <section id="randomAliasTestArea" style="border:1px solid #3d6881;border-radius:12px;padding:14px;background:#102c3a;margin-bottom:14px">
   <h3 style="font-size:16px;margin:0 0 5px;color:#b5fdf3">Automatic email testing</h3>
   <p class="tiny">After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified starts with 3 preflight emails per catch-all inbox. If none arrive, it pauses instead of sending hundreds more. After preflight, it tests in groups of 25. Green means delivered, amber means not confirmed in Inbox, and red means the sending server rejected the message.</p>
+  <label for="randomTestBatchSelect" class="tiny" style="display:block;margin:9px 0 4px">Choose batch to test (newest first)</label>
+  <select id="randomTestBatchSelect" aria-label="Choose exact generated email batch to test" style="width:100%;margin-bottom:7px"><option value="">Unlock the Email Bank to choose a batch</option></select>
+  <p id="randomTestBatchMeta" class="tiny" role="status" style="margin:2px 0 9px">Each batch can be tested independently. An older failed email does not need to be deleted to test a new batch.</p>
   <div class="test-controls">
    <button type="button" class="btn primary" id="randomAliasTestAll">Test All Unverified</button>
    <button type="button" class="btn secondary" id="randomAliasTestBatch">Test Selected Batch</button>
@@ -126,6 +129,16 @@
   </div>
  </div>
 
+ <section id="emailBatchSingleDeleteArea" style="margin-top:14px;padding:12px;border:1px solid #705358;border-radius:10px">
+  <div class="buttons" style="justify-content:space-between;align-items:center"><strong style="font-size:13px">Remove one failed / unwanted email</strong><button type="button" class="btn slim danger" id="emailBatchRemoveOneReview">Remove One Selected Email...</button></div>
+  <p class="tiny" style="margin-top:6px">Select exactly one generated email in the batch list above. Only unassigned emails can be removed here; existing profile cards, security codes, addresses and retailer accounts are never deleted. For an email attached to a profile, use Profiles → Replace email from unused pool instead. Published Cloudflare routes must be handled separately.</p>
+  <div id="emailBatchRemoveOneConfirmArea" hidden style="margin-top:9px;border:1px solid #cf7569;padding:11px;border-radius:8px">
+   <p id="emailBatchRemoveOneSummary" class="tiny" style="margin-bottom:8px;color:#ffb6b4"></p>
+   <label class="tiny" style="display:block;margin:6px 0">Type DELETE to confirm<input type="text" id="emailBatchRemoveOneTyped" autocomplete="off" placeholder="DELETE" style="width:100%"></label>
+   <label class="check" style="display:flex;gap:7px;align-items:flex-start"><input id="emailBatchRemoveOneAcknowledge" type="checkbox"><span class="tiny">Remove only this local email record. Any Cloudflare forwarding rule remains active until separately removed.</span></label>
+   <div class="test-controls" style="display:flex;gap:7px;margin-top:9px"><button type="button" class="btn slim danger" id="emailBatchRemoveOneConfirm">Remove This Email</button><button type="button" class="btn slim plain" id="emailBatchRemoveOneCancel">Cancel</button></div>
+  </div>
+ </section>
  <section id="emailBatchDeleteArea" style="margin-top:14px;padding:12px;border:1px solid #705358;border-radius:10px">
   <div class="buttons" style="justify-content:space-between;align-items:center"><strong style="font-size:13px">Remove a generated batch</strong><button type="button" class="btn slim danger" id="emailBatchDeleteReview">Delete Selected Batch...</button></div>
   <p class="tiny" style="margin-top:6px">Delete acts on the selected batch only. It never deletes other batches or retailer profiles. Address-specific Cloudflare rules are not deleted remotely. Batches already imported into retailer pools must be unlinked there first.</p>
