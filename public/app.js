@@ -561,11 +561,17 @@ function membershipPriceHtml(tier, plan) {
       ? Number(sale.fixedPrice).toFixed(2)
       : (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
     const discountLabel = sale.fixedPrice != null ? "Special tier price" : `${Number(sale.percent)}% off`;
+    const durationLabel = sale.duration === "forever" ? "Every renewal"
+      : sale.duration === "repeating" && Number(sale.durationMonths) > 0
+        ? `First ${Number(sale.durationMonths)} monthly payments`
+        : "First payment";
+    const capNote = String(sale.code || "").toUpperCase() === "THANKS25"
+      ? " · Prepaid extensions capped at 6 discounted months" : "";
     const end = new Date(sale.endsAt || "");
     const expires = Number.isFinite(end.getTime())
       ? " · Ends " + end.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
       : "";
-    current = `<del style="font-size:.55em;opacity:.65">${Number(plan.amount).toFixed(2)}</del> ${price}<small>/month · ${discountLabel} · ${sale.duration === "forever" ? "Every renewal" : "First payment"}${expires}</small>`;
+    current = `<del style="font-size:.55em;opacity:.65">${Number(plan.amount).toFixed(2)}</del> ${price}<small>/month · ${discountLabel} · ${durationLabel}${capNote}${expires}</small>`;
   }
   return current + membershipUpcomingHtml(tier);
 }
@@ -717,7 +723,7 @@ function renderPricing() {
     if (!notice) continue;
     notice.hidden = !membershipUpcoming;
     notice.textContent = membershipUpcoming
-      ? "Upcoming November 28, 2026: regular membership prices increase 42%. Prices displayed above each tier reflect the scheduled monthly rate."
+      ? "Upcoming November 28, 2026: regular membership prices are scheduled to increase 42%. See each proposed new monthly rate above."
       : "";
   }
 
