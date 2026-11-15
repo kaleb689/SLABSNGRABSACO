@@ -133,7 +133,7 @@ test('Mail found only in Gmail All Mail is accurately confirmed by exact nonce, 
   {path:'[Gmail]/Trash',specialUse:'\\\\Trash'}];
  const actual=[],moves=[];
  const mail={createTransport:()=>({async sendMail(info){
-  actual.push({envelope:{subject:info.subject},internalDate:new Date()});
+  actual.push({envelope:{subject:'Fwd: '+info.subject},internalDate:new Date()});
  },close(){}})};
  class IMAP{
   constructor(){this.folder='';}
