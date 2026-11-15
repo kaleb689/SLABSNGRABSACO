@@ -1321,29 +1321,39 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         {id:appId,type:1,allow:"68624"},
         {id:sourceOwnerId,type:1,allow:"68608"}
       ];
-      let controls,controlIsDm=false;
-      try {
-        controls=sourceChannels.find(ch=>ch.type===0 &&
-          normalizeName(ch.name)==="dropcontrols");
-        if(!controls){
-          const adminCategory=sourceChannels.find(ch=>ch.type===4 &&
-            normalizeName(ch.name)==="adminonly");
-          controls=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
-            name:"drop-controls",type:0,
-            ...(adminCategory?{parent_id:adminCategory.id}:{}),
-            topic:"Private owner controls for live drops and verified twelve-hour recaps.",
-            permission_overwrites:readOwnerOnly
-          });
-        } else if(!sameOverwrites(controls.permission_overwrites,readOwnerOnly)){
-          controls=await api(`/channels/${controls.id}`,"PATCH",{
-            permission_overwrites:readOwnerOnly});
-        }
-      }catch(error){
-        // No Manage Channels permission in the source TCG server? Use a
-        // PRIVATE OWNER DM, not an ACO guild or unintended public channel.
-        console.warn("Source guild private drop channel unavailable; using owner DM:",error?.message);
-        controls=await api("/users/@me/channels","POST",{recipient_id:sourceOwnerId});
-        controlIsDm=true;
+      // The owner explicitly requested a channel in this guild's Admin category.
+      // Never silently substitute a DM or a channel in the separate ACO guild.
+      // Match the entire category name, not only the part after a decorative
+      // divider; e.g. "🔒 ADMIN | STAFF" still belongs to Admin.
+      let adminCategory=sourceChannels.find(ch=>{
+        if(ch.type!==4)return false;
+        const whole=String(ch.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const final=normalizeName(ch.name);
+        return /admin|administration/.test(whole)||
+          ["admin","admins","adminonly","adminsection"].includes(final);
+      });
+      if(!adminCategory){
+        // Owner confirmed Manage Channels was granted. This TCG server
+        // currently has only the two default categories, so create a
+        // private Admin section rather than guessing an unrelated category.
+        adminCategory=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
+          name:"Admin",type:4,
+          permission_overwrites:readOwnerOnly
+        });
+        console.log("Created private original TCG Admin category:",adminCategory.id);
+      }
+      let controls=sourceChannels.find(ch=>ch.type===0 &&
+        normalizeName(ch.name)==="dropcontrols");
+      if(!controls){
+        controls=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
+          name:"drop-controls",type:0,parent_id:adminCategory.id,
+          topic:"Private owner controls for live drops and verified twelve-hour recaps.",
+          permission_overwrites:readOwnerOnly
+        });
+      }else if(String(controls.parent_id||"")!==String(adminCategory.id) ||
+            !sameOverwrites(controls.permission_overwrites,readOwnerOnly)){
+        controls=await api(`/channels/${controls.id}`,"PATCH",{
+          parent_id:adminCategory.id,permission_overwrites:readOwnerOnly});
       }
       await ensurePanel(controls.id,"owner-drop-controls",
         "**OWNER DROP CONTROLS**\nChoose a retailer, then confirm. This announces **DROP IS LIVE** in the original SLABSNGRABSTC #general, then schedules a source-verified recap 12 hours later. Pending / Posted shows active drops.\n\nUnverified totals are **held privately**, never published as guessed numbers.",{
@@ -1366,7 +1376,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       discordCommunityStatus.dropControls={
         ready:true,sourceGuildId,
         controlChannelId:String(controls.id),generalChannelId:String(general.id),
-        privateToOwner:true,mode:controlIsDm?"owner_dm":"private_channel",
+        privateToOwner:true,mode:"admin_channel",adminCategoryId:String(adminCategory.id),
         recapDelayHours:12
       };
       console.log("Discord original-guild live-drop controls ready:",
@@ -2287,6 +2297,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const temp = `${panelFile}.${crypto.randomUUID()}.tmp`;
       await fs.writeFile(temp, JSON.stringify(panels), { mode: 0o600 });
       await fs.rename(temp, panelFile);
+      // Retire the former bot-owned DM panel only after the new Admin panel
+      // is safely posted and persisted; never delete unrelated messages.
+      if(key==="owner-drop-controls" && previous?.messageId &&
+         previous.channelId!==channelId){
+        await api(`/channels/${previous.channelId}/messages/${previous.messageId}`,"DELETE")
+          .catch(error=>console.error("Old DM drop panel cleanup:",error.message));
+      }
       await api(`/channels/${channelId}/pins/${message.id}`, "PUT").catch(error => console.error("Discord panel pin:", error.message));
       return message.id;
     });
