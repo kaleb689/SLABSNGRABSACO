@@ -19,7 +19,7 @@ async function fixture(t){
   const sent=[],sub={endpoint:"https://fcm.googleapis.com/fcm/send/sng-a",
     keys:{p256dh:"A".repeat(87),auth:"B".repeat(22)}};
   const opts={dataDir,baseUrl:"https://slabsngrabsaco.com",
-    getRecords:async()=>[],getAccounts:async()=>[],
+    getRecords:async()=>[],getAccounts:async()=>[{id:"a",notifications:[]},{id:"b",notifications:[]},{id:"c",notifications:[]}],
     sendPush:async(endpoint,payload)=>sent.push({endpoint:endpoint.endpoint,...JSON.parse(payload)})};
   const service=createOrderNotifications(opts);await service.initialize();
   return {service,sent,sub,opts};
