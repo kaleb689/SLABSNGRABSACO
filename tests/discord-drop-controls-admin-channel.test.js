@@ -9,15 +9,16 @@ const block=src.slice(begin,end);
 test("Owner drop controls are created in original TCG Admin category, never a DM",()=>{
   assert.ok(begin>=0 && end>begin);
   assert.match(block,/SLABSNGRABSTC_SUCCESS_CHANNEL_ID/);
-  assert.match(block,/const adminCategory=sourceChannels\.find\(/);
+  assert.match(block,/let adminCategory=sourceChannels\.find\(/);
   assert.match(block,/parent_id:adminCategory\.id/);
   assert.match(block,/mode:"admin_channel"/);
   assert.doesNotMatch(block,/\/users\/@me\/channels/);
   assert.doesNotMatch(block,/mode:"owner_dm"/);
 });
-test("Discord fails closed when the requested Admin category or channel permissions are unavailable",()=>{
+test("Creates the missing private Admin category, but fails closed when Discord rejects permissions",()=>{
   assert.match(block,/if\(!adminCategory\)/);
-  assert.match(block,/Admin category was not found/);
+  assert.match(block,/name:"Admin",type:4/);
+  assert.match(block,/permission_overwrites:readOwnerOnly/);
   assert.match(block,/const whole=String\(ch\.name\|\|""\)/);
   assert.match(block,/discordCommunityStatus\.dropControls=\{\s*ready:false/);
 });
