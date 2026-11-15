@@ -1,17 +1,6 @@
 name: Publish ACO Studio 4.14.17 Mac only after full native verification
 on:
-  # Authorized publication when approved changes reach main. The publish
-  # job is gated by full native Mac regression, signature, first-launch,
-  # update, rollback and data-preservation checks.
-  # Next-version release triggered by this workflow merge; full native tests, signing and preservation gate publishing.
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/release-aco-studio-v41417-macos.yml'
-      - '.github/aco-studio-build/native-updater/**'
-      - '.github/aco-studio-build/profile-library/**'
-      - '.github/aco-studio-build/completed-profiles/**'
-      - 'private-edition/**'
+  # 4.14.17 is retained for manual rollback only; do not race 4.14.18.
   workflow_dispatch:
 permissions:
   contents: write
