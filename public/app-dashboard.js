@@ -393,7 +393,7 @@ if (appEnabled) {
     const delta = changes.get(periodKey) || { orders: 0, transit: 0, delivered: 0 };
     const content = document.getElementById('sng-app-content');
     const currentFocus = document.activeElement?.id, cursor = document.activeElement?.selectionStart;
-    if (view === 'messages' && currentFocus === 'sng-app-message-text') supportDraft = document.activeElement?.value || supportDraft;
+    if (view === 'messages' && currentFocus === 'sng-app-message-text') supportDraft = document.activeElement?.value ?? supportDraft;
     const common = rangeButtons() + (state.customer.demo || ADMIN_PREVIEW_MODE ? '<div class="sng-demo-label">DEMO · Sample account</div>' : '') + (error ? `<p class="sng-error" role="status">${e(error)} <button type="button" data-app-refresh>Retry</button></p>` : '') + (busy && !accountId ? '<p class="sng-demo-label" role="status">Loading your checkout data…</p>' : '');
     let html = '';
     if (view === 'home') html = common + '<button class="sng-drop-shortcut" type="button" data-app-view="drops"><span><b>LIVE DROP SKUs</b><small>Select products for Target, Walmart, PKC, Costco or Sam’s</small></span><strong>Choose SKUs →</strong></button>' + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
@@ -578,7 +578,9 @@ if (appEnabled) {
       });
       const data=await readJson(response);
       if(!response.ok||!data.ok)throw Error(data.error||'Unable to send your message.');
-      supportDraft='';await loadSupportMessages({markRead:true});
+      supportDraft='';
+      const editor=document.querySelector('[data-app-message-text]');if(editor)editor.value='';
+      await loadSupportMessages({markRead:true});
     }catch(error){supportError=String(error.message||'Unable to send your message.');}
     finally{supportSending=false;render();}
   }
