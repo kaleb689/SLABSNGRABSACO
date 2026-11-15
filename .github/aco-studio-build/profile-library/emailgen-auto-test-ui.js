@@ -6,7 +6,9 @@
  const AUTO_TEST_PREFLIGHT_SIZE=3;
  const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
   loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
-  paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0};
+  paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0,
+  selectedBatchKeys:new Set(),batchSelectionInitialized:false,selectedSenderKeys:new Set(),senderPoolInitialized:false,
+  selectedReceiverTargets:new Set(),receiverPoolInitialized:false};
  let mailProgressTimer=null;
  const mailUIElement=id=>$e(id);
  function readCatchallPreferences(){
@@ -28,6 +30,47 @@
  function mailProfilesFor(mailbox){
   return mailTestState.profiles.filter(p=>p.mailbox===mailbox).sort((a,b)=>
    String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+ }
+ function availableSenderProfiles(mailbox){
+  return mailProfilesFor(mailbox).filter(p=>mailTestState.selectedSenderKeys.has(mailPairKey(p)));
+ }
+ function renderMailAccountPools(){
+  const senderList=mailUIElement('randomTestSenderPoolList'),receiverList=mailUIElement('randomTestReceiverPoolList');
+  const pairs=mailTestState.profiles;
+  const validPairs=new Set(pairs.map(mailPairKey));
+  if(!mailTestState.senderPoolInitialized){
+   mailTestState.selectedSenderKeys=new Set(validPairs);
+   mailTestState.senderPoolInitialized=true;
+  }else mailTestState.selectedSenderKeys=new Set([...mailTestState.selectedSenderKeys].filter(k=>validPairs.has(k)));
+  const targets=[...new Set(pairs.map(p=>p.mailbox))].sort();
+  if(!mailTestState.receiverPoolInitialized){
+   mailTestState.selectedReceiverTargets=new Set(targets.slice(0,2));
+   mailTestState.receiverPoolInitialized=true;
+  }else mailTestState.selectedReceiverTargets=new Set([...mailTestState.selectedReceiverTargets].filter(k=>targets.includes(k)));
+  if(senderList){
+   senderList.replaceChildren();
+   for(const p of pairs){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;gap:7px;align-items:center;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=mailPairKey(p);
+    check.checked=mailTestState.selectedSenderKeys.has(check.value);check.setAttribute('data-test-sender',check.value);
+    const note=document.createElement('span');note.className='tiny';note.textContent=p.sender+' → '+p.mailbox;
+    label.appendChild(check);label.appendChild(note);senderList.appendChild(label);
+   }
+  }
+  const senderStatus=mailUIElement('randomTestSenderPoolStatus');
+  if(senderStatus)senderStatus.textContent=mailTestState.selectedSenderKeys.size+' of '+pairs.length+' verified sender/receiver pairs enabled. Only senders paired with an alias’s actual destination are eligible.';
+  if(receiverList){
+   receiverList.replaceChildren();
+   for(const mailbox of targets){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;gap:7px;align-items:center;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=mailbox;
+    check.checked=mailTestState.selectedReceiverTargets.has(mailbox);check.setAttribute('data-split-receiver',mailbox);
+    const note=document.createElement('span');note.className='tiny';note.textContent=mailbox+' (saved IMAP credentials)';
+    label.appendChild(check);label.appendChild(note);receiverList.appendChild(label);
+   }
+  }
  }
  function findSavedMailPair(mailbox){
   const options=mailProfilesFor(mailbox);
@@ -74,6 +117,7 @@
    const response=await api().mailTestCredentialStatus();
    mailTestState.profiles=Array.isArray(response?.profiles)?response.profiles.filter(p=>p&&validEmail(p.mailbox)&&validEmail(p.sender)):[];
    refreshSavedMailPairPicker();
+   renderMailAccountPools();
    if(mailTestState.autoPendingBatch&&!mailTestState.active){
     const pending=mailTestState.autoPendingBatch,group=emailBatchGroups().find(g=>g.key==='batch:'+pending);
     if(group&&group.rows.some(r=>mailProfilesFor(r.target).length)){
@@ -162,12 +206,14 @@
   };
   if(!validEmail(settings.mailbox)||!validEmail(settings.sender))
    throw Error('Enter the forwarding recipient and a different sending address.');
-  if(!settings.password||!settings.senderPassword)
-   throw Error('Enter both app passwords to verify and securely save this sender/receiver pair.');
+  const existingReceiver=mailProfilesFor(settings.mailbox).length>0;
+  if(!settings.senderPassword||(!settings.password&&!existingReceiver))
+   throw Error('Enter the sender app password. For a new receiver also enter its IMAP app password; an already-saved receiver can be reused securely.');
+  settings.reuseReceiverCredentials=!settings.password&&existingReceiver;
   const result=await api().saveMailTestCredentials(settings);
   clearTestSecretFields();
   const status=mailUIElement('randomMailCredentialsStatus');
-  status.dataset.error='0';status.textContent='Verified SMTP and both IMAP logins. Sender and receiver app passwords are saved encrypted on this Mac.';
+  status.dataset.error='0';status.textContent='Verified sender SMTP/IMAP and receiver IMAP. Saved securely in this Mac Keychain; existing receiver credentials were reused when available.';
   await loadSavedMailPairs(true);
   const preset=mailUIElement('randomMailPreset');preset.value=mailPairKey(result.profile);
   applyMailPairToForm(result.profile);
@@ -179,47 +225,61 @@
   }
   return result;
  }
- function collectTestCandidates({batchId=null,all=false}={}){
-  const rows=records.filter(r=>r.randomGenerated===true);
-  const group=batchId?emailBatchGroups().find(g=>g.key==='batch:'+batchId):
-   !all?emailBatchCurrentGroup():null;
-  if(batchId&&!group)return [];
-  const possible=group?group.rows:rows;
-  return possible.filter(r=>typeof r.alias==='string'&&validEmail(r.target)&&
-    (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target)&&
-    (catchallForMailbox(r.target)||r.status==='live'));
+ function testRowsForSelection({batchId=null,batchKeys=null,all=false}={}){
+  if(all)return records.filter(r=>r.randomGenerated===true);
+  const groups=emailBatchGroups();
+  if(Array.isArray(batchKeys)){
+   const chosen=new Set(batchKeys);
+   if(!chosen.size)return [];
+   return groups.filter(g=>chosen.has(g.key)).flatMap(g=>g.rows);
+  }
+  const group=batchId?groups.find(g=>g.key==='batch:'+batchId):emailBatchCurrentGroup();
+  return group?group.rows:[];
  }
- async function runAutomaticEmailTests({batchId=null,all=false,automatic=false}={}){
+ function collectTestCandidates({batchId=null,batchKeys=null,all=false}={}){
+  return testRowsForSelection({batchId,batchKeys,all}).filter(r=>
+   typeof r.alias==='string'&&validEmail(r.target)&&
+   (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target)&&
+   (catchallForMailbox(r.target)||r.status==='live'));
+ }
+ async function runAutomaticEmailTests({batchId=null,batchKeys=null,all=false,automatic=false}={}){
   if(mailTestState.active||mailTestState.starting||randomGenBusy){
    if(automatic&&batchId)mailTestState.autoPendingBatch=batchId;
+   else if(!automatic)mailUIElement('randomTestStatus').textContent='A test or email generation is already running. Stop or finish it before starting another batch.';
    return;
   }
+  mailTestState.total=0;mailTestState.done=0;mailTestState.passed=0;mailTestState.failed=0;mailTestState.unconfirmed=0;
+  mailTestState.recent=[];mailTestState.paused=false;
+  renderAutoTestProgress();
   mailTestState.starting=true;
-  let profileBuckets=new Map(),missing=new Set(),total=0;
+  let profileBuckets=new Map(),missing=new Set(),total=0,skippedRouting=0,skippedAlreadyVerified=0;
   try{
    requireOwner();
    if(!unlocked)return;
    await loadSavedMailPairs(true);
-   const batch=batchId?emailBatchGroups().find(g=>g.key==='batch:'+batchId):!all?emailBatchCurrentGroup():null;
-   const unverifiedAll=(batch?batch.rows:records).filter(r=>r.randomGenerated===true&&
+   const selectedRows=testRowsForSelection({batchId,batchKeys,all});
+   const unverifiedAll=selectedRows.filter(r=>r.randomGenerated===true&&
     (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target));
-   const candidates=collectTestCandidates({batchId,all});
+   const candidates=collectTestCandidates({batchId,batchKeys,all});
+   skippedRouting=unverifiedAll.filter(r=>validEmail(r.target)&&!catchallForMailbox(r.target)&&r.status!=='live').length;
+   skippedAlreadyVerified=selectedRows.filter(r=>r.randomGenerated===true&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
    for(const row of candidates){
-    const selected=findSavedMailPair(row.target);
-    if(!selected){missing.add(row.target);continue;}
-    const key=mailPairKey(selected);
-    if(!profileBuckets.has(key))profileBuckets.set(key,{profile:selected,rows:[]});
-    profileBuckets.get(key).rows.push(row);
+    const permitted=availableSenderProfiles(row.target);
+    if(!permitted.length){missing.add(row.target);continue;}
+    if(!profileBuckets.has(row.target))profileBuckets.set(row.target,{mailbox:row.target,profiles:permitted,rows:[]});
+    profileBuckets.get(row.target).rows.push(row);
    }
-   total=[...profileBuckets.values()].reduce((sum,group)=>sum+group.rows.length,0);
+   total=[...profileBuckets.values()].reduce((sum,bucket)=>sum+bucket.rows.length,0);
    if(!total){
     const status=mailUIElement('randomTestStatus');
     if(unverifiedAll.length){
      const targets=[...new Set(unverifiedAll.map(r=>r.target))];
-     status.textContent='Automatic test pending for '+unverifiedAll.length+' emails. Save a matching sender and receiver app-password pair and confirm catch-all forwarding for draft addresses. Inbox(es): '+targets.join(', ')+'.';
+     status.textContent='NO EMAILS TESTED. '+unverifiedAll.length+' unverified email(s), '+skippedRouting+
+      ' draft(s) excluded because catch-all testing is not enabled for their forwarding receiver. '+
+      'Choose checked batches, choose saved sending accounts for each actual receiver, and verify Cloudflare routing (catch-all covers its configured single receiver only). Inbox(es): '+targets.join(', ')+'.';
      mailUIElement('randomTestSettings').open=true;
      if(batchId)mailTestState.autoPendingBatch=batchId;
-    }else status.textContent='All eligible saved addresses are already delivery verified.';
+    }else status.textContent='No emails tested. All saved addresses in this selection are already delivery verified.';
     return;
    }
   }catch(error){
@@ -229,7 +289,7 @@
   }finally{mailTestState.starting=false;}
   mailTestState.active=true;randomGenBusy=true;mailTestState.cancel=false;
   // Signal that data mutations are paused during a test run rather than silently ignoring clicks.
-  for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','emailBatchDeleteReview']){
+  for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','randomAliasTestMulti','randomReceiverSplitPreview','randomReceiverSplitCommit','emailBatchDeleteReview','emailBatchRemoveOneReview']){
    const button=mailUIElement(id);if(button)button.disabled=true;
   }
   mailTestState.statuses=new Map();
@@ -238,61 +298,86 @@
   mailTestState.paused=false;mailTestState.cleanupPending=0;
   for(const bucket of profileBuckets.values())for(const row of bucket.rows)mailTestState.statuses.set(String(row.alias).toLowerCase(),'pending');
   const status=mailUIElement('randomTestStatus'),stop=mailUIElement('randomAliasTestStop');
-  stop.hidden=false;status.textContent='Testing '+total+' addresses automatically. Confirmed receipts are green; SMTP send errors are red; messages not found in Inbox are amber. A short preflight checks routing before bulk testing.';
+  stop.hidden=false;status.textContent='Testing '+total+' eligible addresses automatically. '+skippedRouting+
+   ' draft(s) skipped because catch-all testing is not enabled; '+missing.size+' forwarding inbox(es) lack selected sender/receiver pairs. '+
+   'Confirmed receipts are green; SMTP errors red; missing Inbox receipts amber. A preflight checks routing before bulk testing.';
   renderAutoTestProgress();
   const stopTest=()=>mailTestState.cancel=true;
   try{
+   const unavailableSenders=new Set();
+   let senderGroupCount=0;
    for(const bucket of profileBuckets.values()){
     if(mailTestState.cancel||mailTestState.paused)break;
-    const profile=bucket.profile,rows=bucket.rows;
+    const rows=bucket.rows,mailbox=bucket.mailbox;
+    let senderCursor=0;
     for(let start=0;start<rows.length;){
      if(mailTestState.cancel||mailTestState.paused)break;
-     const preflight=start===0&&catchallForMailbox(profile.mailbox);
+     const preflight=start===0&&catchallForMailbox(mailbox);
      const set=rows.slice(start,start+(preflight?AUTO_TEST_PREFLIGHT_SIZE:AUTO_TEST_GROUP_SIZE));
      start+=set.length;
-     status.textContent='Checking '+profile.mailbox+' using sender '+profile.sender+' — '+mailTestState.done+'/'+total+' completed. Tests move into Trash after confirmed receipt.';
-     const response=await api().testForwarding({
-      mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:set.map(r=>r.alias)
-     });
-     const unique=new Set();
-     for(const item of response.results||[]){
-      const row=set.find(r=>r.alias===item.alias);
-      if(!row||unique.has(row.alias))continue;
-      unique.add(row.alias);
-      if(item.status==='delivered'){
-       const now=new Date().toISOString();
-       row.forwardingTestedAt=now;row.forwardingTestTarget=profile.mailbox;
-       if(catchallForMailbox(profile.mailbox)&&row.status!=='live'){
-        row.status='live';row.catchAllVerifiedAt=now;
-       }
+     let pendingSet=set.slice();
+     while(pendingSet.length&&!mailTestState.cancel&&!mailTestState.paused){
+      const options=bucket.profiles.filter(p=>!unavailableSenders.has(p.sender));
+      if(!options.length){
+       mailTestState.paused=true;
+       status.textContent='All selected sending accounts for '+mailbox+' are unavailable or have reached provider limits. '+
+        (total-mailTestState.done)+' addresses remain unverified. No further messages were sent.';
+       break;
       }
-      trackTestResult(item.alias,item.status);
+      const profile=options[senderCursor%options.length];senderCursor++;senderGroupCount++;
+      status.textContent='Checking '+mailbox+' with sender '+profile.sender+' (group '+senderGroupCount+') — '+
+       mailTestState.done+'/'+total+' completed.';
+      const response=await api().testForwarding({
+       mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:pendingSet.map(r=>r.alias)
+      });
+      const current=new Map(pendingSet.map(row=>[row.alias,row]));
+      const seen=new Set(),retries=[];
+      for(const item of response.results||[]){
+       const row=current.get(String(item.alias||'').toLowerCase());
+       if(!row||seen.has(row.alias))continue;
+       seen.add(row.alias);
+       if((item.status==='not_attempted'||item.status==='send_failed')&&response.rateLimited){
+        trackTestResult(row.alias,'pending');retries.push(row);continue;
+       }
+       if(item.status==='delivered'){
+        const now=new Date().toISOString();
+        row.forwardingTestedAt=now;row.forwardingTestTarget=mailbox;
+        if(catchallForMailbox(mailbox)&&row.status!=='live'){
+         row.status='live';row.catchAllVerifiedAt=now;
+        }
+       }
+       trackTestResult(row.alias,item.status==='not_attempted'?'pending':item.status);
+      }
+      for(const row of pendingSet)if(!seen.has(row.alias)){
+       if(response.rateLimited){trackTestResult(row.alias,'pending');retries.push(row);}
+       else trackTestResult(row.alias,'unconfirmed');
+      }
+      mailTestState.cleanupPending+=Number(response.cleanupPending||0);
+      if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
+      refreshEmailBatchUI();
+      if(response.rateLimited){
+       unavailableSenders.add(profile.sender);
+       pendingSet=retries;
+       if(!bucket.profiles.some(p=>!unavailableSenders.has(p.sender))){
+        mailTestState.paused=true;
+        status.textContent='Sender '+profile.sender+' hit a provider sending limit. No other selected sender for '+mailbox+
+         ' is available. Unsent aliases remain unverified, and all provider quotas are respected.';
+       }
+      }else pendingSet=[];
+      if(preflight&&!response.rateLimited&&!set.some(r=>mailTestState.statuses.get(r.alias.toLowerCase())==='delivered')){
+       mailTestState.paused=true;
+       status.textContent='Paused preflight: no test message reached '+mailbox+
+        '. Verify the aliases actually route to this inbox in Cloudflare, and check Gmail Spam/All Mail.';
+      }
+      if(!mailTestState.paused&&!mailTestState.cancel)await new Promise(resolve=>setTimeout(resolve,800));
      }
-     for(const row of set)if(!unique.has(row.alias))trackTestResult(row.alias,'unconfirmed');
-     mailTestState.cleanupPending+=Number(response.cleanupPending||0);
-     if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
-     // Persist after each 25; do not rebuild the 10,000-row bank table on each result.
-     refreshEmailBatchUI();
-     if(preflight&&Number(response.delivered||0)===0&&Number(response.sentButUnconfirmed||0)>0){
-      mailTestState.paused=true;
-      status.textContent='Paused after '+set.length+' preflight messages: NONE reached '+profile.mailbox+' Inbox. '+
-       'Check Cloudflare catch-all is Active, with Send to an email and destination '+profile.mailbox+'. '+
-       'Check Gmail Spam/All Mail too: the verifier currently searches Inbox only. The remaining addresses were not tested.';
-      break;
-     }
-     if(response.rateLimited){
-      mailTestState.paused=true;
-      status.textContent='Email provider limit reached. Paused after '+mailTestState.done+'/'+total+' results; remaining addresses stay unverified. Try again when the provider allows more messages.';
-      break;
-     }
-     // Allow the browser to paint/accept input and avoid sending tight SMTP bursts.
-     await new Promise(resolve=>setTimeout(resolve,800));
     }
    }
    const pending=total-mailTestState.done;
    if(!mailTestState.paused){
     status.textContent=(mailTestState.cancel?'Stopped after current group. ':'Finished automated testing. ')+
       mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
+      ' Skipped '+skippedRouting+' draft(s) without catch-all testing enabled, '+skippedAlreadyVerified+' already verified.'+
       (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
@@ -300,7 +385,7 @@
    status.textContent='Automatic testing stopped: '+String(error?.message||error)+'. Verified records already saved remain intact. Other addresses remain unverified.';
   }finally{
    mailTestState.active=false;randomGenBusy=false;stop.hidden=true;
-   for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','emailBatchDeleteReview']){
+   for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','randomAliasTestMulti','randomReceiverSplitPreview','randomReceiverSplitCommit','emailBatchDeleteReview','emailBatchRemoveOneReview']){
     const button=mailUIElement(id);if(button)button.disabled=false;
    }
    renderAutoTestProgress();
@@ -317,16 +402,137 @@
    if(pending)void runAutomaticEmailTests({batchId:pending,automatic:true});
   },120);
  }
+
+ let receiverSplitPlan=null;
+ function cancelReceiverSplitPlan(){
+  receiverSplitPlan=null;
+  const panel=mailUIElement('randomReceiverSplitConfirmArea');if(panel)panel.hidden=true;
+  const ack=mailUIElement('randomReceiverSplitAck');if(ack)ack.checked=false;
+ }
+ function receiverSplitEligible(row){
+  return row&&row.randomGenerated===true&&row.status==='draft'&&!row.remoteId&&
+   !row.poolTarget&&!row.poolImportedAt&&!row.forwardingTestedAt&&!row.catchAllVerifiedAt;
+ }
+ function previewReceiverSplit(){
+  requireOwner();
+  if(!unlocked||randomGenBusy||mailTestState.active)throw Error('Unlock the bank and finish any active test first.');
+  cancelReceiverSplitPlan();
+  const batchKeys=[...mailTestState.selectedBatchKeys];
+  if(!batchKeys.length)throw Error('Choose the batches to split using the checkboxes above.');
+  const receivers=[...mailTestState.selectedReceiverTargets].sort();
+  if(receivers.length<2)throw Error('Select at least two saved receiver inboxes.');
+  const valid=new Set(mailTestState.profiles.map(p=>p.mailbox));
+  if(receivers.some(x=>!valid.has(x)))throw Error('A receiver is no longer saved and IMAP verified. Refresh accounts.');
+  const chosen=testRowsForSelection({batchKeys});
+  const rows=chosen.filter(receiverSplitEligible).sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+  if(!rows.length)throw Error('No unpublished, unassigned drafts in the checked batches. Live, verified and imported emails were left unchanged.');
+  if(rows.length>200)throw Error('This plan contains '+rows.length+' aliases; Cloudflare allows only 200 individual routing rules per domain (including existing rules). Use an Email Worker or smaller eligible selection before splitting.');
+  if(new Set(rows.map(r=>r.alias)).size!==rows.length)throw Error('Duplicate aliases need review before a split.');
+  const changes=rows.map((row,i)=>({row,alias:row.alias,from:row.target,to:receivers[i%receivers.length]}));
+  const counts=receivers.map(r=>r+': '+changes.filter(x=>x.to===r).length).join(' · ');
+  receiverSplitPlan={batchKeys:batchKeys.slice().sort(),receivers,changes,snapshot:changes.map(x=>({
+   alias:x.alias,target:x.row.target,status:x.row.status,remoteId:x.row.remoteId||null,
+   poolTarget:x.row.poolTarget||null,poolImportedAt:x.row.poolImportedAt||null,forwardingTestedAt:x.row.forwardingTestedAt||null
+  }))};
+  mailUIElement('randomReceiverSplitSummary').textContent='PREVIEW: '+changes.length+' unpublished drafts split evenly: '+counts+
+   '. Only local forwarding destinations would change. Cloudflare individual rules must be published separately; current 200-rule capacity may be lower if rules already exist. No live routing changes have occurred.';
+  mailUIElement('randomReceiverSplitConfirmArea').hidden=false;
+ }
+ async function commitReceiverSplit(){
+  requireOwner();
+  if(!unlocked||randomGenBusy||mailTestState.active)throw Error('Finish active testing before saving a split.');
+  const plan=receiverSplitPlan;
+  if(!plan||!mailUIElement('randomReceiverSplitAck').checked)throw Error('Preview and acknowledge the draft-only split first.');
+  if(JSON.stringify([...mailTestState.selectedBatchKeys].sort())!==JSON.stringify(plan.batchKeys)||
+     JSON.stringify([...mailTestState.selectedReceiverTargets].sort())!==JSON.stringify(plan.receivers))
+   throw Error('Batch or receiver selection changed. Preview again.');
+  const current=testRowsForSelection({batchKeys:plan.batchKeys}).filter(receiverSplitEligible).sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+  if(current.length!==plan.snapshot.length||current.some((row,i)=>row!==plan.changes[i].row||
+     row.alias!==plan.snapshot[i].alias||row.target!==plan.snapshot[i].target||
+     row.status!==plan.snapshot[i].status||(row.remoteId||null)!==plan.snapshot[i].remoteId||
+     (row.poolTarget||null)!==plan.snapshot[i].poolTarget||(row.poolImportedAt||null)!==plan.snapshot[i].poolImportedAt||
+     (row.forwardingTestedAt||null)!==plan.snapshot[i].forwardingTestedAt))
+   throw Error('Email Bank drafts changed since preview. Review again; nothing updated.');
+  const previous=localStorage.getItem(KEY);
+  if(!previous)throw Error('Encrypted Email Bank unavailable. No destinations changed.');
+  const entropy=crypto.getRandomValues(new Uint8Array(8));
+  const backupKey=KEY+'.receiver-split-backup.'+Date.now()+'.'+Array.from(entropy,x=>x.toString(16).padStart(2,'0')).join('');
+  if(localStorage.getItem(backupKey)!==null)throw Error('Encrypted backup collision. No destinations changed.');
+  localStorage.setItem(backupKey,previous);
+  if(localStorage.getItem(backupKey)!==previous)throw Error('Encrypted backup verification failed. No destinations changed.');
+  randomGenBusy=true;
+  const before=plan.changes.map(x=>({row:x.row,target:x.row.target,forwardingTestedAt:x.row.forwardingTestedAt,
+   forwardingTestTarget:x.row.forwardingTestTarget,catchAllVerifiedAt:x.row.catchAllVerifiedAt}));
+  try{
+   for(const change of plan.changes){
+    change.row.target=change.to;change.row.forwardingTestedAt=null;
+    change.row.forwardingTestTarget=null;change.row.catchAllVerifiedAt=null;
+   }
+   if(!await store())throw Error('Encrypted save failed.');
+  }catch(error){
+   for(const x of before){
+    x.row.target=x.target;x.row.forwardingTestedAt=x.forwardingTestedAt;
+    x.row.forwardingTestTarget=x.forwardingTestTarget;x.row.catchAllVerifiedAt=x.catchAllVerifiedAt;
+   }
+   try{if(localStorage.getItem(KEY)!==previous)localStorage.setItem(KEY,previous);}catch{}
+   throw Error('Draft receiver split was not saved. Encrypted original backup retained: '+String(error?.message||error));
+  }finally{randomGenBusy=false;}
+  cancelReceiverSplitPlan();
+  mailUIElement('randomReceiverSplitSummary').textContent='Saved draft-only receiver allocation for '+before.length+
+   ' emails. Encrypted backup preserved. NO Cloudflare routing changed, and NO email is marked verified. Publish allowed routing rules or configure a Worker, then run tests against the actual receiver.';
+  refreshEmailBatchUI();refreshRandomChooser();
+ }
  function setupAutoMailTests(){
   const apiMethod=api()?.onEmailTestProgress;
   if(typeof apiMethod==='function')apiMethod(handleMailTestProgress);
   const settings=mailUIElement('randomTestSettings');
   mailUIElement('randomAliasTestAll').addEventListener('click',()=>void runAutomaticEmailTests({all:true}));
+  mailUIElement('randomAliasTestMulti').addEventListener('click',()=>{
+   const keys=[...mailTestState.selectedBatchKeys];
+   if(!keys.length){mailUIElement('randomTestStatus').textContent='Select at least one batch in the multi-batch list.';return;}
+   void runAutomaticEmailTests({batchKeys:keys});
+  });
   mailUIElement('randomAliasTestBatch').addEventListener('click',()=>{
    const group=emailBatchCurrentGroup();
-   if(!group)return;
-   // Legacy time-based batches are addressed by the current selection.
-   void runAutomaticEmailTests({all:false});
+   if(!group){mailUIElement('randomTestStatus').textContent='Choose a batch to test first.';return;}
+   // The picker in the test section and the lower batch-manager picker share emailBatchState.
+   // Exact generation batches use an ID; legacy time-grouped batches use the selected group.
+   if(group.key.startsWith('batch:'))void runAutomaticEmailTests({batchId:group.key.slice(6)});
+   else void runAutomaticEmailTests({all:false});
+  });
+  const senderList=mailUIElement('randomTestSenderPoolList');
+  senderList.addEventListener('change',event=>{
+   const check=event.target;if(!check?.matches?.('input[data-test-sender]'))return;
+   if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   if(check.checked)mailTestState.selectedSenderKeys.add(check.value);
+   else mailTestState.selectedSenderKeys.delete(check.value);
+   renderMailAccountPools();
+  });
+  mailUIElement('randomTestAllSenders').addEventListener('click',()=>{
+   if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.selectedSenderKeys=new Set(mailTestState.profiles.map(mailPairKey));renderMailAccountPools();
+  });
+  mailUIElement('randomTestClearSenders').addEventListener('click',()=>{
+   if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.selectedSenderKeys.clear();renderMailAccountPools();
+  });
+  mailUIElement('randomTestReceiverPoolList').addEventListener('change',event=>{
+   const check=event.target;if(!check?.matches?.('input[data-split-receiver]'))return;
+   if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   if(check.checked)mailTestState.selectedReceiverTargets.add(check.value);
+   else mailTestState.selectedReceiverTargets.delete(check.value);
+   cancelReceiverSplitPlan();renderMailAccountPools();
+  });
+  mailUIElement('randomReceiverSplitPreview').addEventListener('click',()=>{
+   try{previewReceiverSplit();}catch(error){cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent=String(error?.message||error);}
+  });
+  mailUIElement('randomReceiverSplitCommit').addEventListener('click',async()=>{
+   const button=mailUIElement('randomReceiverSplitCommit');button.disabled=true;
+   try{await commitReceiverSplit();}catch(error){cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent=String(error?.message||error);}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomReceiverSplitCancel').addEventListener('click',()=>{
+   cancelReceiverSplitPlan();mailUIElement('randomReceiverSplitSummary').textContent='Cancelled. No destinations changed.';
   });
   mailUIElement('randomAliasTestStop').addEventListener('click',()=>{
    mailTestState.cancel=true;

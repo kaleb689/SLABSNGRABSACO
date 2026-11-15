@@ -99,7 +99,49 @@
    picker.dataset.signature=signature;
   }
   picker.value=emailBatchState.key;
+  const testPicker=batchElement('randomTestBatchSelect');
+  if(testPicker){
+   if(testPicker.dataset.signature!==signature){
+    testPicker.replaceChildren();
+    for(const g of groups){
+     const option=document.createElement('option');option.value=g.key;
+     option.textContent=g.name+' — '+g.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length+' pending';
+     testPicker.appendChild(option);
+    }
+    if(!groups.length){
+     const option=document.createElement('option');option.value='';option.textContent=unlocked?'No generated batches':'Unlock Email Bank';testPicker.appendChild(option);
+    }
+    testPicker.dataset.signature=signature;
+   }
+   testPicker.value=emailBatchState.key;
+  }
+  const multiList=batchElement('randomTestMultiBatchList');
+  if(multiList){
+   if(!mailTestState.batchSelectionInitialized){
+    mailTestState.batchSelectionInitialized=true;
+    mailTestState.selectedBatchKeys=new Set(emailBatchState.key?[emailBatchState.key]:[]);
+   }
+   mailTestState.selectedBatchKeys=new Set([...mailTestState.selectedBatchKeys].filter(key=>validKeys.has(key)));
+   multiList.replaceChildren();
+   for(const g of groups){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;align-items:center;gap:7px;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=g.key;
+    check.checked=mailTestState.selectedBatchKeys.has(g.key);check.setAttribute('data-test-batch',g.key);
+    const text=document.createElement('span');text.className='tiny';
+    text.textContent=g.name+' · '+g.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length+' pending';
+    label.append(check,text);multiList.appendChild(label);
+   }
+   const chosen=groups.filter(g=>mailTestState.selectedBatchKeys.has(g.key));
+   const sum=batchElement('randomTestMultiBatchSummary');
+   if(sum)sum.textContent=chosen.length+' batch(es) selected · '+chosen.reduce((n,g)=>n+g.rows.length,0)+' saved addresses · '+
+    chosen.reduce((n,g)=>n+g.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length,0)+' pending verification.';
+  }
   const group=groups.find(g=>g.key===emailBatchState.key);
+  const testMeta=batchElement('randomTestBatchMeta');
+  if(testMeta)testMeta.textContent=group?
+   group.name+' — '+group.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length+' pending delivery verification. Test Selected Batch checks only this batch.':
+   'Unlock Email Bank and choose a generated batch to test.';
   const meta=batchElement('emailBatchMeta'),list=batchElement('emailBatchRows');
   list.replaceChildren();
   if(!group){
@@ -229,6 +271,67 @@
  // Deleting a batch is local-only: no Cloudflare rule or retailer pool changes.
  // Automatically preserve the original ENCRYPTED Email Bank before mutation.
  let emailBatchDeletePlan=null;
+ let emailBatchRemoveOnePlan=null;
+ function cancelEmailBatchRemoveOne(){
+  emailBatchRemoveOnePlan=null;
+  const panel=batchElement('emailBatchRemoveOneConfirmArea');if(panel)panel.hidden=true;
+  const typed=batchElement('emailBatchRemoveOneTyped');if(typed)typed.value='';
+  const checked=batchElement('emailBatchRemoveOneAcknowledge');if(checked)checked.checked=false;
+ }
+ function reviewEmailBatchRemoveOne(){
+  requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
+  if(mailTestState.active||randomGenBusy)throw Error('Wait for email generation/testing to finish.');
+  cancelEmailBatchRemoveOne();
+  const group=emailBatchCurrentGroup(),chosen=emailBatchSelectedRows(group);
+  if(!group||chosen.length!==1)throw Error('Select exactly one generated email in the chosen batch.');
+  const row=chosen[0],alias=emailBatchFormattedEmail(row);
+  if(row.poolTarget||row.poolImportedAt)throw Error('This email belongs to a retailer pool/profile. Replace the email from the same retailer unused pool in Profiles; do not delete its linked data.');
+  if(records.filter(r=>emailBatchFormattedEmail(r)===alias).length!==1)
+   throw Error('Duplicate Email Bank records require review before removing either.');
+  emailBatchRemoveOnePlan={key:group.key,alias,remoteId:row.remoteId||null,status:row.status||null,target:row.target||null};
+  batchElement('emailBatchRemoveOneSummary').textContent='Remove only '+alias+' from your LOCAL encrypted Email Bank?'+
+   (row.remoteId||row.status==='live'||row.status==='pending'?' This address may still have an ACTIVE Cloudflare route.':'')+
+   ' Existing profile cards, addresses and security codes are not touched. A verified encrypted backup is kept.';
+  batchElement('emailBatchRemoveOneConfirmArea').hidden=false;
+ }
+ async function confirmEmailBatchRemoveOne(){
+  requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
+  if(mailTestState.active||randomGenBusy)throw Error('Wait for email generation/testing to finish.');
+  const plan=emailBatchRemoveOnePlan,group=emailBatchCurrentGroup();
+  if(!plan||!group||group.key!==plan.key)throw Error('The selected batch changed. Review again.');
+  if(batchElement('emailBatchRemoveOneTyped').value.trim()!=='DELETE'||batchElement('emailBatchRemoveOneAcknowledge').checked!==true)
+   throw Error('Type DELETE and check the confirmation box first.');
+  const chosen=emailBatchSelectedRows(group);
+  if(chosen.length!==1||emailBatchFormattedEmail(chosen[0])!==plan.alias)
+   throw Error('The selected email changed. Review again.');
+  const row=chosen[0];
+  if(row.poolTarget||row.poolImportedAt||(row.remoteId||null)!==plan.remoteId||(row.status||null)!==plan.status||(row.target||null)!==plan.target)
+   throw Error('This email or its linked status changed; nothing was removed.');
+  if(records.filter(r=>emailBatchFormattedEmail(r)===plan.alias).length!==1)
+   throw Error('Duplicate records require review; nothing was removed.');
+  const previous=localStorage.getItem(KEY);
+  if(!previous)throw Error('Encrypted Email Bank unavailable; nothing removed.');
+  const entropy=crypto.getRandomValues(new Uint8Array(8));
+  const backupKey=KEY+'.single-email-delete-backup.'+Date.now()+'.'+Array.from(entropy,b=>b.toString(16).padStart(2,'0')).join('');
+  if(localStorage.getItem(backupKey)!==null)throw Error('Backup name collision; nothing removed.');
+  localStorage.setItem(backupKey,previous);
+  if(localStorage.getItem(backupKey)!==previous)throw Error('Could not verify encrypted backup; nothing removed.');
+  randomGenBusy=true;
+  const before=records.slice();
+  try{
+   const idx=records.indexOf(row);
+   if(idx<0)throw Error('Email changed since preview.');
+   records.splice(idx,1);
+   if(!await store())throw Error('Encrypted Email Bank save failed.');
+  }catch(error){
+   records.splice(0,records.length,...before);
+   try{if(localStorage.getItem(KEY)!==previous)localStorage.setItem(KEY,previous);}catch{}
+   throw Error('No email removal committed. Original encrypted snapshot retained: '+String(error?.message||error));
+  }finally{randomGenBusy=false;}
+  cancelEmailBatchRemoveOne();emailBatchState.selected.clear();
+  emailBatchStatus('Removed exactly '+plan.alias+' from this local Email Bank. Encrypted backup retained. Profile cards, addresses and security codes were not changed. Published Cloudflare routing, if any, remains separate.');
+  refreshEmailBatchUI();
+ }
  function cancelEmailBatchDeletion(){
   emailBatchDeletePlan=null;
   const box=batchElement('emailBatchDeleteConfirmArea');if(box)box.hidden=true;
@@ -291,8 +394,35 @@
   if(!picker)throw Error('Email Bank batch manager is missing from the right panel.');
   if(picker.dataset.bound==='1')return;
   picker.dataset.bound='1';
+  const multiList=batchElement('randomTestMultiBatchList');
+  if(multiList)multiList.addEventListener('change',event=>{
+   const box=event.target;
+   if(!box?.matches?.('input[data-test-batch]'))return;
+   if(mailTestState.active){box.checked=!box.checked;return;}
+   if(box.checked)mailTestState.selectedBatchKeys.add(box.value);
+   else mailTestState.selectedBatchKeys.delete(box.value);
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
+  batchElement('randomTestSelectAllBatches').addEventListener('click',()=>{
+   if(mailTestState.active)return;
+   mailTestState.selectedBatchKeys=new Set(emailBatchGroups().map(g=>g.key));
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
+  batchElement('randomTestClearBatches').addEventListener('click',()=>{
+   if(mailTestState.active)return;
+   mailTestState.selectedBatchKeys.clear();
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
+  const testPicker=batchElement('randomTestBatchSelect');
+  if(testPicker)testPicker.addEventListener('change',()=>{
+   emailBatchState.key=testPicker.value;emailBatchState.selected.clear();emailBatchState.page=0;
+   emailBatchResetPreview();cancelEmailBatchDeletion();cancelEmailBatchRemoveOne();refreshEmailBatchUI();
+  });
   picker.addEventListener('change',value=>{
-   emailBatchState.key=picker.value;emailBatchState.selected.clear();emailBatchState.page=0;emailBatchResetPreview();cancelEmailBatchDeletion();refreshEmailBatchUI();
+   emailBatchState.key=picker.value;emailBatchState.selected.clear();emailBatchState.page=0;emailBatchResetPreview();cancelEmailBatchDeletion();cancelEmailBatchRemoveOne();refreshEmailBatchUI();
   });
   batchElement('emailBatchSearch').addEventListener('input',()=>{
    emailBatchState.query=batchElement('emailBatchSearch').value;emailBatchState.page=0;refreshEmailBatchUI();
@@ -303,14 +433,14 @@
   batchElement('emailBatchRows').addEventListener('change',event=>{
    const box=event.target;
    if(!box?.matches?.('input[data-batch-alias]'))return;
-   emailBatchResetPreview();
+   emailBatchResetPreview();cancelEmailBatchRemoveOne();
    if(box.checked)emailBatchState.selected.add(box.value);else emailBatchState.selected.delete(box.value);
    refreshEmailBatchUI();
   });
   const selectButton=(id,getRows)=>batchElement(id).addEventListener('click',()=>{
    const group=emailBatchCurrentGroup();if(!group)return;
    emailBatchState.selected=new Set(getRows(group).map(emailBatchFormattedEmail));
-   emailBatchResetPreview();refreshEmailBatchUI();
+   emailBatchResetPreview();cancelEmailBatchRemoveOne();refreshEmailBatchUI();
   });
   selectButton('emailBatchSelectReady',g=>g.rows.filter(r=>batchVerified(r)&&!r.poolTarget&&!r.poolImportedAt));
   selectButton('emailBatchSelectVerified',g=>g.rows.filter(batchVerified));
@@ -333,6 +463,15 @@
   });
   batchElement('emailBatchPoolCancel').addEventListener('click',()=>{
    emailBatchResetPreview();emailBatchStatus('Cancelled. No email pool was changed.');
+  });
+  batchElement('emailBatchRemoveOneReview').addEventListener('click',()=>{
+   try{reviewEmailBatchRemoveOne();}catch(error){emailBatchStatus(String(error?.message||error));}
+  });
+  batchElement('emailBatchRemoveOneConfirm').addEventListener('click',async()=>{
+   try{await confirmEmailBatchRemoveOne();}catch(error){emailBatchStatus(String(error?.message||error));}
+  });
+  batchElement('emailBatchRemoveOneCancel').addEventListener('click',()=>{
+   cancelEmailBatchRemoveOne();emailBatchStatus('Single-email removal cancelled.');
   });
   batchElement('emailBatchDeleteReview').addEventListener('click',()=>{
    try{reviewEmailBatchDeletion();}catch(error){emailBatchStatus(String(error?.message||error));}

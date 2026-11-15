@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {validate,testForwarding}=require('../emailgen-forwarding-test');
+const {validate,testForwarding,reuseSavedReceiverCredentials}=require('../emailgen-forwarding-test');
 const mailbox={mailbox:'owner@example.test',password:'test-password-never-persisted',sender:'sender@example.test',senderPassword:'sender-password-never-persisted',smtpHost:'smtp.example.testmail',imapHost:'imap.example.testmail'};
 test('Forwarding test input rejects duplicate, wrong-domain and missing credentials',()=>{
  const base={...mailbox,aliases:['first@sng.sarl']};
@@ -111,4 +111,19 @@ test('SMTP rate limit stops next sends; skipped addresses are not reported as fa
  assert.equal(result.skipped,1);
  assert.equal(result.sendFailed,1);
  assert.ok(!events.some(x=>x.alias==='third@sng.sarl'));
+});
+
+test('Adding a new sender reuses only exact saved receiver IMAP credentials',()=>{
+ const found={mailbox:'receiver@gmail.com',password:'saved-imap-password',imapHost:'imap.gmail.com'};
+ const calls=[],store={read:arg=>{calls.push(arg);return arg.mailbox==='receiver@gmail.com'?found:null;}};
+ const config={mailbox:'receiver@gmail.com',sender:'new-sender@gmail.com',senderPassword:'new-sender-secret',
+  password:'',imapHost:'imap.wrong.test',reuseReceiverCredentials:true};
+ const merged=reuseSavedReceiverCredentials(config,store);
+ assert.equal(merged.password,'saved-imap-password');
+ assert.equal(merged.imapHost,'imap.gmail.com');
+ assert.equal(merged.senderPassword,'new-sender-secret');
+ assert.deepEqual(calls,[{mailbox:'receiver@gmail.com'}]);
+ assert.throws(()=>reuseSavedReceiverCredentials({...config,mailbox:'other@gmail.com'},store),/No saved receiver credentials/);
+ assert.equal(reuseSavedReceiverCredentials({...config,password:'new-receiver-secret'},store).password,'new-receiver-secret');
+ assert.equal(reuseSavedReceiverCredentials({...config,reuseReceiverCredentials:false},store).password,'');
 });
