@@ -213,10 +213,10 @@ test("plain 'Drop recap 11/13' renders a blue Discord box without mentions or to
   assert.deepEqual(preview.allowed_mentions,{parse:[]});
   assert.equal(preview.embeds.length,1);
   assert.equal(preview.embeds[0].color,0x3498db);
-  assert.equal(preview.embeds[0].description,"\`\`\`ini\\n[Drop recap 11/13]\\n\`\`\`");
+  assert.equal(preview.embeds[0].description,["```ini","[Drop recap 11/13]","```"].join(String.fromCharCode(10)));
   assert.equal(preview.content,undefined);
   assert.ok(!JSON.stringify(preview).includes("@everyone"));
-  assert.match(buildTypedDropRecapPreview(" drop  recap  3/9 ").embeds[0].description,/\\[Drop recap 3\\/9\\]/);
+  assert.ok(buildTypedDropRecapPreview(" drop  recap  3/9 ").embeds[0].description.includes("[Drop recap 3/9]"));
   assert.equal(buildTypedDropRecapPreview("Drop recap 0/13"),null);
   assert.equal(buildTypedDropRecapPreview("Drop recap 13/13"),null);
   assert.equal(buildTypedDropRecapPreview("Drop recap 11/31"),null);
