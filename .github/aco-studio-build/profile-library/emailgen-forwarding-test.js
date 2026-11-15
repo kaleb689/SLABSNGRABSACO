@@ -12,8 +12,10 @@ const IMAP_POLL_MS=3000;
 const MAX_RECEIPT_CANDIDATES=250;
 function fallbackBoxes(boxes){
  const available=(Array.isArray(boxes)?boxes:[]).filter(b=>typeof b?.path==='string'&&b.path);
- const all=available.find(b=>b.specialUse==='\\\\All')||available.find(b=>/^(?:\\[gmail\\]\\/)?all mail$/i.test(b.path));
- const spam=available.find(b=>b.specialUse==='\\\\Junk')||available.find(b=>/^(?:\\[gmail\\]\\/)?spam$/i.test(b.path));
+ const all=available.find(b=>String(b.specialUse||'').toLowerCase().endsWith('all'))||
+  available.find(b=>String(b.path).toLowerCase().endsWith('all mail'));
+ const spam=available.find(b=>String(b.specialUse||'').toLowerCase().endsWith('junk'))||
+  available.find(b=>String(b.path).toLowerCase().endsWith('spam'));
  return [...new Set([all?.path,spam?.path].filter(path=>path&&path.toUpperCase()!=='INBOX'))];
 }
 async function scanCurrentMailboxForExactMarkers(imap,sent,{started,now,onProgress,folder,diagnostics}){
