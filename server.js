@@ -50941,6 +50941,22 @@ await initializeArrayFile(
             );
             return {linked:true,pushConfigured:preferences.pushConfigured};
           },
+          // Owner-issued live-drop and recap broadcasts reach all enabled
+          // customer accounts, separately from opt-in retailer SKU alerts.
+          onGlobalDropNotification: async ({ notification, eventKey }) => {
+            const accounts=await getCustomerAccounts();
+            const recipients=(Array.isArray(accounts)?accounts:[])
+              .filter(account=>!account.disabled&&account.id)
+              .map(account=>String(account.id));
+            const delivery=await appOrderNotifications.notifyGlobalDropBroadcast(
+              recipients,notification,eventKey
+            );
+            if(delivery.pushQueued){
+              void appOrderNotifications.tick()
+                .catch(error=>console.error("Global drop broadcast push:",error.message));
+            }
+            return delivery;
+          },
           onRetailerSkuUpdate: async ({ notification, eventKey }) => {
             // Only linked members whose paid plan presently permits profiles
             // receive drop notices. Unlinked, expired and disabled accounts do
