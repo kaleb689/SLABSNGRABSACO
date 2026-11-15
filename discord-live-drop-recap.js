@@ -88,6 +88,19 @@ export function parseDiscordSuccessForRecap(message,channelId=SLABSNGRABSTC_SUCC
     orderTotal:exact.paidCents===null?null:exact.paidCents/100,
     orderTotalBasis:exact.basis||"unknown"};
 }
+// A typed owner's preview is presentation-only: never schedule a drop or
+// publish financial metrics in response to a chat message.
+export function buildTypedDropRecapPreview(text){
+  const match=/^drop\s+recap\s+(\d{1,2})\/(\d{1,2})$/i.exec(String(text??"").trim());
+  if(!match)return null;
+  const month=Number(match[1]),day=Number(match[2]);
+  const days=[0,31,29,31,30,31,30,31,31,30,31,30,31];
+  if(month<1||month>12||day<1||day>days[month])return null;
+  const label="Drop recap "+match[1]+"/"+match[2];
+  return {allowed_mentions:{parse:[]},embeds:[{
+    color:0x3498db,description:"```ini\n["+label+"]\n```"
+  }]};
+}
 export function dropControlRows() {
   return [
     {type:1,components:[
