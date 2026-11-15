@@ -294,3 +294,22 @@ test('Delayed message in Spam is polled within the same bounded receipt interval
  assert.ok(clock.loops>=1);
  assert.ok(result.receiptDiagnostics.waitMs<=15000);
 });
+
+test('Explicit one-email diagnosis waits up to 60 seconds for delayed proof, without changing normal bulk 15-second cap',async()=>{
+ const captured=[],clock={value:Date.now(),rounds:0};
+ const mail={createTransport:()=>({async sendMail(info){captured.push(info);},close(){}})};
+ class IMAP{
+  async connect(){}async getMailboxLock(){return {release(){}};}
+  async search(query){assert.ok(query.since instanceof Date);return [];}
+  async *fetch(){}async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['diagnose@sng.sarl'],diagnostic:true},{
+  mail,IMAP,now:()=>clock.value,delay:async(ms)=>{clock.rounds++;clock.value+=ms;}
+ });
+ assert.equal(captured.length,1);
+ assert.equal(result.delivered,0);
+ assert.equal(result.sentButUnconfirmed,1);
+ assert.equal(result.receiptDiagnostics.waitMs,60000);
+ assert.equal(clock.rounds,20);
+ assert.equal(IMAP_RECEIPT_WAIT_MS,15000);
+});
