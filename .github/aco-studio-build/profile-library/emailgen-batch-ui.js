@@ -272,43 +272,66 @@
  // Automatically preserve the original ENCRYPTED Email Bank before mutation.
  let emailBatchDeletePlan=null;
  let emailBatchRemoveOnePlan=null;
+ function emailBatchRemoveOneStatus(message){
+  const notice=batchElement('emailBatchRemoveOneStatus');
+  if(notice)notice.textContent=message;
+  emailBatchStatus(message);
+ }
  function cancelEmailBatchRemoveOne(){
   emailBatchRemoveOnePlan=null;
   const panel=batchElement('emailBatchRemoveOneConfirmArea');if(panel)panel.hidden=true;
   const typed=batchElement('emailBatchRemoveOneTyped');if(typed)typed.value='';
   const checked=batchElement('emailBatchRemoveOneAcknowledge');if(checked)checked.checked=false;
  }
+ function exactEmailForRemoval(){
+  const input=batchElement('emailBatchRemoveOneExact');
+  const typed=String(input?.value||'').trim().toLowerCase();
+  if(typed){
+   if(!validEmail(typed))throw Error('Enter a complete valid email address to remove.');
+   return typed;
+  }
+  const group=emailBatchCurrentGroup(),chosen=emailBatchSelectedRows(group);
+  if(!group||chosen.length!==1)throw Error('Enter the exact email above, or check exactly one email from a batch. There is no need to open its original batch.');
+  return emailBatchFormattedEmail(chosen[0]);
+ }
  function reviewEmailBatchRemoveOne(){
   requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
-  if(mailTestState.active||randomGenBusy)throw Error('Wait for email generation/testing to finish.');
+  if(mailTestState.active||randomGenBusy)throw Error('Stop or finish email generation/testing before removing an email.');
   cancelEmailBatchRemoveOne();
-  const group=emailBatchCurrentGroup(),chosen=emailBatchSelectedRows(group);
-  if(!group||chosen.length!==1)throw Error('Select exactly one generated email in the chosen batch.');
-  const row=chosen[0],alias=emailBatchFormattedEmail(row);
-  if(row.poolTarget||row.poolImportedAt)throw Error('This email belongs to a retailer pool/profile. Replace the email from the same retailer unused pool in Profiles; do not delete its linked data.');
-  if(records.filter(r=>emailBatchFormattedEmail(r)===alias).length!==1)
-   throw Error('Duplicate Email Bank records require review before removing either.');
-  emailBatchRemoveOnePlan={key:group.key,alias,remoteId:row.remoteId||null,status:row.status||null,target:row.target||null};
-  batchElement('emailBatchRemoveOneSummary').textContent='Remove only '+alias+' from your LOCAL encrypted Email Bank?'+
-   (row.remoteId||row.status==='live'||row.status==='pending'?' This address may still have an ACTIVE Cloudflare route.':'')+
-   ' Existing profile cards, addresses and security codes are not touched. A verified encrypted backup is kept.';
+  const alias=exactEmailForRemoval();
+  const matches=records.filter(r=>emailBatchFormattedEmail(r)===alias);
+  if(!matches.length)throw Error('Email not found in the encrypted Email Bank: '+alias+'. No records were changed.');
+  if(matches.length!==1)throw Error('Duplicate Email Bank entries for '+alias+' require review before removal.');
+  const row=matches[0];
+  if(row.poolTarget||row.poolImportedAt)
+   throw Error(alias+' is connected to a retailer pool/profile. Cannot remove its record without protecting linked data. Change its email in Profiles; saved cards, security codes and addresses remain untouched.');
+  emailBatchRemoveOnePlan={
+   alias,row,remoteId:row.remoteId||null,status:row.status||null,target:row.target||null,
+   poolTarget:row.poolTarget||null,poolImportedAt:row.poolImportedAt||null
+  };
+  batchElement('emailBatchRemoveOneSummary').textContent='Remove ONLY '+alias+' from the local encrypted Email Bank?'+
+   (row.remoteId||row.status==='live'||row.status==='pending'?' A Cloudflare forwarding rule may still exist.':'')+
+   ' No card, profile, security code, address or Cloudflare route will be deleted. An encrypted pre-removal backup will be verified.';
   batchElement('emailBatchRemoveOneConfirmArea').hidden=false;
+  emailBatchRemoveOneStatus('Reviewing '+alias+'. Type DELETE, check the confirmation, then click Remove This Email.');
  }
  async function confirmEmailBatchRemoveOne(){
   requireOwner();if(!unlocked)throw Error('Unlock the encrypted Email Bank first.');
-  if(mailTestState.active||randomGenBusy)throw Error('Wait for email generation/testing to finish.');
-  const plan=emailBatchRemoveOnePlan,group=emailBatchCurrentGroup();
-  if(!plan||!group||group.key!==plan.key)throw Error('The selected batch changed. Review again.');
+  if(mailTestState.active||randomGenBusy)throw Error('Stop or finish email generation/testing before removing an email.');
+  const plan=emailBatchRemoveOnePlan;
+  if(!plan)throw Error('Choose one email and review its removal first.');
   if(batchElement('emailBatchRemoveOneTyped').value.trim()!=='DELETE'||batchElement('emailBatchRemoveOneAcknowledge').checked!==true)
    throw Error('Type DELETE and check the confirmation box first.');
-  const chosen=emailBatchSelectedRows(group);
-  if(chosen.length!==1||emailBatchFormattedEmail(chosen[0])!==plan.alias)
-   throw Error('The selected email changed. Review again.');
-  const row=chosen[0];
-  if(row.poolTarget||row.poolImportedAt||(row.remoteId||null)!==plan.remoteId||(row.status||null)!==plan.status||(row.target||null)!==plan.target)
-   throw Error('This email or its linked status changed; nothing was removed.');
-  if(records.filter(r=>emailBatchFormattedEmail(r)===plan.alias).length!==1)
-   throw Error('Duplicate records require review; nothing was removed.');
+  if(exactEmailForRemoval()!==plan.alias)
+   throw Error('The email input or selection changed. Review again; nothing removed.');
+  const matches=records.filter(r=>emailBatchFormattedEmail(r)===plan.alias);
+  if(matches.length!==1||matches[0]!==plan.row)
+   throw Error('The Email Bank entry changed. Review again; nothing removed.');
+  const row=matches[0];
+  if((row.poolTarget||null)!==plan.poolTarget||(row.poolImportedAt||null)!==plan.poolImportedAt||
+     row.poolTarget||row.poolImportedAt||(row.remoteId||null)!==plan.remoteId||
+     (row.status||null)!==plan.status||(row.target||null)!==plan.target)
+   throw Error('The email assignment, routing or status changed. Review again; nothing removed.');
   const previous=localStorage.getItem(KEY);
   if(!previous)throw Error('Encrypted Email Bank unavailable; nothing removed.');
   const entropy=crypto.getRandomValues(new Uint8Array(8));
@@ -329,8 +352,9 @@
    throw Error('No email removal committed. Original encrypted snapshot retained: '+String(error?.message||error));
   }finally{randomGenBusy=false;}
   cancelEmailBatchRemoveOne();emailBatchState.selected.clear();
-  emailBatchStatus('Removed exactly '+plan.alias+' from this local Email Bank. Encrypted backup retained. Profile cards, addresses and security codes were not changed. Published Cloudflare routing, if any, remains separate.');
+  const input=batchElement('emailBatchRemoveOneExact');if(input)input.value='';
   refreshEmailBatchUI();
+  emailBatchRemoveOneStatus('REMOVED '+plan.alias+' from this local encrypted Email Bank. Encrypted backup retained. Profile cards, addresses and security codes were not changed. Cloudflare routing (if published) must be removed separately.');
  }
  function cancelEmailBatchDeletion(){
   emailBatchDeletePlan=null;
@@ -464,14 +488,19 @@
   batchElement('emailBatchPoolCancel').addEventListener('click',()=>{
    emailBatchResetPreview();emailBatchStatus('Cancelled. No email pool was changed.');
   });
+  const removalInput=batchElement('emailBatchRemoveOneExact');
+  if(removalInput)removalInput.addEventListener('input',()=>{
+   cancelEmailBatchRemoveOne();
+   emailBatchRemoveOneStatus('Email changed. Click Review removal of this email before confirming.');
+  });
   batchElement('emailBatchRemoveOneReview').addEventListener('click',()=>{
-   try{reviewEmailBatchRemoveOne();}catch(error){emailBatchStatus(String(error?.message||error));}
+   try{reviewEmailBatchRemoveOne();}catch(error){emailBatchRemoveOneStatus(String(error?.message||error));}
   });
   batchElement('emailBatchRemoveOneConfirm').addEventListener('click',async()=>{
-   try{await confirmEmailBatchRemoveOne();}catch(error){emailBatchStatus(String(error?.message||error));}
+   try{await confirmEmailBatchRemoveOne();}catch(error){emailBatchRemoveOneStatus(String(error?.message||error));}
   });
   batchElement('emailBatchRemoveOneCancel').addEventListener('click',()=>{
-   cancelEmailBatchRemoveOne();emailBatchStatus('Single-email removal cancelled.');
+   cancelEmailBatchRemoveOne();emailBatchRemoveOneStatus('Single-email removal cancelled. No records changed.');
   });
   batchElement('emailBatchDeleteReview').addEventListener('click',()=>{
    try{reviewEmailBatchDeletion();}catch(error){emailBatchStatus(String(error?.message||error));}
