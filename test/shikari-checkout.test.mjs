@@ -9,6 +9,7 @@ import { lateCancellation } from "../order-notifications.js";
 import { verifiedRetailerOrderTotal } from "../retailer-order-total.js";
 import {resolveOwnerVerifiedBackfill} from "../checkout-owner-backfills.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 
 const channel = "1532179373292257290";
 const product = "Pokemon Trading Card Game: Mega Evolution Delta Reign Three-Booster Blister";
@@ -34,6 +35,7 @@ function parseLiveWebhook(message) {
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
+    sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName: s => String(s || "").slice(0, 120).trim(),
     isSafeDiscordCheckoutProductName: s => !/@|password/i.test(s),
