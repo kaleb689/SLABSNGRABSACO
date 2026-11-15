@@ -22,3 +22,10 @@ test("Creates the missing private Admin category, but fails closed when Discord 
   assert.match(block,/const whole=String\(ch\.name\|\|""\)/);
   assert.match(block,/discordCommunityStatus\.dropControls=\{\s*ready:false/);
 });
+
+test("Bot retries owner drop-controls after permissions are granted, without creating duplicates",()=>{
+  assert.match(src,/dropProvisionRetryRunning=false/);
+  assert.match(src,/discordCommunityStatus\.dropControls\?\.ready\)return/);
+  assert.match(src,/void provision\(\)/);
+  assert.match(src,/\},3\*60000\)\.unref/);
+});
