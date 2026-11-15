@@ -1,6 +1,7 @@
 // Customer-paid membership extension checkout. Stripe confirms payment before any
 // subscription term/tier change. This module never reads or stores ACO card details.
 import crypto from "node:crypto";
+import { isThanksgivingCode, validateThanksgivingExtensionMonths, THANKSGIVING_MAX_DISCOUNT_MONTHS } from "./thanksgiving-2026.js";
 
 const asId = x => String(x || "").trim();
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -59,14 +60,17 @@ export function calculatePaidExtensionOffer({ months, targetTier, currentTier, p
   const monthly = amountCents(plans[desired]);
   if (!Number.isSafeInteger(monthly) || monthly < 50)
     throw fail("The selected membership price is unavailable.", 503);
+  try { validateThanksgivingExtensionMonths({months:count,code}); }
+  catch(error) { throw fail(error.message); }
   if (code && (scopeOf(code) === "signup" || code.discountType === "fixed-price"))
     throw fail("This code is not eligible for membership extensions.");
   const percent = code ? Number(code.percent) : 0;
   if (code && (!Number.isInteger(percent) || percent < 1 || percent > 100))
     throw fail("The extension discount percentage is invalid.");
   const discountedMonths = code ? (
-    code.extensionDiscountMonths === "all" || code.extensionDiscountMonths == null
-      ? count : Math.min(count, Number(code.extensionDiscountMonths))
+    isThanksgivingCode(code) ? Math.min(count,THANKSGIVING_MAX_DISCOUNT_MONTHS) :
+    (code.extensionDiscountMonths === "all" || code.extensionDiscountMonths == null
+      ? count : Math.min(count, Number(code.extensionDiscountMonths)))
   ) : 0;
   if (code && (!Number.isSafeInteger(discountedMonths) || discountedMonths < 1))
     throw fail("The extension discount duration is invalid.");
@@ -159,6 +163,20 @@ export function registerMembershipExtensionCommerce(app, d) {
     const selection = await subscriptionFor(account.id);
     const targetTier = Number(body.tier || selection.tier);
     const code = await getEligibleCode(body.discountCode, targetTier, account, pending);
+    if (isThanksgivingCode(code)) {
+      // A single checkout cannot exceed six months. Also stop repeat
+      // checkout sessions from stacking unlimited six-month discounts.
+      const prior = await readPurchases();
+      const active = (Array.isArray(prior) ? prior : []).filter(item =>
+        String(item.customerAccountId) === String(account.id) &&
+        isThanksgivingCode(item.quote?.discountCode || item.discountCode) &&
+        (["completed","refunding","refunded"].includes(item.status) ||
+          (item.status === "pending" && Date.parse(item.checkoutExpiresAt||"") > Date.now())));
+      const used = active.reduce((sum,item) =>
+        sum + Number(item.quote?.discountedMonths ?? item.months ?? 0), 0);
+      try { validateThanksgivingExtensionMonths({months:body.months,code,priorMonths:used}); }
+      catch(error) { throw fail(error.message); }
+    }
     const upgradeAdjustment=calculateUpgradeAdjustment(
       selection.subscription,selection.tier,targetTier,plans);
     const quote = calculatePaidExtensionOffer({

@@ -13,6 +13,7 @@ import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
 import {registerMembershipExtensionCommerce} from "./membership-extension-commerce.js";
+import { validateThanksgivingPromotionSetup } from "./thanksgiving-2026.js";
 import {registerPoolAlertMonitoring} from "./pool-availability-alerts.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
@@ -52,6 +53,8 @@ import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
+import { approvedUpcomingSchedule } from "./membership-thanksgiving-2026.js";
+import { qualifiesForPaidReferral, referralProfileAllowance, nextPermanentReferralBonus } from "./referral-lifetime-policy.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
@@ -4850,10 +4853,10 @@ async function notifyReferralSignup(account) {
 }
 
 async function notifyReferralAward(account, referrer) {
-  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). A one-month gifted profile reward was granted.`);
+  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). ${account.referralRewardType === "membership_lifetime_bonus" ? "One additional ACO profile was earned for the remainder of the referrer\u0027s active paid membership." : "A historical one-month gifted profile reward was granted."}`);
 }
 
-async function announceReferralReward(referrer) {
+async function announceReferralReward(referrer, referred) {
   const channels = await referralDiscordChannels();
   const general = channels.find(item => item.type === 0 && discordChannelLabel(item.name) === "general");
   if (!general) throw new Error("Discord General channel is unavailable.");
@@ -4862,10 +4865,10 @@ async function announceReferralReward(referrer) {
     signal: AbortSignal.timeout(12000)
   });
   if (!member.ok) throw new Error(`Referral member is not currently available in Discord (HTTP ${member.status}).`);
-  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> Thank you for the referral. You have received your free profile for 1 month`, [String(referrer.discordUserId)]);
+  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> ${referred?.referralRewardType === "membership_lifetime_bonus" ? "Thank you for the referral! You earned +1 ACO profile for the duration of your active paid membership." : "Thank you for the referral. You have received your free profile for 1 month."}`, [String(referrer.discordUserId)]);
 }
 
-const REFERRAL_REWARD_MESSAGE = "Thank you for the referral. You have received your free profile for 1 month";
+const REFERRAL_REWARD_MESSAGE = "Referral confirmed: +1 ACO profile for every successful new paid signup using your Discord username, retained while your paid membership remains active.";
 
 async function assignReferralRewardProfiles(referralId) {
   const gifts = await getGiftedMemberships();
@@ -4938,6 +4941,12 @@ async function assignReferralRewardProfiles(referralId) {
 async function processPendingReferrals() {
   const accounts = await getCustomerAccounts();
   for (const account of accounts) {
+    // A referral counts only after a verified new member becomes PAID.
+    // Retry pending referrals, idempotently, after Stripe webhook confirmation.
+    if (account.referredByAccountId && account.emailVerifiedAt && !account.referralAwardedAt) {
+      try { if (await awardVerifiedReferral(account)) continue; }
+      catch (error) { console.error("Pending paid referral award:", error.message); }
+    }
     if (account.referralAwardedAt) {
       try { await assignReferralRewardProfiles(account.id); }
       catch (error) { console.error("Referral managed profile assignment:", error.message); }
@@ -4965,7 +4974,7 @@ async function processPendingReferrals() {
       }
       if (!account.referralAnnouncementAt) {
         try {
-          await announceReferralReward(referrer);
+          await announceReferralReward(referrer, account);
           account.referralAnnouncementAt = new Date().toISOString();
           await saveCustomerAccounts(accounts);
         } catch (error) {
@@ -4977,30 +4986,38 @@ async function processPendingReferrals() {
 }
 
 async function awardVerifiedReferral(account) {
-  if (!account.emailVerifiedAt || !account.referredByAccountId || account.referralAwardedAt) return false;
+  if (!account?.emailVerifiedAt || !account?.referredByAccountId || account.referralAwardedAt) return false;
   const accounts = await getCustomerAccounts();
-  const referred = accounts.find(item => item.id === account.id);
-  const referrer = accounts.find(item => item.id === account.referredByAccountId && item.discordLinkedAt && item.discordUserId && item.disabled !== true);
-  if (!referred || !referrer || referred.id === referrer.id || referred.referralAwardedAt) return false;
-  const grants = await getGiftedMemberships();
-  if (grants.some(item => item.referralSourceAccountId === referred.id)) return false;
-  const now = new Date();
-  const end = new Date(now);
-  end.setUTCMonth(end.getUTCMonth() + 1);
-  grants.push({ id: crypto.randomUUID(), customerAccountId: referrer.id,
-    customerEmail: referrer.email || "", tier: 1, tierName: "Referral reward",
-    profiles: 3, months: 1, startsAt: now.toISOString(), expiresAt: end.toISOString(),
-    createdAt: now.toISOString(), createdBy: "referral", referralSourceAccountId: referred.id });
-  await saveGiftedMemberships(grants);
+  const referred = accounts.find(item => String(item.id) === String(account.id));
+  const referrer = accounts.find(item => String(item.id) === String(account.referredByAccountId));
+  const paid = await readJson(PAID_FILE, []);
+  if (!qualifiesForPaidReferral(referred, referrer, paid, subscriptionAllowsProfiles)) return false;
+  // One additional profile requires an ACTIVE paid referrer too. The reward
+  // remains on their record and is disabled automatically while they lapse.
+  const referrerPaid = (Array.isArray(paid) ? paid : []).find(record =>
+    String(record.customerAccountId) === String(referrer.id) && subscriptionAllowsProfiles(record));
+  if (!referrerPaid) return false;
+  // Never double-award an older, already granted one-month referral.
+  const historicalGrants = await getGiftedMemberships();
+  if (historicalGrants.some(item => String(item.referralSourceAccountId) === String(referred.id))) return false;
+  const now = new Date().toISOString();
+  referrer.referralBonusProfiles = nextPermanentReferralBonus(referrer.referralBonusProfiles);
+  referred.referralAwardedAt = now;
+  referred.referralRewardType = "membership_lifetime_bonus";
   const notes = customerNotifications(referrer);
   if (!notes.some(item => item.kind === "referral_reward" && item.referralSourceAccountId === referred.id)) {
-    notes.push({ id: crypto.randomUUID(), kind: "referral_reward", title: "Referral reward",
+    notes.push({ id: crypto.randomUUID(), kind: "referral_reward",
+      title: "Your permanent membership referral profile",
       message: REFERRAL_REWARD_MESSAGE, referralSourceAccountId: referred.id,
-      createdAt: now.toISOString(), updatedAt: now.toISOString() });
+      createdAt: now, updatedAt: now });
   }
-  referred.referralAwardedAt = now.toISOString();
   await saveCustomerAccounts(accounts);
-  void processPendingReferrals().catch(error => console.error("Referral announcement:", error.message));
+  // Reuse the regular Target/PKC pool provisioner, which never auto-assigns
+  // Walmart, so the earned slot gets populated whenever inventory permits.
+  if (referrerPaid.autoPoolProvisioningRequestedAt) {
+    void queuePaidPoolAutoAssignment(() => provisionPaidMembershipPool(referrerPaid))
+      .catch(error => console.error("Referral bonus pool provision:", error.message));
+  }
   return true;
 }
 
@@ -7106,7 +7123,8 @@ async function provisionPaidMembershipPool(record) {
  const customerAccountId=String(record.customerAccountId);
  const customer=(await getCustomerAccounts()).find(a=>String(a.id)===customerAccountId);
  if(!customer)return;
- const quantity=Math.min(100,Math.max(0,profileAllowanceForRecord(record)));
+ const earnedBonus=Math.max(0,Number(customer.referralBonusProfiles)||0);
+ const quantity=Math.max(0,profileAllowanceForRecord(record))+earnedBonus;
  if(!quantity)return;
  const retailers=["target","pokemoncenter"]; // NEVER automatically link Walmart.
  const reservedJigs=new Set();
@@ -14113,11 +14131,11 @@ async function getCustomerProfileAllowance(
   const referralAllowance = activeGifts
     .filter(item => item.createdBy === "referral")
     .reduce((sum, item) => sum + Math.max(0, Number(item.profiles) || 0), 0);
-  const baseAllowance = Math.max(paidAllowance, giftedAllowance) + referralAllowance;
-  if (!baseAllowance) return 0;
   const customer = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
-  const bonus = Math.max(0, Number(customer?.referralBonusProfiles) || 0);
-  return Math.min(100, baseAllowance + bonus);
+  return referralProfileAllowance({
+    paidAllowance, giftedAllowance, legacyReferralAllowance: referralAllowance,
+    earnedReferralBonus: customer?.referralBonusProfiles
+  });
 }
 
 function customerVisibleProfile(record = {}) {
@@ -16631,12 +16649,19 @@ app.get("/api/public/membership-discounts", async (req, res) => {
   for (const tier of Object.keys(PLANS)) {
     const sale = activeSitewideDiscount(records, tier);
     if (sale) discounts[tier] = {
-      percent: sale.percent, duration: sale.duration,
+      code: sale.code, percent: sale.percent, duration: sale.duration,
+      durationMonths: sale.durationMonths, endsAt: sale.expiresAt || null,
       ...(sale.discountType === "fixed-price" ? { fixedPrice: sale.fixedPrice } : {})
     };
   }
+  // The 42% proposed increase is informational and NEVER changes Stripe.
+  // Do not publish an upcoming price until the owner explicitly approves it
+  // and the separately scheduled billing migration has been reviewed.
+  const upcoming = approvedUpcomingSchedule(PLANS, {
+    approved: process.env.SNG_NOV28_UPCOMING_PRICE_DISPLAY_APPROVED === "true"
+  });
   res.set("Cache-Control", "no-store");
-  return res.json({ discounts });
+  return res.json({ discounts, ...(upcoming ? { upcoming } : {}) });
 });
 
 // Remove a customer from the website, the ACO Studio app and admin rosters.
@@ -16756,6 +16781,17 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
     if (startsAt && expiration && expiration <= startsAt)
       return res.status(400).json({error:"The discount expiration must be after its start time."});
+    // Thanksgiving 25% applies to at most SIX months (signup and prepaid
+    // extension). Reject malformed configurations before any Stripe writes.
+    try {
+      validateThanksgivingPromotionSetup({
+        code,discountScope,discountType,percent:requestedPercent,duration,durationMonths,
+        extensionDiscountMonths,sitewide,ogOnly,recipientEmail,appliesToRentals,
+        tier,startsAt:startsAt?.toISOString(),expiresAt:expiration?.toISOString()
+      });
+    } catch (error) {
+      return res.status(400).json({error:error.message});
+    }
     if (!/^[A-Z0-9]{3,40}$/.test(code) ||
         (tier !== "all" && !PLANS[tier]) ||
         (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
