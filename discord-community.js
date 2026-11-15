@@ -989,8 +989,8 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
   return webSkuBridge.save(String(discordUserId || ""), String(username || ""), selection);
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit }) {
+export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, appMessagesReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onCustomerSupportReady, onCustomerSupportReply }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1083,7 +1083,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     return response.json();
   }
   let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
-  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, targetSkuListChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, targetSkuListChannelId, adminChannelId, adminProfilesChannelId, appSupportChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
   let dropRecapController = null, dropControlSourceGuildId = null, dropControlChannelId = null;
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
@@ -1505,6 +1505,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         { id: appId, type: 1, allow: "68624" },
         ...(ownerId ? [{ id: ownerId, type: 1, allow: "68608" }] : [])
       ];
+      const appSupportOwnerOnly = [
+        { id:guildId,type:0,deny:"1024" },
+        { id:appId,type:1,allow:"68624" },
+        { id:ownerId,type:1,allow:"68608" }
+      ];
       const adminNames = new Set(["admin", "adminprofiles", "actionneeded"]);
       let adminCategory = channels.find(item => item.type === 4 && normalizeName(item.name) === "adminonly");
       if (!adminCategory) adminCategory = await api(`/guilds/${guildId}/channels`, "POST", {
@@ -1519,7 +1524,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       adminProfilesChannelId = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "adminprofiles")?.id || null;
       lapseChecklistRuntime = { api, adminChannelId: adminProfilesChannelId || adminChannelId };
       for (const adminChannel of adminChannels) {
-        const expected = [2, 13].includes(adminChannel.type) ? [
+        const expected = normalizeName(adminChannel.name)==="appmessages" ? appSupportOwnerOnly : [2, 13].includes(adminChannel.type) ? [
           { id: guildId, type: 0, deny: "1024" },
           { id: staffRoleId, type: 0, allow: "3146752" },
           { id: appId, type: 1, allow: "3146768" },
@@ -1538,6 +1543,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       });
       await ensurePanel(actionNeeded.id, "action-needed",
         "**Action Needed** — When a customer account has an issue that needs staff attention, the owner or Support Staff will be pinged here. Review the issue and help the member in their private ticket. This channel is visible only to the owner and Support Staff.");
+      // Private customer-to-owner app inbox in the existing Admin Only category.
+      // Never grant Support Staff or customers direct Discord channel access.
+      let appMessages = adminChannels.find(item =>
+        item.type===0 && normalizeName(item.name)==="appmessages");
+      if(!appMessages)appMessages=await api("/guilds/"+guildId+"/channels","POST",{
+        name:"app-messages",type:0,parent_id:adminCategory.id,
+        permission_overwrites:appSupportOwnerOnly,
+        topic:"Private messages from the SLABSNGRABSACO app. Reply to the bot's message, or @mention the linked member, to answer in-app."
+      });
+      else if(String(appMessages.parent_id||"")!==String(adminCategory.id)||
+        !sameOverwrites(appMessages.permission_overwrites,appSupportOwnerOnly))
+        appMessages=await api("/channels/"+appMessages.id,"PATCH",{
+          parent_id:adminCategory.id,permission_overwrites:appSupportOwnerOnly
+        });
+      appSupportChannelId=String(appMessages.id);
+      discordCommunityStatus.appMessagesReady=true;
+      discordCommunityStatus.appMessagesChannelId=appSupportChannelId;
+      if(typeof onCustomerSupportReady==="function")
+        onCustomerSupportReady({
+          channelId:appSupportChannelId,guildId:String(guildId),ownerId:String(ownerId),
+          send:payload=>api("/channels/"+appSupportChannelId+"/messages","POST",payload)
+        });
       const foundNames = new Set(channels.filter(item => adminNames.has(normalizeName(item.name))).map(item => normalizeName(item.name)));
       foundNames.add(normalizeName(actionNeeded.name));
       discordCommunityStatus.adminChannelsReady = [...adminNames].every(name => foundNames.has(name));
@@ -5406,6 +5433,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
+            if (appSupportChannelId && String(packet.d?.channel_id||"")===appSupportChannelId) {
+              if (typeof onCustomerSupportReply==="function")
+                await onCustomerSupportReply(packet.d);
+              return;
+            }
             const successChannelId = String(await getChannelId());
             const checkoutSourceId = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
             if (
