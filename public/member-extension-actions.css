@@ -1,0 +1,18 @@
+.member-extension-controls{margin-top:18px;border:1px solid #36b8d8;border-radius:17px;padding:17px;background:linear-gradient(150deg,#09334b,#101d32);color:#eefaff}
+.member-extension-controls h4{margin:0 0 8px;font-size:17px}
+.member-extension-controls p{font-size:12px;line-height:1.6;color:#ccedf9}
+.member-extension-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:11px;margin:15px 0}
+.member-extension-fields label{font-size:12px;font-weight:750;color:#c7f4ff}
+.member-extension-fields input,.member-extension-fields select{box-sizing:border-box;width:100%;min-width:0;margin-top:5px;padding:12px 10px;background:#071927;border:1px solid #3a90b0;border-radius:10px;color:white;font-size:16px}
+.member-extension-code{grid-column:1/-1}
+.member-extension-actions{display:flex;gap:10px;flex-wrap:wrap;margin:13px 0}
+.member-extension-actions button{flex:1;min-width:140px;padding:12px;border-radius:10px;border:1px solid #54ddff;background:#0c6794;color:#fff;font-weight:850;cursor:pointer}
+.member-extension-actions button:disabled{opacity:.54;cursor:default}
+.member-extension-actions .member-extension-cancel{border-color:#d85d70;background:#391d30;color:#ffbec4}
+.member-extension-quote{border:1px solid #2f718d;border-radius:12px;padding:14px;background:#051522}
+.member-extension-quote:empty{display:none}
+.member-extension-quote strong{display:block;font-size:16px}
+.member-extension-quote .extension-pay-total{color:#78efbd;font-size:23px}
+.member-extension-quote .extension-savings{color:#78efbd}
+.member-extension-quote small{display:block;font-size:11px;color:#9abbd0;line-height:1.6}
+#extensionStatus{min-height:16px;font-weight:800;color:#91f3ff}

@@ -12,6 +12,8 @@ import { managedWriteConflict, nextManagedRevision, serializeManagedWrites, merg
 import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
+import {registerMembershipExtensionCommerce} from "./membership-extension-commerce.js";
+import {registerPoolAlertMonitoring} from "./pool-availability-alerts.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
 import { historicalPlusVerified, communityCheckoutTotals, safeAdminProfileLabel, adminCheckoutCustomerName, summarizeUnmatchedCheckouts } from "./checkout-reporting.js";
@@ -250,6 +252,8 @@ const SUBSCRIPTION_EXTENSIONS_FILE =
 
 const DISCOUNT_CODES_FILE =
   path.join(DATA_DIR, "discount-codes.json");
+const PAID_EXTENSION_PURCHASES_FILE =
+  path.join(DATA_DIR, "paid-extension-purchases.json");
 
 const SITE_NOTIFICATION_FILE =
   path.join(DATA_DIR, "site-notification.json");
@@ -1281,6 +1285,12 @@ function stripeTimestampToIso(value) {
 }
 
 async function getSubscriptionPeriodEnd(subscription) {
+  // The prepaid extension collects payment up front, and Stripe voids recurring
+  // invoices until the scheduled resume date. Use that verified date for access.
+  if (Number(subscription?.pause_collection?.resumes_at) > Number(subscription?.current_period_end || 0)
+      && subscription?.metadata?.sng_last_paid_extension_session) {
+    return stripeTimestampToIso(subscription.pause_collection.resumes_at);
+  }
   // When an admin extends a paid term with a no-charge Stripe trial, renewal
   // cannot be presented earlier than that Stripe-confirmed trial boundary.
   if (Number(subscription?.trial_end) > Number(subscription?.current_period_end || 0)) {
@@ -7240,6 +7250,7 @@ function preferManagedAccountsMatchingAssignedPoolEmails(
 
 let privateStudioLicensing;
 let billingReceiptHandler;
+let membershipExtensionCommerce;
 
 /* -------------------------------------------------------
    STRIPE WEBHOOK
@@ -7283,6 +7294,13 @@ app.post(
       // Standalone desktop licensing only; customer vault data is never accessed.
       if (privateStudioLicensing) await privateStudioLicensing.onStripeEvent(event);
       if (billingReceiptHandler) await billingReceiptHandler.onStripeEvent(event);
+
+      // Prepaid extensions are fulfilled ONLY after a verified Stripe payment webhook.
+      if (["checkout.session.completed","checkout.session.async_payment_succeeded"].includes(event.type)
+          && event.data.object?.metadata?.purchase_type === "membership_extension") {
+        if (!membershipExtensionCommerce) throw new Error("Paid extension fulfillment is not initialized.");
+        await membershipExtensionCommerce.fulfill(event.data.object);
+      }
 
       /* CHECKOUT COMPLETED */
 
@@ -8238,12 +8256,10 @@ app.post(
             ).toLowerCase();
 
           const currentCancelAtPeriodEnd =
-            record
-              .cancelAtPeriodEnd ===
-            true ||
-            subscription
-              ?.cancel_at_period_end ===
-            true;
+            record.cancelAtPeriodEnd === true ||
+            Boolean(record.cancelAt) ||
+            subscription?.cancel_at_period_end === true ||
+            Boolean(subscription?.cancel_at);
 
           /*
             Notify immediately when the member first
@@ -12521,6 +12537,24 @@ async function saveDiscountCodes(records) {
 
 // Consult Stripe for limits on currently redeemable codes. Local records
 // preserve historical use counts if a code's coupon is edited/replaced.
+const activatedScheduledPromotionCodes=new Set();
+async function activateStartedScheduledPromotions() {
+  const records=await getDiscountCodes(),now=Date.now();
+  for(const record of records){
+    const id=String(record.stripePromotionCodeId||"");
+    if(!id||!record.startsAt||!record.active||record.discountScope==="extension"||
+       (record.expiresAt&&Date.parse(record.expiresAt)<=now)||
+       Date.parse(record.startsAt)>now||
+       activatedScheduledPromotionCodes.has(id))continue;
+    try{
+      const promotion=await stripe.promotionCodes.retrieve(id);
+      if(promotion.active!==true)await stripe.promotionCodes.update(id,{active:true});
+      activatedScheduledPromotionCodes.add(id);
+    }catch(error){
+      console.error("Scheduled promotion activation failed:",id,error?.code||error?.message);
+    }
+  }
+}
 async function discountCodesWithUsage() {
   const records = await getDiscountCodes();
   return Promise.all(records.map(async record => {
@@ -15871,6 +15905,31 @@ app.put(
   }
 );
 const notifyAdminMobile = attachAdminPush(app, { dataDir: DATA_DIR, baseUrl: BASE_URL, requireAdmin });
+membershipExtensionCommerce = registerMembershipExtensionCommerce(app, {
+  stripe,plans:PLANS,baseUrl:BASE_URL,requireCustomer,requireAdmin,
+  readPurchases:()=>readJson(PAID_EXTENSION_PURCHASES_FILE,[]),
+  writePurchases:rows=>writeJson(PAID_EXTENSION_PURCHASES_FILE,rows),
+  getPaid:()=>readJson(PAID_FILE,[]),
+  savePaid:rows=>writeJson(PAID_FILE,rows),
+  getCustomers:getCustomerAccounts,saveCustomers:saveCustomerAccounts,
+  getDiscounts:getDiscountCodes,getDiscountsWithUsage:discountCodesWithUsage,
+  saveDiscounts:saveDiscountCodes,applySubscriptionInfo,subscriptionAllowsProfiles,
+  planForStripePriceId,requestedMembershipDuration,
+  notifyMember:(account,notice)=>customerNotifications(account).push({
+    id:crypto.randomUUID(),updatedAt:new Date().toISOString(),...notice
+  }),
+  notifyAdminMobile,sendDiscordPayment:sendDiscordAdminPaymentNotification,
+  notifyScheduledCancel:notifyScheduledMembershipCancellation,
+  provisionPaidPool:record=>record?queuePaidPoolAutoAssignment(()=>provisionPaidMembershipPool(record)):null,
+  broadcast:broadcastLiveDataChange
+});
+const startPoolAlerts = registerPoolAlertMonitoring(app,{
+  dataDir:DATA_DIR,requireAdmin,getAvailability:getManagedAvailability,notifyAdminMobile,
+  readJson,writeJson,
+  discordWebhookUrl:()=>process.env.DISCORD_ADMIN_PROFILE_WEBHOOK_URL ||
+    process.env.DISCORD_ACTION_NEEDED_WEBHOOK_URL ||
+    process.env.DISCORD_ADMIN_PAYMENT_WEBHOOK_URL || ""
+});
 app.post("/api/admin/push/test", requireAdmin, async (_req, res) => {
   try {
     await notifyAdminMobile(
@@ -16577,6 +16636,21 @@ async function saveAdminDiscount(req, res, existingId = null) {
   try {
     const code = String(req.body?.code || "").trim().toUpperCase();
     const discountType = req.body?.discountType === "fixed-price" ? "fixed-price" : "percent";
+    const discountScope = ["signup","extension","both"].includes(req.body?.discountScope)
+      ? req.body.discountScope : "signup";
+    const discountLabel = clean(req.body?.discountLabel || "", 100);
+    const extensionDiscountMonths = req.body?.extensionDiscountMonths === "all" ||
+      req.body?.extensionDiscountMonths == null || req.body?.extensionDiscountMonths === ""
+        ? "all" : Number(req.body.extensionDiscountMonths);
+    if ((discountScope === "extension" || discountScope === "both") &&
+        (discountType !== "percent" ||
+          (extensionDiscountMonths !== "all" && (!Number.isSafeInteger(extensionDiscountMonths) ||
+          extensionDiscountMonths < 1 || extensionDiscountMonths > 1200)))) {
+      return res.status(400).json({error:"Extension codes require a percentage and a discount duration of all months or 1–1200 months."});
+    }
+    const startsAt = req.body?.startsAt ? new Date(req.body.startsAt) : null;
+    if (startsAt && !Number.isFinite(startsAt.getTime()))
+      return res.status(400).json({error:"Choose a valid promotion start date and time."});
     const requestedPercent = Number(req.body?.percent);
     const requestedFixedPrice = Number(req.body?.fixedPrice);
     const maxUsesInput = req.body?.maxUses;
@@ -16595,6 +16669,8 @@ async function saveAdminDiscount(req, res, existingId = null) {
       return res.status(400).json({ error: "Choose a sitewide sale or enter a valid recipient email for a private code." });
     }
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+    if (startsAt && expiration && expiration <= startsAt)
+      return res.status(400).json({error:"The discount expiration must be after its start time."});
     if (!/^[A-Z0-9]{3,40}$/.test(code) ||
         (tier !== "all" && !PLANS[tier]) ||
         (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
@@ -16676,8 +16752,11 @@ async function saveAdminDiscount(req, res, existingId = null) {
       }
       // Private and OG-only discounts are redeemed only through authenticated checkout.
       // No public Stripe promotion code is created for either restricted audience.
-      promotion = (recipientEmail || ogOnly) ? null : await stripe.promotionCodes.create({
-        coupon: coupon.id, code, active: existing ? existing.active : true,
+      // Extension-only codes are redeemed by the server's prepaid checkout.
+      // Never expose them as Stripe promotion codes on normal signup.
+      promotion = (recipientEmail || ogOnly || discountScope === "extension") ? null : await stripe.promotionCodes.create({
+        coupon: coupon.id, code,
+        active:(existing ? existing.active : true) && (!startsAt || startsAt.getTime()<=Date.now()),
         ...(remainingUses !== null ? { max_redemptions: remainingUses } : {}),
         ...(expiration ? { expires_at: Math.floor(expiration.getTime() / 1000) } : {})
       });
@@ -16694,6 +16773,8 @@ async function saveAdminDiscount(req, res, existingId = null) {
     }
     const discount = {
       id: existing?.id || crypto.randomUUID(), code, percent, tier, appliesToRentals, duration, durationMonths,
+      discountScope,discountLabel,extensionDiscountMonths,
+      startsAt:startsAt?.toISOString() || null,
       discountType, fixedPrice: fixedPriceCents === null ? null : fixedPriceCents / 100,
       amountOffCents, maxUses, usesBeforeCurrentCoupon,
       expiresAt: expiration?.toISOString() || null,
@@ -16767,7 +16848,9 @@ app.patch("/api/admin/discount-codes/:id", requireAdmin, queueDiscountMutation(a
   if (!item) return res.status(404).json({ error: "Discount code was not found." });
   if (typeof req.body?.active !== "boolean") return res.status(400).json({ error: "Choose active or inactive." });
   try {
-    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, { active: req.body.active });
+    if (item.stripePromotionCodeId) await stripe.promotionCodes.update(item.stripePromotionCodeId, {
+      active:req.body.active && (!item.startsAt || Date.parse(item.startsAt)<=Date.now())
+    });
   } catch (error) {
     console.error("Stripe promotion code update failed:", error?.message);
     return res.status(502).json({ error: "Could not update this promotion code in Stripe." });
@@ -37404,6 +37487,7 @@ app.post(
       const consentFlowId = String(req.body.consentFlowId || "");
       let discountOptions;
       try {
+        await activateStartedScheduledPromotions();
         const paidForOgCheck = await readJson(PAID_FILE, []);
         const customerPaidForOgCheck = (Array.isArray(paidForOgCheck) ? paidForOgCheck : [])
           .filter(item => String(item.customerAccountId || "") === String(req.customerAccount.id));
@@ -37809,6 +37893,11 @@ app.post(
             error:
               "Only an active membership can be upgraded."
           });
+      }
+
+      if (subscription.pause_collection?.resumes_at &&
+          Number(subscription.pause_collection.resumes_at) > Date.now()/1000) {
+        return res.status(409).json({error:"This membership already has a prepaid extension. Use Extend Membership to choose additional prepaid time and an upgraded tier."});
       }
 
       if (
@@ -50113,7 +50202,9 @@ const ownedOrders =
           cancelAtPeriodEnd:
             selected
               .cancelAtPeriodEnd ===
-            true
+            true,
+          cancelAt:selected.cancelAt || null,
+          prepaidThrough:selected.prepaidThrough || null
         };
         // Subscription billing can be active before the owner has finished
         // setting up any of this customer's ACO profiles.
@@ -50763,6 +50854,12 @@ await initializeArrayFile(
 
 
         startManagedExpirationScheduler();
+        startPoolAlerts();
+        void activateStartedScheduledPromotions().catch(error=>console.error("Initial promotion activation:",error?.message));
+        const scheduledPromotionCheck=setInterval(()=>{
+          void activateStartedScheduledPromotions().catch(error=>console.error("Scheduled promotion check:",error?.message));
+        },60*1000);
+        scheduledPromotionCheck.unref?.();
         startShippingTrackerScheduler();
         startOfficialCarrierTrackingScheduler();
         startCheckoutDmSummaryScheduler({
