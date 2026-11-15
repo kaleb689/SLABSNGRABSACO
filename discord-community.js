@@ -1325,7 +1325,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       // Never silently substitute a DM or a channel in the separate ACO guild.
       // Match the entire category name, not only the part after a decorative
       // divider; e.g. "🔒 ADMIN | STAFF" still belongs to Admin.
-      const adminCategory=sourceChannels.find(ch=>{
+      let adminCategory=sourceChannels.find(ch=>{
         if(ch.type!==4)return false;
         const whole=String(ch.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
         const final=normalizeName(ch.name);
@@ -1333,10 +1333,14 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           ["admin","admins","adminonly","adminsection"].includes(final);
       });
       if(!adminCategory){
-        console.warn("Original TCG server categories:",
-          JSON.stringify(sourceChannels.filter(ch=>ch.type===4)
-            .map(ch=>({name:ch.name,id:ch.id}))));
-        throw Error("SLABSNGRABSTC Admin category was not found; #drop-controls was NOT created");
+        // Owner confirmed Manage Channels was granted. This TCG server
+        // currently has only the two default categories, so create a
+        // private Admin section rather than guessing an unrelated category.
+        adminCategory=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
+          name:"Admin",type:4,
+          permission_overwrites:readOwnerOnly
+        });
+        console.log("Created private original TCG Admin category:",adminCategory.id);
       }
       let controls=sourceChannels.find(ch=>ch.type===0 &&
         normalizeName(ch.name)==="dropcontrols");
