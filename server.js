@@ -13,6 +13,7 @@ import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
 import {registerMembershipExtensionCommerce} from "./membership-extension-commerce.js";
+import { validateThanksgivingPromotionSetup } from "./thanksgiving-2026.js";
 import {registerPoolAlertMonitoring} from "./pool-availability-alerts.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
@@ -16648,8 +16649,8 @@ app.get("/api/public/membership-discounts", async (req, res) => {
   for (const tier of Object.keys(PLANS)) {
     const sale = activeSitewideDiscount(records, tier);
     if (sale) discounts[tier] = {
-      percent: sale.percent, duration: sale.duration,
-      endsAt: sale.expiresAt || null,
+      code: sale.code, percent: sale.percent, duration: sale.duration,
+      durationMonths: sale.durationMonths, endsAt: sale.expiresAt || null,
       ...(sale.discountType === "fixed-price" ? { fixedPrice: sale.fixedPrice } : {})
     };
   }
@@ -16780,6 +16781,17 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
     if (startsAt && expiration && expiration <= startsAt)
       return res.status(400).json({error:"The discount expiration must be after its start time."});
+    // Thanksgiving 25% applies to at most SIX months (signup and prepaid
+    // extension). Reject malformed configurations before any Stripe writes.
+    try {
+      validateThanksgivingPromotionSetup({
+        code,discountScope,discountType,percent:requestedPercent,duration,durationMonths,
+        extensionDiscountMonths,sitewide,ogOnly,recipientEmail,appliesToRentals,
+        tier,startsAt:startsAt?.toISOString(),expiresAt:expiration?.toISOString()
+      });
+    } catch (error) {
+      return res.status(400).json({error:error.message});
+    }
     if (!/^[A-Z0-9]{3,40}$/.test(code) ||
         (tier !== "all" && !PLANS[tier]) ||
         (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
