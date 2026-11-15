@@ -16,6 +16,8 @@ test("Owner drop controls are created in original TCG Admin category, never a DM
   assert.doesNotMatch(block,/mode:"owner_dm"/);
 });
 test("Discord fails closed when the requested Admin category or channel permissions are unavailable",()=>{
-  assert.match(block,/if\(!adminCategory\)\s*throw Error/);
+  assert.match(block,/if\(!adminCategory\)/);
+  assert.match(block,/Admin category was not found/);
+  assert.match(block,/const whole=String\(ch\.name\|\|""\)/);
   assert.match(block,/discordCommunityStatus\.dropControls=\{\s*ready:false/);
 });
