@@ -302,51 +302,73 @@
   renderAutoTestProgress();
   const stopTest=()=>mailTestState.cancel=true;
   try{
+   const unavailableSenders=new Set();
+   let senderGroupCount=0;
    for(const bucket of profileBuckets.values()){
     if(mailTestState.cancel||mailTestState.paused)break;
-    const profile=bucket.profile,rows=bucket.rows;
+    const rows=bucket.rows,mailbox=bucket.mailbox;
+    let senderCursor=0;
     for(let start=0;start<rows.length;){
      if(mailTestState.cancel||mailTestState.paused)break;
-     const preflight=start===0&&catchallForMailbox(profile.mailbox);
+     const preflight=start===0&&catchallForMailbox(mailbox);
      const set=rows.slice(start,start+(preflight?AUTO_TEST_PREFLIGHT_SIZE:AUTO_TEST_GROUP_SIZE));
      start+=set.length;
-     status.textContent='Checking '+profile.mailbox+' using sender '+profile.sender+' — '+mailTestState.done+'/'+total+' completed. Tests move into Trash after confirmed receipt.';
-     const response=await api().testForwarding({
-      mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:set.map(r=>r.alias)
-     });
-     const unique=new Set();
-     for(const item of response.results||[]){
-      const row=set.find(r=>r.alias===item.alias);
-      if(!row||unique.has(row.alias))continue;
-      unique.add(row.alias);
-      if(item.status==='delivered'){
-       const now=new Date().toISOString();
-       row.forwardingTestedAt=now;row.forwardingTestTarget=profile.mailbox;
-       if(catchallForMailbox(profile.mailbox)&&row.status!=='live'){
-        row.status='live';row.catchAllVerifiedAt=now;
-       }
+     let pendingSet=set.slice();
+     while(pendingSet.length&&!mailTestState.cancel&&!mailTestState.paused){
+      const options=bucket.profiles.filter(p=>!unavailableSenders.has(p.sender));
+      if(!options.length){
+       mailTestState.paused=true;
+       status.textContent='All selected sending accounts for '+mailbox+' are unavailable or have reached provider limits. '+
+        (total-mailTestState.done)+' addresses remain unverified. No further messages were sent.';
+       break;
       }
-      trackTestResult(item.alias,item.status);
+      const profile=options[senderCursor%options.length];senderCursor++;senderGroupCount++;
+      status.textContent='Checking '+mailbox+' with sender '+profile.sender+' (group '+senderGroupCount+') — '+
+       mailTestState.done+'/'+total+' completed.';
+      const response=await api().testForwarding({
+       mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:pendingSet.map(r=>r.alias)
+      });
+      const current=new Map(pendingSet.map(row=>[row.alias,row]));
+      const seen=new Set(),retries=[];
+      for(const item of response.results||[]){
+       const row=current.get(String(item.alias||'').toLowerCase());
+       if(!row||seen.has(row.alias))continue;
+       seen.add(row.alias);
+       if((item.status==='not_attempted'||item.status==='send_failed')&&response.rateLimited){
+        trackTestResult(row.alias,'pending');retries.push(row);continue;
+       }
+       if(item.status==='delivered'){
+        const now=new Date().toISOString();
+        row.forwardingTestedAt=now;row.forwardingTestTarget=mailbox;
+        if(catchallForMailbox(mailbox)&&row.status!=='live'){
+         row.status='live';row.catchAllVerifiedAt=now;
+        }
+       }
+       trackTestResult(row.alias,item.status==='not_attempted'?'pending':item.status);
+      }
+      for(const row of pendingSet)if(!seen.has(row.alias)){
+       if(response.rateLimited){trackTestResult(row.alias,'pending');retries.push(row);}
+       else trackTestResult(row.alias,'unconfirmed');
+      }
+      mailTestState.cleanupPending+=Number(response.cleanupPending||0);
+      if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
+      refreshEmailBatchUI();
+      if(response.rateLimited){
+       unavailableSenders.add(profile.sender);
+       pendingSet=retries;
+       if(!bucket.profiles.some(p=>!unavailableSenders.has(p.sender))){
+        mailTestState.paused=true;
+        status.textContent='Sender '+profile.sender+' hit a provider sending limit. No other selected sender for '+mailbox+
+         ' is available. Unsent aliases remain unverified, and all provider quotas are respected.';
+       }
+      }else pendingSet=[];
+      if(preflight&&!response.rateLimited&&!set.some(r=>mailTestState.statuses.get(r.alias.toLowerCase())==='delivered')){
+       mailTestState.paused=true;
+       status.textContent='Paused preflight: no test message reached '+mailbox+
+        '. Verify the aliases actually route to this inbox in Cloudflare, and check Gmail Spam/All Mail.';
+      }
+      if(!mailTestState.paused&&!mailTestState.cancel)await new Promise(resolve=>setTimeout(resolve,800));
      }
-     for(const row of set)if(!unique.has(row.alias))trackTestResult(row.alias,'unconfirmed');
-     mailTestState.cleanupPending+=Number(response.cleanupPending||0);
-     if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
-     // Persist after each 25; do not rebuild the 10,000-row bank table on each result.
-     refreshEmailBatchUI();
-     if(preflight&&Number(response.delivered||0)===0){
-      mailTestState.paused=true;
-      status.textContent='Paused after '+set.length+' preflight messages: NONE reached '+profile.mailbox+' Inbox. '+
-       'Check Cloudflare catch-all is Active, with Send to an email and destination '+profile.mailbox+'. '+
-       'Check Gmail Spam/All Mail too: the verifier currently searches Inbox only. The remaining addresses were not tested.';
-      break;
-     }
-     if(response.rateLimited){
-      mailTestState.paused=true;
-      status.textContent='Email provider limit reached. Paused after '+mailTestState.done+'/'+total+' results; remaining addresses stay unverified. Try again when the provider allows more messages.';
-      break;
-     }
-     // Allow the browser to paint/accept input and avoid sending tight SMTP bursts.
-     await new Promise(resolve=>setTimeout(resolve,800));
     }
    }
    const pending=total-mailTestState.done;
