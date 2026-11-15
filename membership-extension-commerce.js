@@ -60,7 +60,8 @@ export function calculatePaidExtensionOffer({ months, targetTier, currentTier, p
   const monthly = amountCents(plans[desired]);
   if (!Number.isSafeInteger(monthly) || monthly < 50)
     throw fail("The selected membership price is unavailable.", 503);
-  validateThanksgivingExtensionMonths({months:count,code});
+  try { validateThanksgivingExtensionMonths({months:count,code}); }
+  catch(error) { throw fail(error.message); }
   if (code && (scopeOf(code) === "signup" || code.discountType === "fixed-price"))
     throw fail("This code is not eligible for membership extensions.");
   const percent = code ? Number(code.percent) : 0;
@@ -173,7 +174,8 @@ export function registerMembershipExtensionCommerce(app, d) {
           (item.status === "pending" && Date.parse(item.checkoutExpiresAt||"") > Date.now())));
       const used = active.reduce((sum,item) =>
         sum + Number(item.quote?.discountedMonths ?? item.months ?? 0), 0);
-      validateThanksgivingExtensionMonths({months:body.months,code,priorMonths:used});
+      try { validateThanksgivingExtensionMonths({months:body.months,code,priorMonths:used}); }
+      catch(error) { throw fail(error.message); }
     }
     const upgradeAdjustment=calculateUpgradeAdjustment(
       selection.subscription,selection.tier,targetTier,plans);
