@@ -52,6 +52,7 @@ import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
+import { approvedUpcomingSchedule } from "./membership-thanksgiving-2026.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
@@ -16632,11 +16633,18 @@ app.get("/api/public/membership-discounts", async (req, res) => {
     const sale = activeSitewideDiscount(records, tier);
     if (sale) discounts[tier] = {
       percent: sale.percent, duration: sale.duration,
+      endsAt: sale.expiresAt || null,
       ...(sale.discountType === "fixed-price" ? { fixedPrice: sale.fixedPrice } : {})
     };
   }
+  // The 42% proposed increase is informational and NEVER changes Stripe.
+  // Do not publish an upcoming price until the owner explicitly approves it
+  // and the separately scheduled billing migration has been reviewed.
+  const upcoming = approvedUpcomingSchedule(PLANS, {
+    approved: process.env.SNG_NOV28_UPCOMING_PRICE_DISPLAY_APPROVED === "true"
+  });
   res.set("Cache-Control", "no-store");
-  return res.json({ discounts });
+  return res.json({ discounts, ...(upcoming ? { upcoming } : {}) });
 });
 
 // Remove a customer from the website, the ACO Studio app and admin rosters.
