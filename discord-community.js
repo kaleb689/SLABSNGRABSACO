@@ -5434,8 +5434,17 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
             if (appSupportChannelId && String(packet.d?.channel_id||"")===appSupportChannelId) {
-              if (typeof onCustomerSupportReply==="function")
-                await onCustomerSupportReply(packet.d);
+              if (typeof onCustomerSupportReply==="function") {
+                const result=await onCustomerSupportReply(packet.d);
+                const attempted=packet.d?.message_reference?.message_id ||
+                  /<@!?\d{17,22}>/.test(String(packet.d?.content||""));
+                if (result?.unmatched && attempted && String(packet.d?.author?.id||"")===String(ownerId))
+                  await api("/channels/"+appSupportChannelId+"/messages","POST",{
+                    content:"I could not identify exactly one customer for that reply. Reply to the bot's original app message or @mention a linked Discord member. Nothing was sent to any customer's app.",
+                    message_reference:{message_id:String(packet.d.id),fail_if_not_exists:false},
+                    allowed_mentions:{parse:[]}
+                  });
+              }
               return;
             }
             const successChannelId = String(await getChannelId());
