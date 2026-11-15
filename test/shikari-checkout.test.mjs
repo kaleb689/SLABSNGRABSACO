@@ -215,6 +215,11 @@ test("preorder and review hold values parse explicit unit prices in description 
     assert.equal(parsed.items[0].price,167.75);
   }
   const message=makeMessage(0x57f287,'1580000000000000301','2026-10-15T18:00:00Z');
+  // On the original Success source, an unqualified Price field is the
+  // combined line price for Quantity 2, not the per-unit amount.
   message.embeds[0].fields=[{name:'Price',value:'||$12.99||'}];
+  assert.equal(parseLiveWebhook(message).orderTotal,12.99);
+  // Explicit Unit Price still represents one item and must be multiplied.
+  message.embeds[0].fields=[{name:'Unit Price',value:'||$12.99||'}];
   assert.equal(parseLiveWebhook(message).orderTotal,25.98);
 });
