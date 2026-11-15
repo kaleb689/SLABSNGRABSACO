@@ -486,7 +486,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  replace('main.js'," ipcMain.handle('cf:authorize',async(event,config)=>{",
   " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,baseDir:app.getPath('userData'),safeStorage});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
  const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
- pkg.dependencies||={};pkg.dependencies.nodemailer='^10.2.0';pkg.dependencies.imapflow='^2.2.5';
+ pkg.dependencies||={};pkg.dependencies.nodemailer='^10.2.0';pkg.dependencies.imapflow='^2.2.5';pkg.dependencies.mailparser='^3.7.4';
  // Explicitly include the new main-process service without removing existing package files.
  pkg.build||={};pkg.build.files||=[];
  for(const entry of ['emailgen-forwarding-test.js','emailgen-mail-test-store.js'])
