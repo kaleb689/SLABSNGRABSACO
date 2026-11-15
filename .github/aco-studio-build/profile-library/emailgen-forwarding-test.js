@@ -155,7 +155,7 @@ async function moveExactTestsToTrash(imap,box,tests,{now=Date.now,started=0}={})
  // Only exact nonces minted during this test call are eligible for cleanup.
  const ids=await imap.search({subject:PREFIX},{uid:true});
  const candidates=Array.isArray(ids)?ids.slice(-MAX_RECEIPT_CANDIDATES):[];
- const selected=new Set();
+ const selected=new Set(tests.filter(t=>t.receivedFolder===box&&Number.isSafeInteger(t.receivedUid)&&t.receivedUid>0).map(t=>t.receivedUid));
  if(candidates.length){
   for await(const message of imap.fetch(candidates,{envelope:true,internalDate:true},{uid:true})){
    const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
