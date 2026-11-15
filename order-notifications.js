@@ -409,6 +409,29 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       await save();
       return {recorded:true,pushQueued:prefs.account&&(state.subscriptions[ownerId]||[]).length>0};
     }),
+    // One private app reply receives one in-app notification and, where enabled,
+    // one per-device web push. The reply body is never exposed on a lock screen.
+    notifyCustomerReply: (accountId, discordMessageId) => locked(async () => {
+      const id=String(accountId||""),postId=String(discordMessageId||"");
+      if(!id||!/^\d{17,22}$/.test(postId))throw Error("Invalid customer reply notification.");
+      const key=id+":"+postId;
+      state.customerReplyEvents ||= {};
+      if(state.customerReplyEvents[key])return {alreadyQueued:true};
+      const createdAt=new Date().toISOString();
+      const event={id:crypto.randomUUID(),kind:"admin_message",
+        title:"New message from SLABSNGRABSACO",
+        message:"You have a private reply. Open Messages to read it.",
+        tab:"messages",createdAt,updatedAt:createdAt,
+        deliveryEventKey:"support:"+key};
+      const inbox=state.inbox[id] ||= [];
+      inbox.push(event);if(inbox.length>200)inbox.splice(0,inbox.length-200);
+      const prefs={...notificationDefaults,...state.preferences[id]};
+      const pushQueued=Boolean(prefs.messages&&(state.subscriptions[id]||[]).length);
+      if(pushQueued)enqueue(id,event);
+      state.customerReplyEvents[key]=createdAt;
+      await save();
+      return {recorded:true,pushQueued};
+    }),
     // Unlike SKU alerts, owner-issued general drop announcements and recaps
     // go to every enabled customer account, with no retailer-role gate.
     notifyGlobalDropBroadcast: (accountIds, notification, eventKey) => locked(async () => {

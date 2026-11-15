@@ -25,6 +25,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
+import { registerCustomerMessages } from "./customer-messages.js";
 import { isCancelledCheckout, customerCancelledCheckouts, loadHiddenCancelledIds, hideCustomerCancelledOrder } from "./customer-cancelled-history.js";
 import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
@@ -9715,6 +9716,19 @@ app.delete("/api/admin/customers/:id/discord", requireAdmin, async (req, res) =>
 const appOrderNotifications = createOrderNotifications({
   dataDir: DATA_DIR, baseUrl: BASE_URL, getRecords: getSuccessCheckouts, getAccounts: getCustomerAccounts,
   getAccountUpdates: () => readJson(PAID_FILE, [])
+});
+
+// Customer Messages is a separate, private feature. Its only permitted
+// Discord destination is the verified Admin Only app-messages channel.
+const customerMessageBridge = registerCustomerMessages(app, {
+  dataDir:DATA_DIR, requireCustomer, getAccounts:getCustomerAccounts,
+  discordToken:String(process.env.DISCORD_BOT_TOKEN||"").trim(),
+  notifyReply:async({accountId,discordMessageId})=>{
+    const result=await appOrderNotifications.notifyCustomerReply(accountId,discordMessageId);
+    if(result.pushQueued)void appOrderNotifications.tick()
+      .catch(error=>console.error("Customer message push:",error.message));
+    return result;
+  }
 });
 
 
@@ -51013,6 +51027,8 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onAppMessageChannelReady: metadata => customerMessageBridge.configure(metadata),
+          onAppSupportReply: message => customerMessageBridge.onDiscordMessage(message),
           onSkuSelectionAudit: appendDiscordSkuAuditBatch,
           onRetailerRoleSync: async ({ discordUserId, retailers }) => {
             // Discord interaction user IDs originate with the authenticated
