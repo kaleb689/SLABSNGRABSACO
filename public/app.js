@@ -541,14 +541,33 @@ window.addEventListener(
 ===================================================== */
 
 let membershipSales = {};
+let membershipUpcoming = null;
+function membershipUpcomingHtml(tier) {
+  const value = Number(membershipUpcoming?.prices?.[tier]);
+  const effective = new Date(membershipUpcoming?.effectiveAt || "");
+  const percent = Number(membershipUpcoming?.increasePercent);
+  if (!membershipUpcoming || !Number.isSafeInteger(value) || value <= 0 ||
+      !Number.isFinite(effective.getTime()) || percent !== 42) return "";
+  const label = effective.toLocaleDateString("en-US", {
+    timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric"
+  });
+  return `<span class="plan-upcoming-price">Upcoming ${label}: <strong>${(value / 100).toFixed(2)}/month</strong> (+42%)</span>`;
+}
 function membershipPriceHtml(tier, plan) {
   const sale = membershipSales[tier];
-  if (!sale) return `$${plan.amount}<small>/month</small>`;
-  const price = sale.fixedPrice != null
-    ? Number(sale.fixedPrice).toFixed(2)
-    : (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
-  const discountLabel = sale.fixedPrice != null ? "Special tier price" : `${Number(sale.percent)}% off`;
-  return `<del style="font-size:.55em;opacity:.65">${plan.amount}</del> ${price}<small>/month · ${discountLabel} · ${sale.duration === "forever" ? "Every renewal" : "First payment"}</small>`;
+  let current = `${Number(plan.amount).toFixed(2)}<small>/month</small>`;
+  if (sale) {
+    const price = sale.fixedPrice != null
+      ? Number(sale.fixedPrice).toFixed(2)
+      : (Math.round(plan.amount * 100 * (1 - sale.percent / 100)) / 100).toFixed(2);
+    const discountLabel = sale.fixedPrice != null ? "Special tier price" : `${Number(sale.percent)}% off`;
+    const end = new Date(sale.endsAt || "");
+    const expires = Number.isFinite(end.getTime())
+      ? " · Ends " + end.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
+      : "";
+    current = `<del style="font-size:.55em;opacity:.65">${Number(plan.amount).toFixed(2)}</del> ${price}<small>/month · ${discountLabel} · ${sale.duration === "forever" ? "Every renewal" : "First payment"}${expires}</small>`;
+  }
+  return current + membershipUpcomingHtml(tier);
 }
 async function refreshMembershipSales() {
   try {
@@ -556,6 +575,7 @@ async function refreshMembershipSales() {
     if (!response.ok) return;
     const data = await response.json();
     membershipSales = data.discounts || {};
+    membershipUpcoming = data.upcoming && typeof data.upcoming === "object" ? data.upcoming : null;
     renderPricing();
     updateSelectedPlan();
   } catch {}
@@ -690,6 +710,15 @@ function renderPricing() {
   if (homePricingGrid) {
     homePricingGrid.innerHTML =
       cards;
+  }
+
+  for (const id of ["home-upcoming-pricing-banner", "membership-upcoming-pricing-banner"]) {
+    const notice = document.getElementById(id);
+    if (!notice) continue;
+    notice.hidden = !membershipUpcoming;
+    notice.textContent = membershipUpcoming
+      ? "Upcoming November 28, 2026: regular membership prices increase 42%. Prices displayed above each tier reflect the scheduled monthly rate."
+      : "";
   }
 
   bindTierButtons();
