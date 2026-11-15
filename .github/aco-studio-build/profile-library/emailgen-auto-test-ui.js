@@ -356,7 +356,7 @@
       status.textContent='Checking '+mailbox+' with sender '+profile.sender+' (group '+senderGroupCount+') — '+
        mailTestState.done+'/'+total+' completed.';
       const response=await api().testForwarding({
-       mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:pendingSet.map(r=>r.alias)
+       mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,diagnostic:limit===1,aliases:pendingSet.map(r=>r.alias)
       });
       if(response.receiptDiagnostics){
        const diag=response.receiptDiagnostics;
