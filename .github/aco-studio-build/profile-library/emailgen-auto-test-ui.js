@@ -4,6 +4,7 @@
  const MAIL_TEST_CATCHALL_PREF='aco.emailgen.catchall.preferences.v1';
  const AUTO_TEST_GROUP_SIZE=25;
  const AUTO_TEST_PREFLIGHT_SIZE=3;
+ const AUTO_TEST_SAVE_EVERY=75; // Persist up to 75 test results at once to keep the Mac UI responsive.
  const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
   loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
   paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0,
@@ -155,7 +156,7 @@
  }
  function scheduleAutoTestProgress(){
   if(mailProgressTimer)return;
-  mailProgressTimer=setTimeout(()=>{mailProgressTimer=null;renderAutoTestProgress();},180);
+  mailProgressTimer=setTimeout(()=>{mailProgressTimer=null;renderAutoTestProgress();},450);
  }
  function trackTestResult(alias,status){
   if(!mailTestState.active)return;
@@ -303,6 +304,8 @@
    'Confirmed receipts are green; SMTP errors red; missing Inbox receipts amber. A preflight checks routing before bulk testing.';
   renderAutoTestProgress();
   const stopTest=()=>mailTestState.cancel=true;
+  let pendingPersist=0;
+  const routingWarnings=new Set();
   try{
    const unavailableSenders=new Set();
    let senderGroupCount=0;
@@ -353,8 +356,14 @@
        else trackTestResult(row.alias,'unconfirmed');
       }
       mailTestState.cleanupPending+=Number(response.cleanupPending||0);
-      if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
-      refreshEmailBatchUI();
+      // Encrypting the entire vault and rebuilding the batch list after each
+      // 25 messages caused multi-second UI stalls on 400+ alias test runs.
+      // Keep the separate progress area live and persist in bounded groups.
+      pendingPersist+=set.length;
+      if(pendingPersist>=AUTO_TEST_SAVE_EVERY||response.rateLimited){
+       if(!await store())throw Error('The encrypted Email Bank did not save test results. Stop and check your bank before retrying.');
+       pendingPersist=0;
+      }
       if(response.rateLimited){
        unavailableSenders.add(profile.sender);
        pendingSet=retries;
@@ -365,24 +374,40 @@
        }
       }else pendingSet=[];
       if(preflight&&!response.rateLimited&&!set.some(r=>mailTestState.statuses.get(r.alias.toLowerCase())==='delivered')){
-       mailTestState.paused=true;
-       status.textContent='Paused preflight: no test message reached '+mailbox+
-        '. Verify the aliases actually route to this inbox in Cloudflare, and check Gmail Spam/All Mail.';
+       // Test All must not stop at 3 unconfirmed aliases. A missing receipt is
+       // not a provider quota or a connection error, so keep testing the
+       // remaining emails (including other receivers) at the normal rate.
+       routingWarnings.add(mailbox);
+       status.textContent='WARNING: no confirmed receipt for the first 3 emails to '+mailbox+
+        '. Continuing the selected queue as requested. Check Cloudflare routing and Spam/All Mail. '+mailTestState.done+'/'+total+' tested.';
       }
       if(!mailTestState.paused&&!mailTestState.cancel)await new Promise(resolve=>setTimeout(resolve,800));
      }
     }
+   }
+   if(pendingPersist){
+    if(!await store())throw Error('Could not persist the final email test results. Verify the encrypted Email Bank before retrying.');
+    pendingPersist=0;
    }
    const pending=total-mailTestState.done;
    if(!mailTestState.paused){
     status.textContent=(mailTestState.cancel?'Stopped after current group. ':'Finished automated testing. ')+
       mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
       ' Skipped '+skippedRouting+' draft(s) without catch-all testing enabled, '+skippedAlreadyVerified+' already verified.'+
+      (routingWarnings.size?' WARNING: the initial 3 emails to '+[...routingWarnings].join(', ')+' had no confirmed receipts; the full queue was still processed.':'')+
       (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
   }catch(error){
-   status.textContent='Automatic testing stopped: '+String(error?.message||error)+'. Verified records already saved remain intact. Other addresses remain unverified.';
+   let saveWarning='';
+   if(pendingPersist){
+    try{
+     if(!await store())saveWarning=' Latest unsaved test results could not be persisted.';
+     else pendingPersist=0;
+    }catch(saveError){saveWarning=' Latest unsaved test results could not be persisted: '+String(saveError?.message||saveError);}
+   }
+   status.textContent='Automatic testing stopped due to an actual error: '+String(error?.message||error)+
+    '. Already saved confirmations remain intact; retry remaining unverified addresses.'+saveWarning;
   }finally{
    mailTestState.active=false;randomGenBusy=false;stop.hidden=true;
    for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','randomAliasTestMulti','randomReceiverSplitPreview','randomReceiverSplitCommit','emailBatchDeleteReview','emailBatchRemoveOneReview']){
