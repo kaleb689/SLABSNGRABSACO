@@ -25,6 +25,7 @@ import { attachAdminPasskeys } from "./admin-passkeys.js";
 import { attachAdminDesktopDevices } from "./admin-desktop-devices.js";
 import { DEMO_ID, demoAccount, createDemoMiddleware } from "./app-demo.js";
 import { createOrderNotifications, cancelledOrder, lateCancellation } from "./order-notifications.js";
+import { createCustomerSupportMessages } from "./customer-support-messages.js";
 import { isCancelledCheckout, customerCancelledCheckouts, loadHiddenCancelledIds, hideCustomerCancelledOrder } from "./customer-cancelled-history.js";
 import { createShippingDiscordDmLedger } from "./shipping-discord-dm-ledger.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
@@ -9716,6 +9717,48 @@ const appOrderNotifications = createOrderNotifications({
   dataDir: DATA_DIR, baseUrl: BASE_URL, getRecords: getSuccessCheckouts, getAccounts: getCustomerAccounts,
   getAccountUpdates: () => readJson(PAID_FILE, [])
 });
+
+const customerSupportMessages=createCustomerSupportMessages({
+  dataDir:DATA_DIR,getAccounts:getCustomerAccounts,
+  onChange:()=>broadcastLiveDataChange("support-message"),
+  onReply:async(accountId,message)=>{
+    const result=await appOrderNotifications.notifySupportReply(accountId,message);
+    if(result.recorded)void appOrderNotifications.tick();
+  }
+});
+app.get("/api/account/support/messages",requireCustomer,async(req,res)=>{
+  try{
+    res.set("Cache-Control","no-store");
+    if(req.customerAdminPreview)return res.json({messages:[],unread:0,preview:true});
+    return res.json(await customerSupportMessages.list(String(req.customerAccount.id)));
+  }catch(error){
+    console.error("Customer support inbox read:",error.message);
+    return res.status(500).json({error:"Unable to load your messages."});
+  }
+});
+app.post("/api/account/support/messages",requireCustomer,async(req,res)=>{
+  try{
+    if(req.customerAdminPreview)return res.status(403).json({error:"Messaging is disabled in admin customer preview."});
+    const result=await customerSupportMessages.send(req.customerAccount,req.body?.text);
+    return res.status(201).json(result);
+  }catch(error){
+    const known=/^(?:Enter a message|Messages must|Message limit reached|Sign in)/.test(error.message);
+    if(!known)console.error("Customer support send:",error.message);
+    return res.status(known?400:500).json({error:known?error.message:"Unable to save your message."});
+  }
+});
+app.post("/api/account/support/read",requireCustomer,async(req,res)=>{
+  try{
+    if(req.customerAdminPreview)return res.json({ok:true});
+    return res.json(await customerSupportMessages.markRead(String(req.customerAccount.id)));
+  }catch(error){
+    console.error("Customer support read:",error.message);
+    return res.status(500).json({error:"Unable to update message read status."});
+  }
+});
+setInterval(()=>void customerSupportMessages.flush().catch(error=>
+  console.error("Customer support relay retry:",error.message)),60000).unref?.();
+
 
 
 app.post("/api/account/app-usage", requireCustomer, async (req, res) => {
@@ -50989,6 +51032,8 @@ await initializeArrayFile(
           }
         });
         startDiscordCommunity({
+          onCustomerSupportReady:bridge=>customerSupportMessages.setBridge(bridge),
+          onCustomerSupportReply:message=>customerSupportMessages.handleDiscordReply(message),
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
           channelId: String(process.env.DISCORD_SUCCESS_CHANNEL_ID || "").trim(),
           getChannelId: async () => (await resolvedDiscordSuccessConfig()).channelId,
