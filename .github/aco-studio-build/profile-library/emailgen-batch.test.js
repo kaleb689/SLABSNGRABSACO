@@ -154,7 +154,7 @@ test('Removing one unassigned generated email keeps other batches and original e
  assert.ok([...storage.values()].includes(old));
 });
 test('Single-email removal rejects any address assigned to a retailer pool',()=>{
- assert.match(app,/if\\(row.poolTarget\\|\\|row.poolImportedAt\\)throw Error/);
+ assert.match(app,/if\(row\.poolTarget\|\|row\.poolImportedAt\)throw Error/);
  assert.match(html,/id="emailBatchRemoveOneConfirmArea"/);
  assert.match(html,/id="emailBatchRemoveOneTyped"/);
 });
