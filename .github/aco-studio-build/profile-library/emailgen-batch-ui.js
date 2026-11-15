@@ -72,6 +72,11 @@
   return String(row.alias||'').toLowerCase();
  }
  function refreshEmailBatchUI(){
+  // Startup can render before the encrypted Email Bank has unlocked. Retry
+  // account metadata as soon as it does; never show an uninitialized 0/0 as
+  // evidence that secure sender/receiver passwords were deleted.
+  if(unlocked&&mailTestState.profileCheckedAt===0&&!mailTestState.loadingProfiles)
+   void loadSavedMailPairs(true);
   const count=batchElement('emailBankTotalCount'),picker=batchElement('emailBatchSelect');
   if(!count||!picker)return;
   const rows=unlocked?records:[];
