@@ -385,6 +385,29 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
   }
   return {
     initialize, reconcile, tick,
+    notifySupportReply: (accountId, message) => locked(async () => {
+      const id=String(accountId||"").trim(),msgId=String(message?.id||"");
+      if(!id||!/^[-0-9a-f]{36}$/i.test(msgId)||message?.direction!=="admin"||
+        typeof message.text!=="string"||message.text.length>1500)
+        throw Error("Invalid customer support reply.");
+      state.supportReplyEvents ||= {};
+      const key="support:"+id+":"+msgId;
+      if(state.supportReplyEvents[key])return {alreadyQueued:true};
+      const issued=new Date().toISOString();
+      const event={id:crypto.randomUUID(),kind:"admin_message",
+        title:"New message from SLABSNGRABSACO",
+        message:message.text.slice(0,300),tab:"messages",
+        createdAt:issued,updatedAt:issued,deliveryEventKey:key};
+      const accountInbox=state.inbox[id] ||= [];
+      accountInbox.push(event);
+      if(accountInbox.length>200)accountInbox.splice(0,accountInbox.length-200);
+      const prefs={...notificationDefaults,...state.preferences[id]};
+      const eligible=Boolean(prefs.messages&&(state.subscriptions[id]||[]).length);
+      if(eligible)enqueue(id,event);
+      state.supportReplyEvents[key]=issued;
+      await save();
+      return {recorded:true,pushQueued:eligible};
+    }),
     // Record an announcement for every eligible account. A subscribed device
     // receives an app push; callers can DM members with no eligible push
     // subscription. Persist event IDs so reconnects and restarts never replay.
