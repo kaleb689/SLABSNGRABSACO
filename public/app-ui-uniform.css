@@ -68,7 +68,7 @@ body.app-dashboard #my-profile #app-dashboard #sng-app-unread {
 
 /* Make five independent navigation tiles; gaps remain visible at 320px. */
 body.app-dashboard #my-profile #app-dashboard .sng-app-nav {
-  grid-template-columns:repeat(5,minmax(0,1fr));
+  grid-template-columns:repeat(6,minmax(0,1fr));
   gap:clamp(5px,1.8vw,11px);
   width:min(calc(100% - 18px),620px);
   bottom:max(9px,env(safe-area-inset-bottom));
