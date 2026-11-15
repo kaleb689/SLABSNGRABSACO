@@ -54,11 +54,10 @@ function makeMailTestStore({baseDir,safeStorage,platform=process.platform}){
    fs.renameSync(temp,file);fs.chmodSync(file,0o600);
   }finally{try{fs.unlinkSync(temp);}catch(e){if(e.code!=='ENOENT')throw e;}}
  }
- function readAccounts(){
-  if(!fs.existsSync(file))return [];
+ function decryptAccounts(bytes){
   requireKeychain();
-  const bytes=fs.readFileSync(file);
-  if(bytes.length>131072)throw Error('Saved mail credentials are invalid.');
+  if(!Buffer.isBuffer(bytes)||bytes.length<24||bytes.length>131072)
+   throw Error('Saved mail credentials are invalid.');
   try{
    const parsed=JSON.parse(safeStorage.decryptString(bytes));
    const entries=parsed?.version===1?[parsed]:parsed?.version===2&&Array.isArray(parsed.accounts)?parsed.accounts:null;
@@ -70,13 +69,67 @@ function makeMailTestStore({baseDir,safeStorage,platform=process.platform}){
     keys.add(key);
     return {...config,updatedAt:typeof item.updatedAt==='string'&&Number.isFinite(Date.parse(item.updatedAt))?item.updatedAt:null};
    });
-  }catch{throw Error('Saved mail test accounts could not be decrypted with this Mac Keychain. Re-enter their passwords.');}
+  }catch{
+   throw Error('Saved encrypted mail-test accounts cannot currently be decrypted with this Mac Keychain. Nothing was deleted. Check Keychain access or verified backups before re-entering credentials.');
+  }
+ }
+ function readAccounts(){
+  if(!fs.existsSync(file))return [];
+  return decryptAccounts(fs.readFileSync(file));
+ }
+ function readBackupCandidates(){
+  requireKeychain();
+  const backupRoot=path.join(path.dirname(baseDir),path.basename(baseDir)+'.encrypted-recovery-backups');
+  let folders=[];
+  try{folders=fs.readdirSync(backupRoot,{withFileTypes:true});}
+  catch(error){if(error.code==='ENOENT')return [];throw error;}
+  const matches=[];
+  for(const folder of folders.filter(row=>row.isDirectory()&&/^[0-9]{8}T[0-9]{6}Z-[a-f0-9]{16}$/.test(row.name))
+   .sort((a,b)=>b.name.localeCompare(a.name)).slice(0,200)){
+   try{
+    const root=path.join(backupRoot,folder.name);
+    const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
+    if(manifest.version!==1||manifest.id!==folder.name||!Array.isArray(manifest.files))continue;
+    const item=manifest.files.find(entry=>entry.name===FILE);
+    if(!item||!Number.isSafeInteger(item.size)||item.size<24||item.size>131072||
+     !/^[a-f0-9]{64}$/.test(item.digest))continue;
+    const source=path.join(root,FILE),stat=fs.lstatSync(source);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==item.size)continue;
+    const bytes=fs.readFileSync(source);
+    if(crypto.createHash('sha256').update(bytes).digest('hex')!==item.digest)continue;
+    const accounts=decryptAccounts(bytes);
+    if(!accounts.length)continue;
+    matches.push({id:folder.name,createdAt:manifest.createdAt||null,count:accounts.length,bytes});
+   }catch{/* Invalid or foreign-Keychain checkpoints remain untouched. */}
+  }
+  return matches;
+ }
+ function backupStatus(){
+  const candidates=readBackupCandidates();
+  return {credentialFilePresent:fs.existsSync(file),
+   candidates:candidates.map(({id,createdAt,count})=>({id,createdAt,count}))};
+ }
+ function restoreMissingFromBackup({id,confirmed}={}){
+  if(confirmed!==true)throw Error('Confirm the exact credential backup before restoring.');
+  requireKeychain();
+  if(fs.existsSync(file))throw Error('An encrypted mail-credential file already exists. Nothing overwritten; investigate Keychain access first.');
+  const chosen=readBackupCandidates().find(row=>row.id===id);
+  if(!chosen)throw Error('Selected backup is absent, corrupted, or cannot decrypt with this Mac Keychain. Nothing restored.');
+  fs.mkdirSync(baseDir,{recursive:true,mode:0o700});
+  const temporary=file+'.restore-'+crypto.randomBytes(8).toString('hex');
+  try{
+   fs.writeFileSync(temporary,chosen.bytes,{mode:0o600,flag:'wx'});
+   // Create-only hardlink is atomic and fails if another file has appeared.
+   fs.linkSync(temporary,file);
+   fs.chmodSync(file,0o600);
+  }finally{try{fs.unlinkSync(temporary);}catch(error){if(error.code!=='ENOENT')throw error;}}
+  return {restored:true,count:readAccounts().length,credentialFilePresent:true};
  }
  function status(){
   const keychainAvailable=platform==='darwin'&&Boolean(safeStorage?.isEncryptionAvailable?.());
-  if(!fs.existsSync(file))return {saved:false,keychainAvailable,profiles:[]};
+  if(!fs.existsSync(file))return {saved:false,keychainAvailable,profiles:[],credentialFilePresent:false};
   const accounts=readAccounts().map(metadata);
-  return {saved:accounts.length>0,keychainAvailable,profiles:accounts};
+  return {saved:accounts.length>0,keychainAvailable,profiles:accounts,credentialFilePresent:true};
  }
  function save(value){
   requireKeychain();
@@ -106,6 +159,6 @@ function makeMailTestStore({baseDir,safeStorage,platform=process.platform}){
   encryptWrite(remaining);
   return {saved:true,removed:true,count:remaining.length};
  }
- return {save,read,status,forget,path:file};
+ return {save,read,status,forget,backupStatus,restoreMissingFromBackup,path:file};
 }
 module.exports={makeMailTestStore,normalizeConfig,keyOf};
