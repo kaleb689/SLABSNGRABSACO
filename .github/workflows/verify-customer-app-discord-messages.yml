@@ -1,0 +1,51 @@
+name: Verify private customer app messages and Discord owner replies
+on:
+  pull_request:
+    paths:
+      - "customer-support-messages.js"
+      - "discord-community.js"
+      - "order-notifications.js"
+      - "server.js"
+      - "public/app-dashboard.js"
+      - "public/app-messages.css"
+      - "public/index.html"
+      - "public/sw.js"
+      - "test/customer-support-messages.test.mjs"
+      - "test/customer-app-discord-messages-wiring.test.mjs"
+      - ".github/workflows/verify-customer-app-discord-messages.yml"
+  push:
+    branches: [main]
+    paths:
+      - "customer-support-messages.js"
+      - "discord-community.js"
+      - "order-notifications.js"
+      - "server.js"
+      - "public/app-dashboard.js"
+      - "public/app-messages.css"
+      - "public/index.html"
+      - "public/sw.js"
+      - "test/customer-support-messages.test.mjs"
+      - "test/customer-app-discord-messages-wiring.test.mjs"
+jobs:
+  messaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check syntax of customer, server and Discord gateway scripts
+        run: |
+          node --check customer-support-messages.js
+          node --check order-notifications.js
+          node --check server.js
+          node --check discord-community.js
+          node --check public/app-dashboard.js
+          node --check public/sw.js
+      - name: Verify private messages and app/Discord integration
+        run: node --test test/customer-support-messages.test.mjs test/customer-app-discord-messages-wiring.test.mjs
+      - name: Existing app, push and Discord regression checks
+        run: node --test test/order-notifications.test.js test/app-dashboard.test.mjs tests/customer-app-success-current.test.js
