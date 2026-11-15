@@ -114,13 +114,13 @@ export function createCustomerMessageBridge({dataDir,getAccounts,notifyReply,pos
       const name=String(account.name||account.displayName||account.firstName||"Member")
         .replace(/[\r\n\x60*_<>@\\]/g,"").slice(0,65);
       const who=discordId?"<@"+discordId+">":"No linked Discord (reply to the bot post)";
-      const header="**APP MESSAGE** · Ticket "+conversation.ticket+
+      const header="<@"+config.ownerId+"> **APP MESSAGE** · Ticket "+conversation.ticket+
         "\n**Customer:** "+(name||"Member")+" · "+who+
         "\n**Reply:** @mention the customer or reply to this bot post.\n";
       const content=header+"\n"+text.split("\n").map(line=>"> "+line).join("\n");
       if(content.length>1900)throw Object.assign(Error("Message is too long for Discord."),{status:400});
       const posted=await postDiscordMessage(config.channelId,{content,
-        allowed_mentions:{parse:[]},flags:4});
+        allowed_mentions:{parse:[],users:[config.ownerId]},flags:4});
       if(!SNOWFLAKE.test(String(posted?.id||"")))throw Error("Discord did not confirm the send.");
       const row={id:crypto.randomUUID(),role:"customer",text,
         requestId,discordMessageId:String(posted.id),createdAt:new Date(now()).toISOString()};
