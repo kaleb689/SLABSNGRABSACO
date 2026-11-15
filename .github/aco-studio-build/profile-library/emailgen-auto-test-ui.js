@@ -633,6 +633,49 @@
     status.textContent='Could not verify/save accounts: '+String(error?.message||error);
    }finally{b.disabled=false;}
   });
+  mailUIElement('randomMailCredentialsReload').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailCredentialsReload');button.disabled=true;
+   try{await loadSavedMailPairs(true);}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomMailCredentialsCheckBackups').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailCredentialsCheckBackups'),panel=mailUIElement('randomMailBackupPanel');
+   const label=mailUIElement('randomMailBackupStatus'),select=mailUIElement('randomMailBackupSelect');
+   const restore=mailUIElement('randomMailBackupRestore');
+   button.disabled=true;panel.hidden=false;restore.disabled=true;select.replaceChildren();
+   label.textContent='Checking integrity and Mac Keychain readability of encrypted credential recovery snapshots (read-only).';
+   try{
+    const response=await api().mailTestCredentialBackups();
+    const candidates=Array.isArray(response?.candidates)?response.candidates:[];
+    for(const item of candidates){
+     const option=document.createElement('option');option.value=item.id;
+     option.textContent=(item.createdAt||item.id)+' — '+item.count+' saved sender/receiver pair(s)';
+     select.appendChild(option);
+    }
+    if(response.credentialFilePresent){
+     label.textContent='The current encrypted credential file EXISTS. It was not deleted. Recovery cannot overwrite it. Reload saved pairs and inspect any Keychain error above.';
+     restore.disabled=true;
+    }else if(candidates.length){
+     label.textContent='Current credential file is MISSING. Found '+candidates.length+' verified Keychain-readable encrypted snapshot(s). Only this one file can be restored after explicit confirmation. No profiles, cards or addresses are changed.';
+     restore.disabled=false;
+    }else{
+     label.textContent='No current credential file or independently verifiable Keychain-readable recovery snapshot was found. No files were modified. The original data could be in a different Mac app-data directory.';
+    }
+   }catch(error){label.textContent='Credential backup inspection unavailable: '+String(error?.message||error)+'. No files changed.';}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomMailBackupRestore').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailBackupRestore'),id=mailUIElement('randomMailBackupSelect').value;
+   if(!id)return;
+   if(!confirm('Recover ONLY the missing encrypted mail-test credentials file from this verified Mac backup? All other data stays unchanged. No existing credential file can be overwritten.'))return;
+   if(prompt('Type RESTORE to confirm recovery of ONLY the missing mail-credentials file:')!=='RESTORE')return;
+   button.disabled=true;
+   try{
+    const result=await api().restoreMissingMailTestCredentials({id,confirmed:true});
+    mailUIElement('randomMailBackupStatus').textContent='Recovered '+result.count+' saved mail account pair(s) from a verified encrypted snapshot without changing any profiles.';
+    mailTestState.profileCheckedAt=0;await loadSavedMailPairs(true);
+   }catch(error){mailUIElement('randomMailBackupStatus').textContent='Credential recovery refused: '+String(error?.message||error)+'. Existing files were not overwritten.';}
+  });
   mailUIElement('randomMailCredentialsForget').addEventListener('click',async()=>{
    const key=mailUIElement('randomMailPreset').value;
    const profile=mailTestState.profiles.find(p=>mailPairKey(p)===key);
