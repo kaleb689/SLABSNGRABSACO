@@ -43,15 +43,16 @@ export function approvedOgAccountIds(paidRecords, subscriptionsByCustomer) {
 export function ogDiscountAction(subscription) {
   if (!["active", "trialing"].includes(String(subscription?.status || ""))) return "inactive";
   // Do not stack the OG offer with Thanksgiving or an existing, larger discount.
-  const discounts = Array.isArray(subscription?.discounts)
-    ? subscription.discounts
-    : (subscription?.discount ? [subscription.discount] : []);
+  const discounts = [
+    ...(Array.isArray(subscription?.discounts) ? subscription.discounts : []),
+    ...(subscription?.discount ? [subscription.discount] : [])
+  ];
   return discounts.length ? "preserve_existing_discount" : "apply_og_10";
 }
 
 export async function reconcileApprovedOgMembers({
   stripe, loadAccounts, saveAccounts, loadPaid, savePaid,
-  log = console, approvedAt = "2026-11-15T00:00:00.000Z"
+  log = console, approvedAt = new Date().toISOString()
 }) {
   if (!stripe || !loadAccounts || !saveAccounts || !loadPaid || !savePaid)
     throw new Error("Missing OG reconciliation dependencies.");
@@ -128,7 +129,7 @@ export async function reconcileApprovedOgMembers({
           discounts: [{ coupon: OG_DISCOUNT_COUPON_ID }],
           proration_behavior: "none",
           metadata: { sng_og_member: "true", sng_og_discount: "10" }
-        }, { idempotencyKey: "sng-og-10-" + sub.id });
+        });
         discounted++;
       }
     } catch (error) {
