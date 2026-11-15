@@ -56,6 +56,19 @@
    <label class="tiny">Saved sender / receiver configurations
     <select id="randomMailPreset" aria-label="Saved sending and receiving email pairs" style="width:100%;margin:5px 0 8px"><option value="">New sender / forwarding inbox pair</option></select>
    </label>
+   <div id="randomMailCredentialProblem" role="alert" hidden style="border:1px solid #b56b49;border-radius:8px;padding:9px;margin:6px 0;color:#ffbf9c">
+    <strong>Saved mail accounts unavailable</strong>
+    <p class="tiny" id="randomMailCredentialProblemText" style="margin:5px 0">The existing Mac Keychain accounts have not been confirmed loaded. Do not re-enter or delete them before checking the encrypted file.</p>
+   </div>
+   <div class="test-controls" style="margin:6px 0">
+    <button type="button" id="randomMailCredentialsReload" class="btn slim secondary">Reload saved pairs</button>
+    <button type="button" id="randomMailCredentialsCheckBackups" class="btn slim secondary">Check encrypted credential backups</button>
+   </div>
+   <div id="randomMailBackupPanel" hidden style="padding:8px;margin:7px 0;border:1px solid #365168;border-radius:8px">
+    <p id="randomMailBackupStatus" class="tiny" role="status">Checks are read-only until you explicitly confirm recovery.</p>
+    <select id="randomMailBackupSelect" aria-label="Choose an encrypted saved-mail checkpoint" style="width:100%;margin:6px 0"></select>
+    <button type="button" id="randomMailBackupRestore" class="btn slim secondary" disabled>Recover missing credential file from selected backup...</button>
+   </div>
    <p class="tiny" style="margin:8px 0">Save multiple verified sender/receiver pairs, then choose which sender accounts the tester may use for each actual forwarding receiver. It rotates between available accounts and pauses on provider limits when no permitted sender is available.</p>
    <div class="test-controls"><button type="button" id="randomTestAllSenders" class="btn slim secondary">Use all saved sender accounts</button><button type="button" id="randomTestClearSenders" class="btn slim plain">Clear sender choices</button></div>
    <div id="randomTestSenderPoolList" aria-label="Choose saved sending accounts for testing" style="max-height:170px;overflow:auto;margin:6px 0"></div>
