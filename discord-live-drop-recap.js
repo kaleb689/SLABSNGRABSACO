@@ -88,6 +88,45 @@ export function parseDiscordSuccessForRecap(message,channelId=SLABSNGRABSTC_SUCC
     orderTotal:exact.paidCents===null?null:exact.paidCents/100,
     orderTotalBasis:exact.basis||"unknown"};
 }
+// A typed owner's preview is presentation-only: never schedule a drop or
+// publish financial metrics in response to a chat message.
+export function buildTypedDropRecapPreview(text){
+  const match=/^drop\s+recap\s+(\d{1,2})\/(\d{1,2})$/i.exec(String(text??"").trim());
+  if(!match)return null;
+  const month=Number(match[1]),day=Number(match[2]);
+  const days=[0,31,29,31,30,31,30,31,31,30,31,30,31];
+  if(month<1||month>12||day<1||day>days[month])return null;
+  const label="Drop recap "+match[1]+"/"+match[2];
+  return {allowed_mentions:{parse:[]},embeds:[{
+    color:0x3498db,description:"```ini\n["+label+"]\n```"
+  }]};
+}
+// Separate, testable text-message path. Never schedules a real recap.
+export async function handleTypedDropRecapPreview({
+  message,ownerId,guildId,api,seenMessageIds=new Set()
+}={}){
+  if(String(message?.guild_id||"")!==String(guildId||"")||
+     !ownerId||String(message?.author?.id||"")!==String(ownerId)||
+     !message?.id||message?.author?.bot||message?.webhook_id||
+     ![0,19].includes(message?.type??0))return false;
+  const payload=buildTypedDropRecapPreview(message.content);
+  if(!payload||seenMessageIds.has(String(message.id)))return false;
+  if(typeof api!=="function")throw Error("Missing Discord API client");
+  if(seenMessageIds.size>=500)
+    seenMessageIds.delete(seenMessageIds.values().next().value);
+  seenMessageIds.add(String(message.id));
+  try{
+    await api("/channels/"+message.channel_id+"/messages","POST",payload);
+  }catch(error){
+    seenMessageIds.delete(String(message.id));
+    throw error;
+  }
+  // Discord bots cannot edit human messages. Remove the original only when
+  // the bot has Manage Messages permission. A deletion failure is harmless.
+  try{await api("/channels/"+message.channel_id+"/messages/"+message.id,"DELETE");}
+  catch(error){console.warn("Discord recap text cleanup unavailable:",error?.message);}
+  return true;
+}
 export function dropControlRows() {
   return [
     {type:1,components:[

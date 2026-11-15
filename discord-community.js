@@ -8,7 +8,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
-import {createDiscordDropRecapController,dropControlRows} from "./discord-live-drop-recap.js";
+import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
@@ -3078,6 +3078,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // Public message deletion is disabled. Discord users may post all message content.
     return false;
   }
+  const seenTypedRecapMessages = new Set();
+  async function onTypedDropRecap(d) {
+    return handleTypedDropRecapPreview({
+      message:d,ownerId,guildId,api,seenMessageIds:seenTypedRecapMessages
+    });
+  }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
   const skuAlertFile = path.join(dataDir, "discord-sku-alert-history.json");
   let skuAlertQueue = Promise.resolve();
@@ -5407,8 +5413,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             ) {
               onSuccessMessage(packet.d);
             }
-            await onDropPost(packet.d);
-            if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
+            if (!await onTypedDropRecap(packet.d)) {
+              await onDropPost(packet.d);
+              if (!await onPublicMessage(packet.d)) await onQuestionMessage(packet.d);
+            }
           })().catch(error => console.error("Discord public message handling:", error.message));
           if (packet.t === "MESSAGE_UPDATE" && packet.d?.guild_id === guildId && dropChannelIds.has(packet.d.channel_id)) {
             void api(`/channels/${packet.d.channel_id}/messages/${packet.d.id}`)

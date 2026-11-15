@@ -6,7 +6,7 @@ import path from "node:path";
 import {
   DROP_RECAP_DELAY_MS,DROP_RECAP_RETAILERS,dropControlRows,
   buildDropAnnouncement,buildDropRecapPost,parseDiscordSuccessForRecap,
-  createDiscordDropRecapController
+  createDiscordDropRecapController,buildTypedDropRecapPreview,handleTypedDropRecapPreview
 } from "../discord-live-drop-recap.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "../discord-source-price-field-policy.js";
 
@@ -206,4 +206,63 @@ test("legacy recaps from a different Discord general channel cannot post in the 
   assert.match(await h.controller.statusText(),/No drops started/);
   await h.controller.startRetailer("target");
   assert.equal(publicPosts(h).length,1);
+});
+
+test("plain 'Drop recap 11/13' renders a blue Discord box without mentions or totals",()=>{
+  const preview=buildTypedDropRecapPreview("Drop recap 11/13");
+  assert.deepEqual(preview.allowed_mentions,{parse:[]});
+  assert.equal(preview.embeds.length,1);
+  assert.equal(preview.embeds[0].color,0x3498db);
+  assert.equal(preview.embeds[0].description,["```ini","[Drop recap 11/13]","```"].join(String.fromCharCode(10)));
+  assert.equal(preview.content,undefined);
+  assert.ok(!JSON.stringify(preview).includes("@everyone"));
+  assert.ok(buildTypedDropRecapPreview(" drop  recap  3/9 ").embeds[0].description.includes("[Drop recap 3/9]"));
+  assert.equal(buildTypedDropRecapPreview("Drop recap 0/13"),null);
+  assert.equal(buildTypedDropRecapPreview("Drop recap 13/13"),null);
+  assert.equal(buildTypedDropRecapPreview("Drop recap 11/31"),null);
+  assert.equal(buildTypedDropRecapPreview("Drop recap 11/13 publish now"),null);
+  assert.equal(buildTypedDropRecapPreview("random channel message"),null);
+});
+
+test("typed recap works only for the verified owner and does not schedule a real drop",async()=>{
+  const calls=[],seen=new Set();
+  const message={id:"1611111111111111960",guild_id:GUILD,channel_id:GENERAL,
+    author:{id:OWNER},type:0,content:"Drop recap 11/13"};
+  const api=async(url,method,payload)=>{calls.push({url,method,payload});return {id:"1911111111111111111"};};
+  const run=msg=>handleTypedDropRecapPreview({
+    message:msg,ownerId:OWNER,guildId:GUILD,api,seenMessageIds:seen
+  });
+  assert.equal(await run(message),true);
+  assert.equal(calls.length,2);
+  assert.deepEqual(calls.map(x=>x.method),["POST","DELETE"]);
+  assert.equal(calls[0].url,"/channels/"+GENERAL+"/messages");
+  assert.equal(calls[0].payload.embeds[0].color,0x3498db);
+  assert.deepEqual(calls[0].payload.allowed_mentions,{parse:[]});
+  assert.equal(await run(message),false,"replayed gateway event must not duplicate preview");
+  assert.equal(await run({...message,id:"1611111111111111961",author:{id:"wrong-user"}}),false);
+  assert.equal(await run({...message,id:"1611111111111111962",guild_id:"wrong-guild"}),false);
+  assert.equal(await run({...message,id:"1611111111111111963",author:{id:OWNER,bot:true}}),false);
+  assert.equal(await run({...message,id:"1611111111111111964",webhook_id:"webhook"}),false);
+  assert.equal(await run({...message,id:"1611111111111111965",content:"DROP IS LIVE"}),false);
+  assert.equal(calls.length,2,"unrelated events must never post or delete");
+});
+
+test("typed preview remains posted if original cannot be deleted; failed posts may retry",async()=>{
+  const message={id:"1611111111111111966",guild_id:GUILD,channel_id:CONTROL,
+    author:{id:OWNER},content:"drop recap 11/13"};
+  const seen=new Set(),calls=[];
+  let failPost=true;
+  const api=async(url,method,payload)=>{
+    calls.push({url,method,payload});
+    if(method==="POST"&&failPost)throw Error("post failed");
+    if(method==="DELETE")throw Error("missing Manage Messages permission");
+    return {id:"1611111111111111967"};
+  };
+  const opts={message,ownerId:OWNER,guildId:GUILD,api,seenMessageIds:seen};
+  await assert.rejects(handleTypedDropRecapPreview(opts),/post failed/);
+  assert.equal(seen.size,0);
+  failPost=false;
+  assert.equal(await handleTypedDropRecapPreview(opts),true);
+  assert.equal(calls.filter(x=>x.method==="POST").length,2);
+  assert.equal(calls.filter(x=>x.method==="DELETE").length,1);
 });
