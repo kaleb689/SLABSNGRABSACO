@@ -11,6 +11,7 @@ import {
   targetMasterDashboard, targetMasterView, targetMasterManage, targetMasterEnsureOwnerRequested
 } from './target-sku-master.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
+import {upcomingDropRetailer} from './drop-news-format.js';
 import {addFixedTargetRetail} from './target-sku-fixed-retail.js';
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity, searchTargetPicks,
@@ -48,7 +49,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,r
   sendMessage:(channel,content,options)=>api(`/channels/${channel}/messages`,'POST',{content,...options}),
   mention:id=>`<@${id}>`,skuSafeText:v=>String(v||'').replace(/[\r\n<>*_`~|]/g,' ').trim(),
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
-  withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,
+  withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,upcomingDropRetailer,
   TARGET_MASTER_MARKER,initialTargetMaster,targetMasterItems,targetSkuCandidates,targetMessageTime,
   targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,targetMasterEnsureOwnerRequested,addFixedTargetRetail,
   newTargetPickDraft,toggleTargetPick,setTargetPickQuantity,searchTargetPicks,pasteTargetPicks,targetPickDiff,
