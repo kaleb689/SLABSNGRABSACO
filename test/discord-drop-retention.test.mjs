@@ -57,9 +57,11 @@ test("successful monitor paste cleanup removes only the raw source after posting
   const start=source.indexOf("  async function onDropPost(d) {");
   const snippet=source.slice(start,source.indexOf("\n  async function ",start+10));
   const calls=[];
-  const context={guildId:"guild",ownerId:"owner",appId:"bot",dropChannelIds:new Set(["drop"]),retailerDropLabels:{drop:"Target"},
+  const context={guildId:"guild",ownerId:"owner",appId:"bot",upcomingChannelId:"upcoming",dropChannelIds:new Set(["drop"]),retailerDropLabels:{drop:"Target"},
     inStoreChannelId:"instore",dropChannelLabel:()=>"Target",
-    isNewDropPost:()=>true,parseMonitorDropProducts:()=>[{name:"Box",sku:"12345"}],
+    isNewDropPost:()=>true,isTrustedDropPublisher:async d=>d.author?.id==="owner",
+    hasSavedDropReferences:async()=>false,retireReformattedRawSource:async()=>{},
+    parseMonitorDropProducts:()=>[{name:"Box",sku:"12345"}],
     parseDropSkus:()=>[],recordTargetMasterPost:async()=>[],
     formattedDropPayloads:()=>[{content:"formatted",embeds:[]}],
     api:async(path,method)=>{calls.push(method);return {id:"formatted"};},
@@ -79,7 +81,7 @@ test("In-Store Drops posts are formatted for viewing only, with no SKU picker", 
   const { parseDropNews, dropNewsPayloads } = await import("../drop-news-format.js");
   const { parseDropSkus } = await import("../discord-community.js");
   const calls = [], controls = [];
-  const context = { guildId: "guild", ownerId: "owner", inStoreChannelId: "instore", inStoreRoleId: "role123",
+  const context = { guildId: "guild", ownerId: "owner", appId:"bot", upcomingChannelId:"upcoming", inStoreChannelId: "instore", inStoreRoleId: "role123",
     dropChannelIds: new Set(["drop"]), isNewDropPost: () => true, parseDropNews, dropNewsPayloads, parseDropSkus,
     api: async (path, method, body) => { calls.push([method, path, body?.embeds?.[0]?.title, body]); return { id: "card" }; },
     ensureSkuControls: async () => controls.push(1), console,
