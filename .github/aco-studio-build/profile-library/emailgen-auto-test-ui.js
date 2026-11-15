@@ -6,7 +6,9 @@
  const AUTO_TEST_PREFLIGHT_SIZE=3;
  const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
   loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
-  paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0};
+  paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0,
+  selectedBatchKeys:new Set(),batchSelectionInitialized:false,selectedSenderKeys:new Set(),senderPoolInitialized:false,
+  selectedReceiverTargets:new Set(),receiverPoolInitialized:false};
  let mailProgressTimer=null;
  const mailUIElement=id=>$e(id);
  function readCatchallPreferences(){
@@ -28,6 +30,47 @@
  function mailProfilesFor(mailbox){
   return mailTestState.profiles.filter(p=>p.mailbox===mailbox).sort((a,b)=>
    String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+ }
+ function availableSenderProfiles(mailbox){
+  return mailProfilesFor(mailbox).filter(p=>mailTestState.selectedSenderKeys.has(mailPairKey(p)));
+ }
+ function renderMailAccountPools(){
+  const senderList=mailUIElement('randomTestSenderPoolList'),receiverList=mailUIElement('randomTestReceiverPoolList');
+  const pairs=mailTestState.profiles;
+  const validPairs=new Set(pairs.map(mailPairKey));
+  if(!mailTestState.senderPoolInitialized){
+   mailTestState.selectedSenderKeys=new Set(validPairs);
+   mailTestState.senderPoolInitialized=true;
+  }else mailTestState.selectedSenderKeys=new Set([...mailTestState.selectedSenderKeys].filter(k=>validPairs.has(k)));
+  const targets=[...new Set(pairs.map(p=>p.mailbox))].sort();
+  if(!mailTestState.receiverPoolInitialized){
+   mailTestState.selectedReceiverTargets=new Set(targets.slice(0,2));
+   mailTestState.receiverPoolInitialized=true;
+  }else mailTestState.selectedReceiverTargets=new Set([...mailTestState.selectedReceiverTargets].filter(k=>targets.includes(k)));
+  if(senderList){
+   senderList.replaceChildren();
+   for(const p of pairs){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;gap:7px;align-items:center;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=mailPairKey(p);
+    check.checked=mailTestState.selectedSenderKeys.has(check.value);check.setAttribute('data-test-sender',check.value);
+    const note=document.createElement('span');note.className='tiny';note.textContent=p.sender+' → '+p.mailbox;
+    label.append(check,note);senderList.appendChild(label);
+   }
+  }
+  const senderStatus=mailUIElement('randomTestSenderPoolStatus');
+  if(senderStatus)senderStatus.textContent=mailTestState.selectedSenderKeys.size+' of '+pairs.length+' verified sender/receiver pairs enabled. Only senders paired with an alias’s actual destination are eligible.';
+  if(receiverList){
+   receiverList.replaceChildren();
+   for(const mailbox of targets){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;gap:7px;align-items:center;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=mailbox;
+    check.checked=mailTestState.selectedReceiverTargets.has(mailbox);check.setAttribute('data-split-receiver',mailbox);
+    const note=document.createElement('span');note.className='tiny';note.textContent=mailbox+' (saved IMAP credentials)';
+    label.append(check,note);receiverList.appendChild(label);
+   }
+  }
  }
  function findSavedMailPair(mailbox){
   const options=mailProfilesFor(mailbox);
@@ -74,6 +117,7 @@
    const response=await api().mailTestCredentialStatus();
    mailTestState.profiles=Array.isArray(response?.profiles)?response.profiles.filter(p=>p&&validEmail(p.mailbox)&&validEmail(p.sender)):[];
    refreshSavedMailPairPicker();
+   renderMailAccountPools();
    if(mailTestState.autoPendingBatch&&!mailTestState.active){
     const pending=mailTestState.autoPendingBatch,group=emailBatchGroups().find(g=>g.key==='batch:'+pending);
     if(group&&group.rows.some(r=>mailProfilesFor(r.target).length)){
