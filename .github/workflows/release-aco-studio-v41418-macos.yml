@@ -237,6 +237,8 @@ jobs:
           grep -Fq 'RECEIPT_SCAN_LOOKBACK_MS' "$APP/Contents/Resources/app/emailgen-forwarding-test.js"
           grep -Fq 'source:{start:0,maxLength:MAX_RECEIPT_SOURCE_BYTES}' "$APP/Contents/Resources/app/emailgen-forwarding-test.js"
           grep -Fq 'matchExactMarker' "$APP/Contents/Resources/app/emailgen-forwarding-test.js"
+          grep -Fq '"mailparser": "^3.7.4"' "$APP/Contents/Resources/app/package.json"
+          test -f "$APP/Contents/Resources/app/node_modules/mailparser/package.json"
           grep -Fq 'matchMethods' "$APP/Contents/Resources/app/app.js"
           grep -Fq 'id="randomMailCredentialProblem"' "$APP/Contents/Resources/app/index.html"
           grep -Fq 'if(unlocked&&mailTestState.profileCheckedAt===0&&!mailTestState.loadingProfiles)' "$APP/Contents/Resources/app/app.js"
