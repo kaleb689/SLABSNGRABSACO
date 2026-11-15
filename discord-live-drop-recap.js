@@ -312,12 +312,12 @@ export function createDiscordDropRecapController({
     }).join("\n").slice(0,1900):"No drops started from this panel yet.";
   }
   async function handleInteraction(d){
-    const user=String(d?.member?.user?.id||"");
+    const user=String(d?.member?.user?.id||d?.user?.id||"");
     const id=String(d?.data?.custom_id||"");
     const callback="/interactions/"+d.id+"/"+d.token+"/callback";
     const reply=content=>api(callback,"POST",{type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
     if(user!==String(ownerId)||String(d.channel_id)!==String(controlChannelId))
-      return reply("Only the verified server owner can use these controls in #drop-controls.");
+      return reply("Only the verified server owner can use these private drop controls.");
     if(id==="sngdrop:status")return reply(await statusText());
     const start=id.match(/^sngdrop:start:(target|walmart|pokemoncenter|costco|sams)$/);
     if(start){
