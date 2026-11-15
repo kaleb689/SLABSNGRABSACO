@@ -104,3 +104,37 @@ test('Catch-all preflight stops after 3 unconfirmed messages and leaves all othe
  assert.equal(h.get('randomTestUnconfirmed').textContent,'3');
  assert.equal(h.get('randomTestFailed').textContent,'0');
 });
+
+test('New 400-alias batch is tested independently of a previously failing older email',async()=>{
+ const older={alias:'old-bad@sng.sarl',randomGenerated:true,batchId:'old',target:'inbox@gmail.com',status:'draft'};
+ const newRows=Array.from({length:400},(_,i)=>({alias:'new'+i+'@sng.sarl',randomGenerated:true,batchId:'new',target:'inbox@gmail.com',status:'draft'}));
+ const rows=[older,...newRows],profiles=[{mailbox:'inbox@gmail.com',sender:'sender@gmail.com'}];
+ const h=harness(rows,profiles);
+ h.ctx.emailBatchGroups=()=>[{key:'batch:new',rows:newRows},{key:'batch:old',rows:[older]}];
+ await h.ctx.run({batchId:'new'});
+ assert.equal(h.ctx.testState.total,400);
+ assert.equal(h.ctx.testState.passed,400);
+ assert.equal(h.ctx.testState.done,400);
+ assert.equal(older.forwardingTestedAt,undefined,'older failed record untouched');
+ assert.ok(h.calls.every(call=>call.aliases.every(alias=>alias.startsWith('new'))));
+});
+test('Unconfigured draft aliases do not reuse last progress or falsely report success',async()=>{
+ const rows=[{alias:'new@sng.sarl',randomGenerated:true,batchId:'batch-1',target:'inbox@gmail.com',status:'draft'}];
+ const profiles=[{mailbox:'inbox@gmail.com',sender:'sender@gmail.com'}];
+ const h=harness(rows,profiles);
+ h.ctx.localStorage.setItem('aco.emailgen.catchall.preferences.v1','{}');
+ h.ctx.testState.total=1;h.ctx.testState.done=1;h.ctx.testState.failed=1;
+ await h.ctx.run({all:true});
+ assert.equal(h.calls.length,0);
+ assert.equal(h.ctx.testState.total,0);
+ assert.equal(h.ctx.testState.done,0);
+ assert.equal(h.ctx.testState.failed,0);
+ assert.match(h.get('randomTestStatus').textContent,/NO EMAILS TESTED/);
+ assert.match(h.get('randomTestStatus').textContent,/catch-all/);
+});
+test('Testing controls include a direct batch chooser',()=>{
+ assert.match(html,/id="randomTestBatchSelect"/);
+ assert.match(html,/id="emailBatchRemoveOneReview"/);
+ assert.match(html,/id="emailBatchRemoveOneConfirm"/);
+ assert.match(app,/randomAliasTestBatch[\\s\\S]*batchId:group.key.slice\\(6\\)/);
+});
