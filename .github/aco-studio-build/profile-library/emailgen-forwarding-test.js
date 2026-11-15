@@ -27,7 +27,8 @@ async function scanCurrentMailboxForExactMarkers(imap,sent,{started,now,onProgre
  for await(const message of imap.fetch(recent,{envelope:true,internalDate:true},{uid:true})){
   const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
   if(!Number.isFinite(stamp)||stamp<started-30000||stamp>now()+30000)continue;
-  const match=expected.get(String(message.envelope?.subject||''));
+  const subject=String(message.envelope?.subject||'').trim().replace(/^(?:(?:re|fw|fwd):\\s*)+/i,'');
+  const match=expected.get(subject);
   if(!match||match.received)continue;
   match.received=true;match.receivedFolder=folder;
   diagnostics.exactMatches++;
