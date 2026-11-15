@@ -408,7 +408,7 @@
       mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
       ' Skipped '+skippedRouting+' draft(s) without catch-all testing enabled, '+skippedAlreadyVerified+' already verified.'+
       (routingWarnings.size?' WARNING: the initial 3 emails to '+[...routingWarnings].join(', ')+' had no confirmed receipts; the full queue was still processed.':'')+
-      (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
+      (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':([ ...receiptScanSummary.values() ].some(d=>d.outside>0)?' Only exact Inbox test receipts are moved to Trash; verified All Mail/Spam receipts are left in their folders.':' Confirmed Inbox test messages are moved to Trash.'));
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
    if(receiptScanSummary.size){
