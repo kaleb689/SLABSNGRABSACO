@@ -21,14 +21,14 @@ self.addEventListener("push", event => {
     try { payload = event.data?.json() || {}; } catch {}
     await self.registration.showNotification(payload.title || "SLABSNGRABSACO", {
       body: payload.body || "You have a new account update.", icon: "/icons/app-192.png", badge: "/icons/app-192.png",
-      tag: payload.tag || "account-update", data: { tab: ["success", "tracking", "membership", "notifications", "drops"].includes(payload.tab) ? payload.tab : "notifications", url: typeof payload.url === "string" && payload.url.startsWith("/") && !payload.url.startsWith("//") ? payload.url : null }
+      tag: payload.tag || "account-update", data: { tab: ["success", "tracking", "membership", "notifications", "drops", "messages"].includes(payload.tab) ? payload.tab : "notifications", url: typeof payload.url === "string" && payload.url.startsWith("/") && !payload.url.startsWith("//") ? payload.url : null }
     });
   })());
 });
 self.addEventListener("notificationclick", event => {
   event.notification.close();
   event.waitUntil((async () => {
-    const tab = ["success", "tracking", "membership", "notifications", "drops"].includes(event.notification.data?.tab) ? event.notification.data.tab : "notifications";
+    const tab = ["success", "tracking", "membership", "notifications", "drops", "messages"].includes(event.notification.data?.tab) ? event.notification.data.tab : "notifications";
     const custom = event.notification.data?.url;
     const adminPush = typeof custom === "string" && /^\/admin-app\.html(?:[?#]|$)/.test(custom);
     const url = adminPush ? new URL(custom, self.location.origin).href :
