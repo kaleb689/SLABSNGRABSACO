@@ -54,7 +54,7 @@ if (appEnabled) {
   root.id = 'app-dashboard'; root.hidden = true;
   root.innerHTML = `<header class="sng-app-header"><div class="sng-app-brand"><img src="/slabsngrabs-aco-logo-transparent.png" alt=""><div><strong>SLABSNGRABSACO</strong><span id="sng-app-title"></span></div></div>
     <div class="sng-app-header-actions"><button type="button" data-app-theme aria-label="Switch to day mode">${icon('sun')}</button><button type="button" data-app-view="settings" aria-label="Settings">${icon('settings')}</button><button type="button" data-app-view="notifications" aria-label="Notifications">${icon('notifications')}<span id="sng-app-unread" hidden></span></button></div></header>
-    <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${navLabels.map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span></button>`).join('')}</nav>`;
+    <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${navLabels.map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span>${id === "messages" ? '<b class="sng-support-unread" hidden></b>' : ""}</button>`).join('')}</nav>`;
   document.getElementById('customer-dashboard').before(root);
   const trackingSheet = document.createElement('dialog');
   trackingSheet.className = 'sng-tracking-sheet';
@@ -367,7 +367,8 @@ if (appEnabled) {
       if (target) { target.innerHTML = ''; target._sngMarkup = null; }
       return;
     }
-    if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();supportMessages=[];supportUnread=0;supportDraft='';supportAccountId=null;}
+    if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();}
+    if (supportAccountId && String(supportAccountId) !== String(state.customer.id)) {supportMessages=[];supportUnread=0;supportDraft='';supportAccountId=null;}
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
     document.body.dataset.appTheme = theme;
@@ -377,6 +378,8 @@ if (appEnabled) {
     document.getElementById('sng-app-title').textContent = labels[view].toUpperCase();
     const unread = state.customerNotifications?.length || 0;
     const badge = document.getElementById('sng-app-unread'); badge.hidden = !unread; badge.textContent = unread;
+    const messageBadge = root.querySelector('.sng-support-unread');
+    if (messageBadge) {messageBadge.hidden = !supportUnread;messageBadge.textContent = String(Math.min(99,supportUnread));}
     root.querySelectorAll('[data-app-view]').forEach(button => {
       button.classList.toggle('active', button.dataset.appView === view);
       button.setAttribute('aria-pressed', String(button.dataset.appView === view));
@@ -723,12 +726,16 @@ if (appEnabled) {
     streamAccountId = String(state.customer.id);
     stream = new EventSource('/api/account/success/events');
     stream.addEventListener('checkout', () => { void refresh(); void loadCustomerNotifications({showPopup:true}); });
-    stream.addEventListener('data-change', () => { void refresh();void loadSupportMessages({markRead:view==='messages'}); });
+    stream.addEventListener('data-change', event => {
+      void refresh();void loadSupportMessages({markRead:view==='messages'});
+      try {if(JSON.parse(event.data)?.detail==='support-message')void loadCustomerNotifications({showPopup:true});}catch{}
+    });
     stream.addEventListener('open', () => void refresh());
   }
   document.addEventListener('account-session-changed', () => {
     if (!state.customer || (accountId && state.customer.id !== accountId)) dropEditor.reset();
     render(); connect();
+    if (state.customer) void loadSupportMessages({markRead:view==='messages'});
     if (state.customer && state.customer.id !== accountId) {
       snapshots.clear(); changes.clear(); void refresh();
     }
