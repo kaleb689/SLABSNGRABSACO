@@ -1,0 +1,15 @@
+#discordSkuAuditPanel { margin-top:16px; }
+#discordSkuAuditPanel .admin-sku-filters {display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:12px 0;}
+#discordSkuAuditPanel .admin-sku-filters label {display:flex;flex-direction:column;gap:5px;flex:1 1 150px;font-size:12px;}
+#discordSkuAuditPanel input {width:100%;box-sizing:border-box;border:1px solid #40728b;border-radius:10px;padding:10px;background:#0b2233;color:inherit;min-height:41px;}
+#discordSkuAuditPanel .admin-sku-folder,#discordSkuAuditPanel .admin-sku-drop-group {border:1px solid #3a6680;border-radius:12px;margin:10px 0;padding:10px;background:rgba(6,28,43,.40);}
+#discordSkuAuditPanel summary {cursor:pointer;font-weight:800;list-style-position:inside;white-space:normal;overflow-wrap:anywhere;}
+#discordSkuAuditPanel .admin-sku-drop-group {margin:9px 4px;}
+#discordSkuAuditPanel .admin-sku-meta {overflow-wrap:anywhere;font-size:11px;opacity:.8;}
+#discordSkuAuditPanel .admin-sku-change {padding:10px;border-top:1px solid #456075;display:flex;flex-direction:column;gap:5px;overflow-wrap:anywhere;}
+#discordSkuAuditPanel .admin-sku-change strong {color:#64e2ff;font-size:12px;}
+#discordSkuAuditPanel .admin-sku-change span {font-size:12px;}
+#discordSkuAuditPanel .admin-sku-change small {opacity:.75;font-size:11px;}
+#discordSkuAuditPanel [role=status] {font-size:12px;margin:10px 0;}
+body[data-admin-theme="light"] #discordSkuAuditPanel input,body.light-mode #discordSkuAuditPanel input {background:#fff;color:#1d2c3b;}
+@media(max-width:640px) {#discordSkuAuditPanel .admin-sku-filters {display:grid;grid-template-columns:1fr 1fr;}#discordSkuAuditPanel .admin-sku-filters label:first-child {grid-column:1 / -1;}#discordSkuAuditPanel .admin-sku-filters button {grid-column:1 / -1;}}
