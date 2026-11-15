@@ -42,7 +42,7 @@ test("server exposes future-pricing display only behind explicit approval flag",
  const markup=readFileSync(new URL("../public/index.html",import.meta.url),"utf8");
  assert.match(server,/SNG_NOV28_UPCOMING_PRICE_DISPLAY_APPROVED === "true"/);
  assert.match(server,/approvedUpcomingSchedule\(PLANS/);
- assert.match(server,/return res\.json\(\{ discounts, \Q/ .source ? /return res\.json\(\{ discounts,/: /return res\.json\(\{ discounts,/);
+ assert.match(server,/return res\.json\(\{ discounts,/);
  assert.match(app,/membershipUpcomingHtml/);
  assert.match(app,/membershipUpcoming = data\.upcoming/);
  assert.match(markup,/id="home-upcoming-pricing-banner"/);
