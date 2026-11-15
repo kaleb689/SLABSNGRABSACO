@@ -572,21 +572,25 @@
   senderList.addEventListener('change',event=>{
    const check=event.target;if(!check?.matches?.('input[data-test-sender]'))return;
    if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   mailTestState.senderPoolUserCustomized=true;
    if(check.checked)mailTestState.selectedSenderKeys.add(check.value);
    else mailTestState.selectedSenderKeys.delete(check.value);
    renderMailAccountPools();
   });
   mailUIElement('randomTestAllSenders').addEventListener('click',()=>{
    if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.senderPoolUserCustomized=true;
    mailTestState.selectedSenderKeys=new Set(mailTestState.profiles.map(mailPairKey));renderMailAccountPools();
   });
   mailUIElement('randomTestClearSenders').addEventListener('click',()=>{
    if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.senderPoolUserCustomized=true;
    mailTestState.selectedSenderKeys.clear();renderMailAccountPools();
   });
   mailUIElement('randomTestReceiverPoolList').addEventListener('change',event=>{
    const check=event.target;if(!check?.matches?.('input[data-split-receiver]'))return;
    if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   mailTestState.receiverPoolUserCustomized=true;
    if(check.checked)mailTestState.selectedReceiverTargets.add(check.value);
    else mailTestState.selectedReceiverTargets.delete(check.value);
    cancelReceiverSplitPlan();renderMailAccountPools();
