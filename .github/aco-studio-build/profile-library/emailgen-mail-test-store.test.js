@@ -67,7 +67,7 @@ test('Corrupt or foreign Keychain storage cannot overwrite an existing encrypted
  const folder=workspace(t),first=keychain(),saved=makeMailTestStore({baseDir:folder,safeStorage:first,platform:'darwin'});
  saved.save(fixture);const before=fs.readFileSync(saved.path);
  const second=makeMailTestStore({baseDir:folder,safeStorage:keychain(),platform:'darwin'});
- assert.throws(()=>second.save({...fixture,sender:'another@gmail.com'}),/could not be decrypted/);
+ assert.throws(()=>second.save({...fixture,sender:'another@gmail.com'}),/cannot currently be decrypted/);
  assert.deepEqual(fs.readFileSync(saved.path),before);
  assert.equal(saved.read({mailbox:fixture.mailbox}).sender,fixture.sender);
 });
