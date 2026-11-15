@@ -28,7 +28,8 @@ const makeMessage = (color, id, timestamp, orderId = "102003802680520") => ({
 function parseLiveWebhook(message) {
   const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
   const start = source.indexOf("function discordCheckoutFromMessage(");
-  const end = source.indexOf("const DISCORD_HIT_MIRROR_FILE", start);
+  // Stop before the live admin recap route is registered; this VM only evaluates the parser.
+  const end = source.indexOf("registerDirectSourceRecapReview({", start);
   assert.ok(start > 0 && end > start, "extract actual production parser");
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
