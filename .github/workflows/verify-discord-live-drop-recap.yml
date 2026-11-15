@@ -1,0 +1,41 @@
+name: Verify Discord owner drop announcements and recaps
+
+on:
+  push:
+    paths:
+      - discord-live-drop-recap.js
+      - discord-community.js
+      - server-discord-source-recap-review.js
+      - discord-source-recap-report.js
+      - tests/discord-live-drop-recap.test.js
+      - .github/workflows/verify-discord-live-drop-recap.yml
+  pull_request:
+    paths:
+      - discord-live-drop-recap.js
+      - discord-community.js
+      - server-discord-source-recap-review.js
+      - discord-source-recap-report.js
+      - tests/discord-live-drop-recap.test.js
+      - .github/workflows/verify-discord-live-drop-recap.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Check the Discord feature and bot syntax
+        run: |
+          node --check discord-live-drop-recap.js
+          node --check discord-community.js
+          node --check server-discord-source-recap-review.js
+      - name: Verify confirmation, timing, source and duplicate protections
+        run: node --test tests/discord-live-drop-recap.test.js tests/discord-source-recap-tax-shipping.test.js
