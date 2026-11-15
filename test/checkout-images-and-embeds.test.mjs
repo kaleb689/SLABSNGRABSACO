@@ -8,6 +8,7 @@ import {
   checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProductFromDiscord
 } from "../discord-checkout-identity.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 
 const src=readFileSync(new URL("../server.js",import.meta.url),"utf8");
@@ -22,6 +23,7 @@ function parse(message) {
     message,channel,parsed:null,
     discordCheckoutIdentity:checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,
+    sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName:s=>String(s||"").slice(0,120).trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(
