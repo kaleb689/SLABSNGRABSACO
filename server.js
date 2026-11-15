@@ -12735,43 +12735,111 @@ async function ensureThanksgivingPromotionConfigured() {
 }
 
 const THANKSGIVING_DISCORD_ANNOUNCEMENT = [
+  "@everyone",
   "🦃 **SLABSNGRABSACO THANKSGIVING SALE + MEMBERSHIP NEWS**",
   "",
   "**25% OFF: THANKS25**",
-  "Use code \`THANKS25\` for new memberships and paid extensions, ending **November 27, 2026 at 11:59 PM ET**. The discount is limited to **six months maximum**: 1–6 prepaid months or the first six monthly payments on a new subscription. No seventh discounted month.",
+  "",
+  "Use code `THANKS25` for new memberships and paid extensions, ending **November 27, 2026 at 11:59 PM ET**. The discount is limited to **six months maximum**: 1–6 prepaid months or the first six monthly payments on a new subscription.",
   "",
   "**NEW RATES NOVEMBER 28**",
-  "Regular membership prices increase 42% before rounding **DOWN to the nearest $5**:",
+  "",
+  "Regular membership prices will increase:",
+  "",
   "Starter $15 → $20 | Intermediate $25 → $35 | Advanced $40 → $55 | Pro $70 → $95",
+  "",
   "High Volume $120 → $170 | Power User $150 → $210 | Elite $290 → $410 | Ultimate $800 → $1,135",
   "",
-  "**OG MEMBERS:** Our six approved original members keep OG status and receive a **permanent 10% discount on their monthly renewals**. Discounts never stack: eligible OG members receive the larger 25% Thanksgiving offer when applicable, with their 10% OG benefit remaining afterward.",
+  "**OG MEMBERS:** OG members receive a **permanent 10% discount on their monthly renewals**. Discounts will not stack.",
   "",
   "**REFERRALS:** When a new member joins using your linked Discord username, verifies their account and pays, you earn **+1 ACO profile** for the duration of your active paid membership.",
   "",
-  "Visit the website to view membership prices, extend your plan or upgrade."
+  "**[VISIT SLABSNGRABSACO](https://slabsngrabsaco.com)**",
+  "",
+  "View membership pricing, extend your plan or upgrade."
 ].join("\n");
 
+
+// Explicitly owner-approved announcement. This posting is separate from the
+// earlier incorrect #general post, and must never fall back to #general.
 async function announceThanksgivingOfferOnce() {
   if (Date.now() < Date.parse(THANKS25_START_AT) ||
       Date.now() >= Date.parse(THANKS25_END_AT)) return false;
-  const sentFile = path.join(DATA_DIR, "thanksgiving-2026-discord-announcement.json");
+  const sentFile = path.join(DATA_DIR, "thanksgiving-2026-approved-announcements-everyone.json");
   if ((await readJson(sentFile, {})).sentAt) return false;
-  const record = (await getDiscountCodes()).find(x => x.code === "THANKS25" && x.active &&
-    x.stripePromotionCodeId && Date.parse(x.startsAt) <= Date.now() &&
-    Date.parse(x.expiresAt) > Date.now());
+  const record = (await getDiscountCodes()).find(x =>
+    x.code === "THANKS25" && x.active && x.stripePromotionCodeId &&
+    Date.parse(x.startsAt) <= Date.now() && Date.parse(x.expiresAt) > Date.now());
   if (!record) return false;
   const promotion = await stripe.promotionCodes.retrieve(record.stripePromotionCodeId);
   if (!promotion.active) return false;
+
   const channels = await referralDiscordChannels();
-  const general = channels.find(x => x.type === 0 && discordChannelLabel(x.name) === "general");
-  if (!general) throw new Error("Discord #general is unavailable.");
-  await sendDiscordReferralMessage(general.id, THANKSGIVING_DISCORD_ANNOUNCEMENT, []);
-  await writeJson(sentFile, { sentAt: new Date().toISOString(), channelId: general.id, code: "THANKS25" });
-  console.log("Thanksgiving 2026 sale announcement sent to Discord #general.");
+  const importantCategory = channels.find(x => x.type === 4 &&
+    discordChannelLabel(x.name) === "important");
+  const candidates = channels.filter(x => [0, 5].includes(x.type) &&
+    discordChannelLabel(x.name) === "announcements");
+  const destination = candidates.find(x => importantCategory &&
+    String(x.parent_id) === String(importantCategory.id)) ||
+    (candidates.length === 1 ? candidates[0] : null);
+  if (!destination) throw new Error("ACO #announcements channel not found unambiguously; no message sent.");
+
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (!token) throw new Error("Discord bot is not configured.");
+  const url = "https://discord.com/api/v10/channels/" + destination.id + "/messages";
+  const headers = {Authorization: "Bot " + token};
+  // If an earlier attempt reached Discord but could not persist the receipt,
+  // detect the exact existing message before considering a second @everyone.
+  const history = await fetch(url + "?limit=100", {
+    headers, signal: AbortSignal.timeout(12000)
+  });
+  if (!history.ok) throw new Error("Unable to verify announcement history (HTTP " + history.status + "). No duplicate-risk posting attempted.");
+  const recent = await history.json();
+  const prior = Array.isArray(recent) ? recent.find(message =>
+    message.author?.bot === true &&
+    message.content === THANKSGIVING_DISCORD_ANNOUNCEMENT) : null;
+  if (prior) {
+    await writeJson(sentFile, {
+      sentAt: prior.timestamp || new Date().toISOString(),
+      messageId: prior.id, channelId: destination.id,
+      mentionEveryone: prior.mention_everyone === true,
+      existingMessage: true
+    });
+    console.log("Thanksgiving approved #announcements already posted:", JSON.stringify({
+      channelId: destination.id, messageId: prior.id, mentionEveryone: prior.mention_everyone === true
+    }));
+    return false;
+  }
+
+  const logoUrl = "https://slabsngrabsaco.com/slabsngrabs-aco-logo-transparent.png";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {...headers, "Content-Type": "application/json"},
+    body: JSON.stringify({
+      content: THANKSGIVING_DISCORD_ANNOUNCEMENT,
+      allowed_mentions: {parse: ["everyone"]},
+      embeds: [{thumbnail: {url: logoUrl}}]
+    }),
+    signal: AbortSignal.timeout(12000)
+  });
+  if (!response.ok) throw new Error("Approved #announcements post failed (HTTP " + response.status + ").");
+  const posted = await response.json();
+  if (!posted.id || String(posted.channel_id) !== String(destination.id))
+    throw new Error("Discord did not confirm a matching announcement message ID.");
+  await writeJson(sentFile, {
+    sentAt: posted.timestamp || new Date().toISOString(),
+    messageId: posted.id, channelId: destination.id,
+    mentionEveryone: posted.mention_everyone === true,
+    logoUrl, code: "THANKS25"
+  });
+  console.log("Thanksgiving approved announcement posted:", JSON.stringify({
+    channelId: destination.id, messageId: posted.id,
+    guildId: destination.guild_id,
+    mentionEveryone: posted.mention_everyone === true,
+    logoUrl, websiteLink: "https://slabsngrabsaco.com"
+  }));
   return true;
 }
-
 
 // Consult Stripe for limits on currently redeemable codes. Local records
 // preserve historical use counts if a code's coupon is edited/replaced.
