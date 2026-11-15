@@ -67,7 +67,59 @@ test('Corrupt or foreign Keychain storage cannot overwrite an existing encrypted
  const folder=workspace(t),first=keychain(),saved=makeMailTestStore({baseDir:folder,safeStorage:first,platform:'darwin'});
  saved.save(fixture);const before=fs.readFileSync(saved.path);
  const second=makeMailTestStore({baseDir:folder,safeStorage:keychain(),platform:'darwin'});
- assert.throws(()=>second.save({...fixture,sender:'another@gmail.com'}),/could not be decrypted/);
+ assert.throws(()=>second.save({...fixture,sender:'another@gmail.com'}),/cannot currently be decrypted/);
  assert.deepEqual(fs.readFileSync(saved.path),before);
  assert.equal(saved.read({mailbox:fixture.mailbox}).sender,fixture.sender);
+});
+
+test('Missing current credentials can be recovered from verified encrypted owner checkpoint without touching another file',t=>{
+ const directory=workspace(t),safeStorage=keychain(),store=makeMailTestStore({baseDir:directory,safeStorage,platform:'darwin'});
+ store.save(fixture);
+ store.save({...fixture,sender:'second.sender@gmail.com'});
+ const ciphertext=fs.readFileSync(store.path),id='20261115T141000Z-0123456789abcdef';
+ const checkpoint=path.join(path.dirname(directory),path.basename(directory)+'.encrypted-recovery-backups',id);
+ fs.mkdirSync(checkpoint,{recursive:true});
+ fs.writeFileSync(path.join(checkpoint,path.basename(store.path)),ciphertext,{mode:0o600});
+ fs.writeFileSync(path.join(checkpoint,'manifest.json'),JSON.stringify({version:1,id,
+  createdAt:'2026-11-15T14:10:00Z',files:[{name:path.basename(store.path),
+   size:ciphertext.length,digest:crypto.createHash('sha256').update(ciphertext).digest('hex')}]}));
+ const unrelated=path.join(directory,'some-other-profile-file.encrypted');
+ fs.writeFileSync(unrelated,'leave my profile data alone');
+ fs.unlinkSync(store.path);
+ assert.equal(store.status().credentialFilePresent,false);
+ const preview=store.backupStatus();
+ assert.equal(preview.credentialFilePresent,false);
+ assert.deepEqual(preview.candidates.map(row=>row.count),[2]);
+ assert.throws(()=>store.restoreMissingFromBackup({id,confirmed:false}),/Confirm/);
+ assert.equal(fs.existsSync(store.path),false);
+ const result=store.restoreMissingFromBackup({id,confirmed:true});
+ assert.equal(result.count,2);
+ assert.equal(store.status().profiles.length,2);
+ assert.deepEqual(fs.readFileSync(store.path),ciphertext);
+ assert.equal(fs.readFileSync(unrelated,'utf8'),'leave my profile data alone');
+ assert.throws(()=>store.restoreMissingFromBackup({id,confirmed:true}),/already exists/);
+ fs.rmSync(path.dirname(checkpoint),{recursive:true,force:true});
+});
+test('Existing encrypted credential file always wins over any rollback snapshot',t=>{
+ const directory=workspace(t),safeStorage=keychain(),store=makeMailTestStore({baseDir:directory,safeStorage,platform:'darwin'});
+ store.save(fixture);
+ const before=fs.readFileSync(store.path);
+ assert.throws(()=>store.restoreMissingFromBackup({id:'20261115T141000Z-0123456789abcdef',confirmed:true}),/already exists/);
+ assert.deepEqual(fs.readFileSync(store.path),before);
+ assert.equal(store.status().credentialFilePresent,true);
+});
+test('Snapshots encrypted under a different Keychain are never treated as recoverable',t=>{
+ const directory=workspace(t),first=keychain(),store=makeMailTestStore({baseDir:directory,safeStorage:first,platform:'darwin'});
+ store.save(fixture);const ciphertext=fs.readFileSync(store.path);
+ const root=path.join(path.dirname(directory),path.basename(directory)+'.encrypted-recovery-backups');
+ const id='20261115T141100Z-1123456789abcdef';fs.mkdirSync(path.join(root,id),{recursive:true});
+ fs.writeFileSync(path.join(root,id,path.basename(store.path)),ciphertext);
+ fs.writeFileSync(path.join(root,id,'manifest.json'),JSON.stringify({version:1,id,
+  createdAt:'2026-11-15T14:11:00Z',files:[{name:path.basename(store.path),
+   size:ciphertext.length,digest:crypto.createHash('sha256').update(ciphertext).digest('hex')}]}));
+ const incompatible=makeMailTestStore({baseDir:directory,safeStorage:keychain(),platform:'darwin'});
+ assert.deepEqual(incompatible.backupStatus().candidates,[]);
+ assert.throws(()=>incompatible.status(),/cannot currently be decrypted/);
+ assert.deepEqual(fs.readFileSync(store.path),ciphertext);
+ fs.rmSync(root,{recursive:true,force:true});
 });

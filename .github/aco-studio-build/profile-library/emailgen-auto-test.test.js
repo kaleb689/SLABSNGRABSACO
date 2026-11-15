@@ -215,3 +215,37 @@ test('Single failed email does not interrupt the remaining batches or sender rot
  assert.ok(rows.slice(1).every(r=>r.forwardingTestedAt));
  assert.equal(h.rendered.length,1);
 });
+
+test('Delayed Email Bank unlock reloads earlier saved sender/receiver pairs instead of leaving a false 0/0',async()=>{
+ const rows=[{alias:'test@sng.sarl',target:'inbox@gmail.com',randomGenerated:true,status:'draft'}];
+ const profiles=[{mailbox:'inbox@gmail.com',sender:'verified.sender@gmail.com',updatedAt:'2026-11-15T14:00:00Z'}];
+ const h=harness(rows,profiles);
+ h.ctx.unlocked=false;
+ h.ctx.testState.senderPoolInitialized=true;
+ h.ctx.testState.selectedSenderKeys=new Set();
+ const early=await h.ctx.loadPairs(true);
+ assert.equal(early.length,0,'waiting for unlock must not falsely label the encrypted file missing');
+ assert.equal(h.ctx.testState.profileCheckedAt,0,'locked attempt must not suppress subsequent retry');
+ h.ctx.unlocked=true;
+ const loaded=await h.ctx.loadPairs(true);
+ assert.equal(loaded.length,1);
+ assert.equal(h.ctx.testState.selectedSenderKeys.size,1,'previously empty startup selection auto-restored');
+ assert.equal(h.get('randomMailCredentialProblem').hidden,true);
+ assert.match(h.get('randomTestSenderPoolStatus').textContent,/1 of 1/);
+});
+test('Keychain or authorization errors show a visible recovery warning rather than silently reporting accounts deleted',async()=>{
+ const rows=[{alias:'test@sng.sarl',target:'inbox@gmail.com',randomGenerated:true,status:'draft'}];
+ const h=harness(rows,[]);
+ h.ctx.api=()=>({mailTestCredentialStatus:async()=>{throw Error('Mac Keychain temporarily unavailable');}});
+ await h.ctx.loadPairs(true);
+ assert.equal(h.ctx.testState.credentialLoadCompleted,false);
+ assert.equal(h.get('randomMailCredentialProblem').hidden,false);
+ assert.match(h.get('randomMailCredentialProblemText').textContent,/Mac Keychain temporarily unavailable/);
+ assert.match(h.get('randomMailCredentialProblemText').textContent,/may still exist/);
+});
+test('Email Bank batch rendering initiates retry after delayed unlock',()=>{
+ assert.match(app,/if\(unlocked&&mailTestState\.profileCheckedAt===0&&!mailTestState\.loadingProfiles\)/);
+ assert.match(html,/id="randomMailCredentialsReload"/);
+ assert.match(html,/id="randomMailCredentialsCheckBackups"/);
+ assert.match(html,/id="randomMailBackupRestore"/);
+});

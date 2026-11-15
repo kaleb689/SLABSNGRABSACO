@@ -6,7 +6,7 @@
  const AUTO_TEST_PREFLIGHT_SIZE=3;
  const AUTO_TEST_SAVE_EVERY=75; // Persist up to 75 test results at once to keep the Mac UI responsive.
  const mailTestState={active:false,starting:false,cancel:false,profiles:[],profileCheckedAt:0,
-  loadingProfiles:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
+  loadingProfiles:false,credentialLoadCompleted:false,credentialProblem:null,credentialFilePresent:null,senderPoolUserCustomized:false,receiverPoolUserCustomized:false,runId:'',statuses:new Map(),recent:[],total:0,done:0,passed:0,failed:0,unconfirmed:0,
   paused:false,lastRunAt:0,runTarget:'',autoPendingBatch:null,cleanupPending:0,
   selectedBatchKeys:new Set(),batchSelectionInitialized:false,selectedSenderKeys:new Set(),senderPoolInitialized:false,
   selectedReceiverTargets:new Set(),receiverPoolInitialized:false};
@@ -39,12 +39,12 @@
   const senderList=mailUIElement('randomTestSenderPoolList'),receiverList=mailUIElement('randomTestReceiverPoolList');
   const pairs=mailTestState.profiles;
   const validPairs=new Set(pairs.map(mailPairKey));
-  if(!mailTestState.senderPoolInitialized){
+  if(!mailTestState.senderPoolInitialized||(!mailTestState.senderPoolUserCustomized&&mailTestState.selectedSenderKeys.size===0)){
    mailTestState.selectedSenderKeys=new Set(validPairs);
    mailTestState.senderPoolInitialized=true;
   }else mailTestState.selectedSenderKeys=new Set([...mailTestState.selectedSenderKeys].filter(k=>validPairs.has(k)));
   const targets=[...new Set(pairs.map(p=>p.mailbox))].sort();
-  if(!mailTestState.receiverPoolInitialized){
+  if(!mailTestState.receiverPoolInitialized||(!mailTestState.receiverPoolUserCustomized&&mailTestState.selectedReceiverTargets.size===0)){
    mailTestState.selectedReceiverTargets=new Set(targets.slice(0,2));
    mailTestState.receiverPoolInitialized=true;
   }else mailTestState.selectedReceiverTargets=new Set([...mailTestState.selectedReceiverTargets].filter(k=>targets.includes(k)));
@@ -60,7 +60,7 @@
    }
   }
   const senderStatus=mailUIElement('randomTestSenderPoolStatus');
-  if(senderStatus)senderStatus.textContent=mailTestState.selectedSenderKeys.size+' of '+pairs.length+' verified sender/receiver pairs enabled. Only senders paired with an alias’s actual destination are eligible.';
+  if(senderStatus)senderStatus.textContent=!mailTestState.credentialLoadCompleted?'Saved Mac Keychain account pairs not yet loaded. Unlock Email Bank and choose Reload saved pairs; no deletion is implied.':mailTestState.selectedSenderKeys.size+' of '+pairs.length+' verified sender/receiver pairs enabled. Only senders paired with an alias’s actual destination are eligible.';
   if(receiverList){
    receiverList.replaceChildren();
    for(const mailbox of targets){
@@ -109,17 +109,36 @@
    status.textContent=profiles.length+' secure mail account pair(s) saved on this Mac. You can swap the receiver or sender without deleting the other configurations.';
   }
  }
+ function showMailCredentialProblem(message){
+  mailTestState.credentialProblem=message||null;
+  const box=mailUIElement('randomMailCredentialProblem');
+  const body=mailUIElement('randomMailCredentialProblemText');
+  if(box)box.hidden=!message;
+  if(body&&message)body.textContent=String(message);
+ }
  async function loadSavedMailPairs(force=false){
-  if(!unlocked)return [];
+  if(!unlocked){
+   const label=mailUIElement('randomTestSenderPoolStatus');
+   if(label)label.textContent='Email Bank is still locked; saved Mac Keychain account pairs will load after unlock. No deletion is implied.';
+   return mailTestState.profiles;
+  }
   if(mailTestState.loadingProfiles)return mailTestState.profiles;
   if(!force&&Date.now()-mailTestState.profileCheckedAt<30000)return mailTestState.profiles;
   mailTestState.profileCheckedAt=Date.now();mailTestState.loadingProfiles=true;
   try{
    const response=await api().mailTestCredentialStatus();
-   mailTestState.profiles=Array.isArray(response?.profiles)?response.profiles.filter(p=>p&&validEmail(p.mailbox)&&validEmail(p.sender)):[];
-   refreshSavedMailPairPicker();
-   renderMailAccountPools();
-   if(mailTestState.autoPendingBatch&&!mailTestState.active){
+   if(!response||!Array.isArray(response.profiles))
+    throw Error('The secure account status response was incomplete; original credentials were not changed.');
+   mailTestState.profiles=response.profiles.filter(p=>p&&validEmail(p.mailbox)&&validEmail(p.sender));
+   mailTestState.credentialLoadCompleted=true;
+   mailTestState.credentialFilePresent=response.credentialFilePresent!==false;
+   if(response.credentialFilePresent===false)
+    showMailCredentialProblem('No encrypted mail-credential file was found in the current ACO Studio data folder. Check the encrypted recovery snapshots before entering passwords. Other Email Bank data is unaffected.');
+   else if(!mailTestState.profiles.length)
+    showMailCredentialProblem('The encrypted mail-credential file exists but contains no saved account pairs. Check recovery snapshots; this screen did not delete the file.');
+   else showMailCredentialProblem(null);
+   refreshSavedMailPairPicker();renderMailAccountPools();
+   if(mailTestState.autoPendingBatch&&!mailTestState.active&&mailTestState.profiles.length){
     const pending=mailTestState.autoPendingBatch,group=emailBatchGroups().find(g=>g.key==='batch:'+pending);
     if(group&&group.rows.some(r=>mailProfilesFor(r.target).length)){
      mailTestState.autoPendingBatch=null;
@@ -128,7 +147,12 @@
    }
    return mailTestState.profiles;
   }catch(error){
-   const node=mailUIElement('randomMailCredentialsStatus');if(node)node.textContent='Secure mail credentials could not be accessed: '+String(error?.message||error);
+   mailTestState.credentialLoadCompleted=false;
+   const message='Could not load saved Mac Keychain account pairs: '+String(error?.message||error)+
+    '. They may still exist in the encrypted file. Check recovery snapshots before entering passwords.';
+   showMailCredentialProblem(message);
+   const node=mailUIElement('randomMailCredentialsStatus');if(node)node.textContent=message;
+   renderMailAccountPools();
    return mailTestState.profiles;
   }finally{mailTestState.loadingProfiles=false;}
  }
@@ -548,21 +572,25 @@
   senderList.addEventListener('change',event=>{
    const check=event.target;if(!check?.matches?.('input[data-test-sender]'))return;
    if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   mailTestState.senderPoolUserCustomized=true;
    if(check.checked)mailTestState.selectedSenderKeys.add(check.value);
    else mailTestState.selectedSenderKeys.delete(check.value);
    renderMailAccountPools();
   });
   mailUIElement('randomTestAllSenders').addEventListener('click',()=>{
    if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.senderPoolUserCustomized=true;
    mailTestState.selectedSenderKeys=new Set(mailTestState.profiles.map(mailPairKey));renderMailAccountPools();
   });
   mailUIElement('randomTestClearSenders').addEventListener('click',()=>{
    if(mailTestState.active||mailTestState.starting)return;
+   mailTestState.senderPoolUserCustomized=true;
    mailTestState.selectedSenderKeys.clear();renderMailAccountPools();
   });
   mailUIElement('randomTestReceiverPoolList').addEventListener('change',event=>{
    const check=event.target;if(!check?.matches?.('input[data-split-receiver]'))return;
    if(mailTestState.active||mailTestState.starting){check.checked=!check.checked;return;}
+   mailTestState.receiverPoolUserCustomized=true;
    if(check.checked)mailTestState.selectedReceiverTargets.add(check.value);
    else mailTestState.selectedReceiverTargets.delete(check.value);
    cancelReceiverSplitPlan();renderMailAccountPools();
@@ -604,6 +632,49 @@
     status.dataset.error='1';
     status.textContent='Could not verify/save accounts: '+String(error?.message||error);
    }finally{b.disabled=false;}
+  });
+  mailUIElement('randomMailCredentialsReload').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailCredentialsReload');button.disabled=true;
+   try{await loadSavedMailPairs(true);}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomMailCredentialsCheckBackups').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailCredentialsCheckBackups'),panel=mailUIElement('randomMailBackupPanel');
+   const label=mailUIElement('randomMailBackupStatus'),select=mailUIElement('randomMailBackupSelect');
+   const restore=mailUIElement('randomMailBackupRestore');
+   button.disabled=true;panel.hidden=false;restore.disabled=true;select.replaceChildren();
+   label.textContent='Checking integrity and Mac Keychain readability of encrypted credential recovery snapshots (read-only).';
+   try{
+    const response=await api().mailTestCredentialBackups();
+    const candidates=Array.isArray(response?.candidates)?response.candidates:[];
+    for(const item of candidates){
+     const option=document.createElement('option');option.value=item.id;
+     option.textContent=(item.createdAt||item.id)+' — '+item.count+' saved sender/receiver pair(s)';
+     select.appendChild(option);
+    }
+    if(response.credentialFilePresent){
+     label.textContent='The current encrypted credential file EXISTS. It was not deleted. Recovery cannot overwrite it. Reload saved pairs and inspect any Keychain error above.';
+     restore.disabled=true;
+    }else if(candidates.length){
+     label.textContent='Current credential file is MISSING. Found '+candidates.length+' verified Keychain-readable encrypted snapshot(s). Only this one file can be restored after explicit confirmation. No profiles, cards or addresses are changed.';
+     restore.disabled=false;
+    }else{
+     label.textContent='No current credential file or independently verifiable Keychain-readable recovery snapshot was found. No files were modified. The original data could be in a different Mac app-data directory.';
+    }
+   }catch(error){label.textContent='Credential backup inspection unavailable: '+String(error?.message||error)+'. No files changed.';}
+   finally{button.disabled=false;}
+  });
+  mailUIElement('randomMailBackupRestore').addEventListener('click',async()=>{
+   const button=mailUIElement('randomMailBackupRestore'),id=mailUIElement('randomMailBackupSelect').value;
+   if(!id)return;
+   if(!confirm('Recover ONLY the missing encrypted mail-test credentials file from this verified Mac backup? All other data stays unchanged. No existing credential file can be overwritten.'))return;
+   if(prompt('Type RESTORE to confirm recovery of ONLY the missing mail-credentials file:')!=='RESTORE')return;
+   button.disabled=true;
+   try{
+    const result=await api().restoreMissingMailTestCredentials({id,confirmed:true});
+    mailUIElement('randomMailBackupStatus').textContent='Recovered '+result.count+' saved mail account pair(s) from a verified encrypted snapshot without changing any profiles.';
+    mailTestState.profileCheckedAt=0;await loadSavedMailPairs(true);
+   }catch(error){mailUIElement('randomMailBackupStatus').textContent='Credential recovery refused: '+String(error?.message||error)+'. Existing files were not overwritten.';}
   });
   mailUIElement('randomMailCredentialsForget').addEventListener('click',async()=>{
    const key=mailUIElement('randomMailPreset').value;
