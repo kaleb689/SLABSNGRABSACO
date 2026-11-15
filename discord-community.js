@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { buildDiscordSkuAuditBatch } from "./discord-sku-audit.js";
+
+const skuAuditContext = new AsyncLocalStorage();
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
@@ -985,7 +989,7 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -3260,6 +3264,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     catch (error) { if (error.code === "ENOENT") return {}; throw error; }
   }
   async function writeSkuFile(file, value) {
+    // Authoritative Gateway interaction IDs flow through the async queue.
+    // Failure to write the protected audit ledger blocks the SKU mutation.
+    if (file === skuSelectionsFile && typeof onSkuSelectionAudit === "function") {
+      const ctx = skuAuditContext.getStore();
+      if (ctx?.interactionId && ctx?.discordUserId &&
+          String(ctx.guildId) === String(guildId)) {
+        const oldRecords = await readSkuFile(file);
+        const batch = buildDiscordSkuAuditBatch(
+          oldRecords?.[ctx.discordUserId], value?.[ctx.discordUserId], ctx
+        );
+        if (batch) await onSkuSelectionAudit(batch);
+      }
+    }
     await fs.mkdir(dataDir, { recursive: true });
     const temp = `${file}.${crypto.randomUUID()}.tmp`;
     await fs.writeFile(temp, JSON.stringify(value), { mode: 0o600 });
@@ -4377,6 +4394,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     catch (error) { discordCommunityStatus.lastAiError = error.message; console.error("Discord question:", error.message); }
   }
   async function interaction(payload) {
+    const d = payload?.d || {};
+    if (payload?.t !== "INTERACTION_CREATE" || !d.id) return interactionImpl(payload);
+    return skuAuditContext.run({
+      interactionId: String(d.id),
+      discordUserId: String(d.member?.user?.id || d.user?.id || ""),
+      displayName: String(d.member?.user?.global_name || d.member?.user?.username || d.user?.username || ""),
+      guildId: String(d.guild_id || ""),
+      channelId: String(d.channel_id || ""),
+      messageId: String(d.message?.id || ""),
+      customId: String(d.data?.custom_id || "")
+    }, () => interactionImpl(payload));
+  }
+  async function interactionImpl(payload) {
     const isDropControl=String(payload.d?.data?.custom_id||"").startsWith("sngdrop:");
     if (payload.t !== "INTERACTION_CREATE" ||
         (!isDropControl && payload.d?.guild_id !== guildId) ||

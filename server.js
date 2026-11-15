@@ -1856,6 +1856,44 @@ function appendConsentRecord(record) {
   consentLedgerQueue = next.catch(() => {});
   return next;
 }
+
+let discordSkuAuditSeen = null;
+async function appendDiscordSkuAuditBatch(batch) {
+  // Authenticated Discord Gateway interactions only; never trust a customer-supplied account ID.
+  if (!/^\d{17,22}$/.test(String(batch?.interactionId || "")) ||
+      !/^\d{17,22}$/.test(String(batch?.discordUserId || "")) ||
+      batch.source !== "discord_gateway" ||
+      !Array.isArray(batch.events) || !batch.events.length || batch.events.length > 250)
+    throw new Error("Invalid Discord SKU audit batch.");
+  await consentLedgerQueue;
+  if (!discordSkuAuditSeen) {
+    const {entries} = await readConsentLedger();
+    discordSkuAuditSeen = new Set(entries.filter(item => item.type === "discord_sku_selection")
+      .map(item => String(item.interactionId || "")));
+  }
+  if (discordSkuAuditSeen.has(String(batch.interactionId))) return {duplicate:true};
+  const accounts = await getCustomerAccounts();
+  const matches = (Array.isArray(accounts) ? accounts : []).filter(account =>
+    account.discordLinkedAt && String(account.discordUserId || "") === String(batch.discordUserId));
+  const owner = matches.length === 1 ? matches[0] : null;
+  const recorded = await appendConsentRecord({
+    type:"discord_sku_selection",
+    customerAccountId:owner ? String(owner.id) : null,
+    attribution:owner ? "verified_linked_discord_id" :
+      matches.length > 1 ? "unmatched_duplicate_link" : "unmatched",
+    interactionId:String(batch.interactionId),batchId:String(batch.interactionId),
+    discordUserId:String(batch.discordUserId),
+    discordDisplayName:String(batch.discordDisplayName || "").slice(0,100),
+    guildId:String(batch.guildId || ""),
+    interactionChannelId:String(batch.interactionChannelId || ""),
+    interactionMessageId:String(batch.interactionMessageId || ""),
+    source:"discord_gateway",
+    events:batch.events,beforeState:batch.beforeState,afterState:batch.afterState
+  });
+  discordSkuAuditSeen.add(String(batch.interactionId));
+  return {ok:true,id:recorded.id,attributed:Boolean(owner)};
+}
+
 function withConsentReceipts(task) {
   const next = consentReceiptQueue.then(task);
   consentReceiptQueue = next.catch(() => {});
@@ -9282,6 +9320,53 @@ app.get("/api/admin/signup-consent-log", requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Consent ledger read failed:", error.message);
     return res.status(503).json({ error: "Consent ledger is unavailable or failed its integrity check." });
+  }
+});
+
+
+app.get("/api/admin/discord-sku-selection-logs", requireAdmin, async (req,res) => {
+  try {
+    await consentLedgerQueue;
+    const [{entries},accounts] = await Promise.all([readConsentLedger(),getCustomerAccounts()]);
+    const accountIndex = new Map((Array.isArray(accounts) ? accounts : []).map(account =>
+      [String(account.id || ""),account]));
+    const limit = Math.min(100,Math.max(1,Math.floor(Number(req.query.limit) || 40)));
+    const offset = Math.min(1000000,Math.max(0,Math.floor(Number(req.query.offset) || 0)));
+    const search = String(req.query.search || "").trim().toLowerCase().slice(0,150);
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? String(req.query.from) : null;
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? String(req.query.to) : null;
+    const matched = entries.filter(item => item.type === "discord_sku_selection").map(item => {
+      const account = accountIndex.get(String(item.customerAccountId || ""));
+      const customerName = String(account?.name || account?.fullName ||
+        [account?.firstName,account?.lastName].filter(Boolean).join(" ") || "");
+      const email = String(account?.email || "");
+      return {
+        id:item.id,recordedAt:item.recordedAt,
+        customerAccountId:item.customerAccountId || null,
+        attribution:item.attribution || "unmatched",
+        customerName,email,
+        discordUserId:item.discordUserId,
+        discordDisplayName:item.discordDisplayName,
+        guildId:item.guildId,interactionId:item.interactionId,
+        batchId:item.batchId,
+        interactionChannelId:item.interactionChannelId,
+        interactionMessageId:item.interactionMessageId,
+        events:Array.isArray(item.events) ? item.events : [],
+        beforeState:Array.isArray(item.beforeState) ? item.beforeState : [],
+        afterState:Array.isArray(item.afterState) ? item.afterState : []
+      };
+    }).filter(item =>
+      (!from || String(item.recordedAt).slice(0,10) >= from) &&
+      (!to || String(item.recordedAt).slice(0,10) <= to) &&
+      (!search || [
+        item.customerAccountId,item.customerName,item.email,
+        item.discordUserId,item.discordDisplayName
+      ].some(value => String(value || "").toLowerCase().includes(search)))
+    ).sort((a,b) => String(b.recordedAt || "").localeCompare(String(a.recordedAt || "")));
+    return res.json({ok:true,total:matched.length,offset,entries:matched.slice(offset,offset+limit)});
+  } catch (error) {
+    console.error("Discord SKU selection audit read:",error.message);
+    return res.status(503).json({error:"Discord SKU audit ledger is unavailable."});
   }
 });
 
@@ -50928,6 +51013,7 @@ await initializeArrayFile(
           aiKey: String(process.env.OPENAI_API_KEY || "").trim(),
           geminiKey: String(process.env.GEMINI_API_KEY || "").trim(),
           onSuccessMessage: () => queueDiscordSuccessScan(50),
+          onSkuSelectionAudit: appendDiscordSkuAuditBatch,
           onRetailerRoleSync: async ({ discordUserId, retailers }) => {
             // Discord interaction user IDs originate with the authenticated
             // Discord Gateway; never accept an arbitrary account ID in buttons.
