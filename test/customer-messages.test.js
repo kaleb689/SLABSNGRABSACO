@@ -45,7 +45,8 @@ test("signed-in account identity and history are isolated and content cannot pin
   assert.deepEqual(b.messages.map(m=>m.text),["Please check my subscription."]);
   assert.equal(a.ready,true);
   assert.equal(f.sent[0].channel,channelId);
-  assert.deepEqual(f.sent[0].payload.allowed_mentions,{parse:[]});
+  assert.deepEqual(f.sent[0].payload.allowed_mentions,{parse:[],users:[ownerId]});
+  assert.match(f.sent[0].payload.content,/<@555555555555555555>/);
   assert.match(f.sent[0].payload.content,/Customer A/);
   assert.match(f.sent[0].payload.content,/<@111111111111111111>/);
   assert.equal((await f.bridge.send(A,{text:"same send",requestId:id})).duplicate,true);
