@@ -9,6 +9,7 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
+import {applyApprovedDiscordBotAvatar} from "./discord-bot-avatar.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
@@ -5656,6 +5657,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
     catch (error) { discordCommunityStatus.error = error.message; console.error("Discord community setup:", error.message); setTimeout(setup, 60000).unref?.(); }
   }
+  // Update the actual Discord bot's global profile picture once per approved asset.
+  // This is independent of guild/channel provisioning and does not send messages.
+  setTimeout(()=>void applyApprovedDiscordBotAvatar({api,dataDir})
+    .then(result=>console.log("Discord bot avatar:",result.status))
+    .catch(error=>console.error("Discord bot avatar update:",error?.message||"unavailable")),
+    10000).unref?.();
   setTimeout(setup, 5000).unref?.();
   setTimeout(() => void refreshTargetSkuPrices(), 45_000).unref?.();
   setTimeout(() => void refreshTcgcsvMarket(), 70_000).unref?.();
