@@ -202,6 +202,7 @@ export function createDiscordDropRecapController({
       if(!DROP_RECAP_RETAILERS[retailer])throw Error("Choose a supported retailer");
       const data=await read(),time=now();
       const active=data.drops.find(d=>d.retailer===retailer&&
+        String(d.generalChannelId)===String(generalChannelId)&&
         ["posting","scheduled","blocked","publishing","posting_error","publishing_error"].includes(d.status));
       if(active)throw Error("A "+DROP_RECAP_RETAILERS[retailer].name+
         " drop is still open ("+fileStatus(active)+"). Use Pending / Posted to review.");
@@ -244,13 +245,14 @@ export function createDiscordDropRecapController({
       const data=await read(),time=now();
       // Crash recovery is read-only: an ambiguous REST response can never
       // cause an automatic duplicate public announcement or recap.
-      for(const record of data.drops.filter(d=>["posting","posting_error","publishing","publishing_error"].includes(d.status))){
+      for(const record of data.drops.filter(d=>String(d.generalChannelId)===String(generalChannelId)&&
+        ["posting","posting_error","publishing","publishing_error"].includes(d.status))){
         try{await reconcileAmbiguous(record,data);}
         catch(error){console.error("Drop post reconciliation:",error?.message);}
       }
       // Retry only the app leg of a previously posted Discord event.
       // The persistent app inbox deduplicates per drop/recipient on restart.
-      for(const record of data.drops){
+      for(const record of data.drops.filter(d=>String(d.generalChannelId)===String(generalChannelId))){
         let changed=false;
         if(record.liveMessageId&&!record.liveAppDelivered){
           record.liveAppDelivered=await notify("live",record,{id:record.liveMessageId});
@@ -262,7 +264,8 @@ export function createDiscordDropRecapController({
         }
         if(changed)await save(data);
       }
-      for(const record of data.drops.filter(d=>["scheduled","blocked"].includes(d.status)&&
+      for(const record of data.drops.filter(d=>String(d.generalChannelId)===String(generalChannelId)&&
+        ["scheduled","blocked"].includes(d.status)&&
         Date.parse(d.dueAt)<=time&&(!d.retryAt||Date.parse(d.retryAt)<=time))){
         const spec=DROP_RECAP_RETAILERS[record.retailer];
         if(!spec){record.status="blocked";record.retryAt=stamp(time+3600000);await save(data);continue;}
@@ -319,7 +322,7 @@ export function createDiscordDropRecapController({
   }
   async function statusText(){
     const data=await read();
-    const recent=data.drops.slice(-12).reverse();
+    const recent=data.drops.filter(d=>String(d.generalChannelId)===String(generalChannelId)).slice(-12).reverse();
     return recent.length?recent.map(d=>{
       const spec=DROP_RECAP_RETAILERS[d.retailer];
       return "**"+(spec?.name||"Unknown")+"** · "+fileStatus(d)+
