@@ -8,7 +8,7 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
-import {createDiscordDropRecapController,dropControlRows,buildTypedDropRecapPreview} from "./discord-live-drop-recap.js";
+import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
@@ -3080,29 +3080,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const seenTypedRecapMessages = new Set();
   async function onTypedDropRecap(d) {
-    // A plain-text preview is allowed only for the actual member-guild owner.
-    // Never invoke the drop scheduling controller, send mentions or read checkout totals.
-    if (String(d?.guild_id || "") !== String(guildId || "") ||
-        !ownerId || String(d?.author?.id || "") !== String(ownerId) ||
-        !d?.id || d?.author?.bot || d?.webhook_id ||
-        ![0, 19].includes(d?.type ?? 0)) return false;
-    const payload = buildTypedDropRecapPreview(d.content);
-    if (!payload || seenTypedRecapMessages.has(String(d.id))) return false;
-    // Discord may re-deliver a gateway event after reconnecting.
-    if (seenTypedRecapMessages.size >= 500)
-      seenTypedRecapMessages.delete(seenTypedRecapMessages.values().next().value);
-    seenTypedRecapMessages.add(String(d.id));
-    try {
-      await api(`/channels/${d.channel_id}/messages`, "POST", payload);
-    } catch (error) {
-      seenTypedRecapMessages.delete(String(d.id));
-      throw error;
-    }
-    // A bot cannot edit somebody else's message. Delete the raw trigger only
-    // if Manage Messages permission is available; the preview still posts if not.
-    try { await api(`/channels/${d.channel_id}/messages/${d.id}`, "DELETE"); }
-    catch (error) { console.warn("Discord recap text cleanup unavailable:", error?.message); }
-    return true;
+    return handleTypedDropRecapPreview({
+      message:d,ownerId,guildId,api,seenMessageIds:seenTypedRecapMessages
+    });
   }
   const skuMenusFile = path.join(dataDir, "discord-sku-controls.json");
   const skuAlertFile = path.join(dataDir, "discord-sku-alert-history.json");
