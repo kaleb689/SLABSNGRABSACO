@@ -37,3 +37,18 @@ test("limited codes stop at their redemption limit and public sales disappear wh
   assert.deepEqual(membershipDiscountOptions([{ ...sale, exhausted: false, redemptions: 1 }], "LIMITED", 1),
     { discounts: [{ promotion_code: "promo_limited" }] });
 });
+
+test("approved OG members receive 10% unless a greater sitewide discount is active", () => {
+  const og = membershipDiscountOptions([], "", 4, Date.now(), "og@example.test", true);
+  assert.deepEqual(og, { discounts: [{ coupon: "SNG_OG10_LIFETIME_2026" }] });
+  const sitewide = {
+    code: "THANKS25", percent: 25, tier: "all", sitewide: true, active: true,
+    stripePromotionCodeId: "promo_thanks25", discountScope: "both"
+  };
+  assert.deepEqual(membershipDiscountOptions([sitewide], "", 4, Date.now(), "og@example.test", true),
+    { discounts: [{ promotion_code: "promo_thanks25" }] });
+  assert.deepEqual(membershipDiscountOptions([sitewide], "THANKS25", 4, Date.now(), "og@example.test", true),
+    { discounts: [{ promotion_code: "promo_thanks25" }] });
+  assert.deepEqual(membershipDiscountOptions([{ ...sitewide, percent: 5 }], "", 4, Date.now(), "og@example.test", true),
+    { discounts: [{ coupon: "SNG_OG10_LIFETIME_2026" }] });
+});

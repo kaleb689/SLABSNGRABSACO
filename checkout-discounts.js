@@ -1,3 +1,5 @@
+import { OG_DISCOUNT_COUPON_ID } from "./og-member-grants.js";
+
 export function activeSitewideDiscount(records, tier, now = Date.now()) {
   return records.filter(item => item.sitewide === true && item.discountScope !== "extension" && (!item.startsAt || Date.parse(item.startsAt) <= now) && item.active && !item.exhausted && !item.usageUnavailable && item.stripePromotionCodeId &&
     !item.recipientEmail && item.ogOnly !== true &&
@@ -28,7 +30,19 @@ export function membershipDiscountOptions(
   if (code) {
     discount = records.find(item => item.code === code) || null;
   } else if (isOgMember) {
-    discount = activeOgDiscount(records, tier, now) || activeSitewideDiscount(records, tier, now);
+    const sitewide = activeSitewideDiscount(records, tier, now);
+    const managedOg = activeOgDiscount(records, tier, now);
+    const og = managedOg && Number(managedOg.percent) >= 10 ? managedOg : {
+      code: "OG10AUTO",
+      active: true,
+      percent: 10,
+      ogOnly: true,
+      tier: "all",
+      discountScope: "both",
+      stripeCouponId: OG_DISCOUNT_COUPON_ID
+    };
+    // Automatically use the larger eligible offer. Do not stack.
+    discount = Number(sitewide?.percent || 0) > Number(og.percent || 0) ? sitewide : og;
   } else {
     discount = activeSitewideDiscount(records, tier, now);
   }

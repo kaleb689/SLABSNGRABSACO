@@ -73,6 +73,7 @@ import { getCommunityInvite } from "./discord-invite.js";
 import { startCheckoutDmSummaryScheduler } from "./checkout-dm-summary.js";
 import { startMembershipLapseNotificationScheduler } from "./membership-lapse-notifications.js";
 import { membershipDiscountOptions, activeSitewideDiscount } from "./checkout-discounts.js";
+import { reconcileApprovedOgMembers } from "./og-member-grants.js";
 import { safeAddressVariants, safeAddressVariantKey, defaultJigVariants } from "./address-jigs.js";
 import { ADDRESS_JIG_OPTIONS, eligibleJigSelections, rotatedJigSelections } from "./address-jig-choices.js";
 import { lookupPostalJigOptions, selectedPostalJigs, uspsAddressLookupConfigured } from "./postal-jig-validation.js";
@@ -50954,6 +50955,19 @@ await initializeArrayFile(
 
         startManagedExpirationScheduler();
         startPoolAlerts();
+        // Reconcile only six owner-approved OG accounts. Preserve existing
+        // Stripe discounts and grandfathered monthly prices; never stack coupons.
+        const reconcileOg = () => reconcileApprovedOgMembers({
+          stripe,
+          loadAccounts: getCustomerAccounts,
+          saveAccounts: saveCustomerAccounts,
+          loadPaid: () => readJson(PAID_FILE, []),
+          savePaid: records => writeJson(PAID_FILE, records)
+        }).then(result => console.log("Approved OG reconciliation:", JSON.stringify(result)))
+          .catch(error => console.error("Approved OG reconciliation:", error?.message || error));
+        void reconcileOg();
+        const ogReconcileTimer = setInterval(reconcileOg, 6 * 60 * 60 * 1000);
+        ogReconcileTimer.unref?.();
         void activateStartedScheduledPromotions().catch(error=>console.error("Initial promotion activation:",error?.message));
         const scheduledPromotionCheck=setInterval(()=>{
           void activateStartedScheduledPromotions().catch(error=>console.error("Scheduled promotion check:",error?.message));
