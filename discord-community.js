@@ -989,8 +989,8 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
   return webSkuBridge.save(String(discordUserId || ""), String(username || ""), selection);
 }
 
-export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit }) {
+export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, appMessagesReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onAppMessageChannelReady, onAppSupportReply }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1519,6 +1519,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       adminProfilesChannelId = adminChannels.find(item => item.type === 0 && normalizeName(item.name) === "adminprofiles")?.id || null;
       lapseChecklistRuntime = { api, adminChannelId: adminProfilesChannelId || adminChannelId };
       for (const adminChannel of adminChannels) {
+        // A private app-messages channel is owner-only, not staff-readable.
+        if (normalizeName(adminChannel.name) === "appmessages") continue;
         const expected = [2, 13].includes(adminChannel.type) ? [
           { id: guildId, type: 0, deny: "1024" },
           { id: staffRoleId, type: 0, allow: "3146752" },
@@ -1536,6 +1538,37 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         name: "action-needed", type: 0, parent_id: adminCategory.id,
         permission_overwrites: adminOverwrites
       });
+      // Dedicated private customer app inbox under the existing Admin Only
+      // category. The public guild and Support Staff must not see private
+      // account conversations. Never create this channel as a public fallback.
+      const ownerMessagesOverwrites = [
+        { id:guildId, type:0, deny:"1024" },
+        { id:appId, type:1, allow:"68624" },
+        ...(ownerId ? [{ id:ownerId, type:1, allow:"68608" }] : [])
+      ];
+      let appMessages=adminChannels.find(item=>item.type===0&&
+        normalizeName(item.name)==="appmessages");
+      if(!appMessages)appMessages=await api("/guilds/"+guildId+"/channels","POST",{
+        name:"app-messages",type:0,parent_id:adminCategory.id,
+        topic:"Owner-only private customer app messages. Reply by @mention or Discord Reply to the bot message.",
+        permission_overwrites:ownerMessagesOverwrites
+      });
+      else if(String(appMessages.parent_id||"")!==String(adminCategory.id)||
+        !sameOverwrites(appMessages.permission_overwrites,ownerMessagesOverwrites))
+        appMessages=await api("/channels/"+appMessages.id,"PATCH",{
+          parent_id:adminCategory.id,permission_overwrites:ownerMessagesOverwrites
+        });
+      const inspected=await api("/channels/"+appMessages.id);
+      if(String(inspected.parent_id||"")!==String(adminCategory.id)||
+        !sameOverwrites(inspected.permission_overwrites,ownerMessagesOverwrites))
+        throw Error("Discord app-messages permissions could not be verified as owner-only.");
+      if(typeof onAppMessageChannelReady==="function")
+        await onAppMessageChannelReady({
+          channelId:String(appMessages.id),guildId:String(guildId),
+          ownerId:String(ownerId),botId:String(appId)
+        });
+      discordCommunityStatus.appMessagesReady=true;
+      discordCommunityStatus.appMessagesChannelId=String(appMessages.id);
       await ensurePanel(actionNeeded.id, "action-needed",
         "**Action Needed** — When a customer account has an issue that needs staff attention, the owner or Support Staff will be pinged here. Review the issue and help the member in their private ticket. This channel is visible only to the owner and Support Staff.");
       const foundNames = new Set(channels.filter(item => adminNames.has(normalizeName(item.name))).map(item => normalizeName(item.name)));
@@ -5406,6 +5439,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           }
           if (packet.t === "INTERACTION_CREATE") void interaction(packet);
           if (packet.t === "MESSAGE_CREATE") void (async () => {
+            // Process the private owner inbox first. Do not send these
+            // messages to drop/SKU/AI or public Discord handlers.
+            if (typeof onAppSupportReply === "function" &&
+              await onAppSupportReply(packet.d) === true) return;
             const successChannelId = String(await getChannelId());
             const checkoutSourceId = String(process.env.DISCORD_CHECKOUT_SOURCE_CHANNEL_ID || "").trim();
             if (
