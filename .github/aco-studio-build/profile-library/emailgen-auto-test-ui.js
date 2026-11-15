@@ -206,12 +206,14 @@
   };
   if(!validEmail(settings.mailbox)||!validEmail(settings.sender))
    throw Error('Enter the forwarding recipient and a different sending address.');
-  if(!settings.password||!settings.senderPassword)
-   throw Error('Enter both app passwords to verify and securely save this sender/receiver pair.');
+  const existingReceiver=mailProfilesFor(settings.mailbox).length>0;
+  if(!settings.senderPassword||(!settings.password&&!existingReceiver))
+   throw Error('Enter the sender app password. For a new receiver also enter its IMAP app password; an already-saved receiver can be reused securely.');
+  settings.reuseReceiverCredentials=!settings.password&&existingReceiver;
   const result=await api().saveMailTestCredentials(settings);
   clearTestSecretFields();
   const status=mailUIElement('randomMailCredentialsStatus');
-  status.dataset.error='0';status.textContent='Verified SMTP and both IMAP logins. Sender and receiver app passwords are saved encrypted on this Mac.';
+  status.dataset.error='0';status.textContent='Verified sender SMTP/IMAP and receiver IMAP. Saved securely in this Mac Keychain; existing receiver credentials were reused when available.';
   await loadSavedMailPairs(true);
   const preset=mailUIElement('randomMailPreset');preset.value=mailPairKey(result.profile);
   applyMailPairToForm(result.profile);
