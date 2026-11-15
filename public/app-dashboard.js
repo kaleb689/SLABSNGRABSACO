@@ -9,6 +9,7 @@ if (appEnabled) {
     success: '<path d="m12 2 3 6 7 .9-5 4.9 1.2 7-6.2-3.3-6.2 3.3 1.2-7-5-4.9L9 8z"/>',
     tracking: '<path d="m5 5-3 7v8h3v-3h14v3h3v-8l-3-7zM2 12h20M6 14h1m10 0h1"/>',
     notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
+    messages: '<path d="M4 5h16v12H8l-4 4V5zM8 9h8M8 13h5"/>',
     products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
     history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
     profile: '<path d="M3 9V5h18v4M5 10h14v11H5zM9 14h6M9 18h6"/>',
@@ -18,8 +19,8 @@ if (appEnabled) {
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history'].map(id => [id, labels[id]]);
+  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', messages: 'Messages', notifications: 'Notifications', settings: 'Settings' };
+  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history', 'messages'].map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
@@ -27,9 +28,10 @@ if (appEnabled) {
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
-  let view = ({ success: 'success', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let view = ({ success: 'success', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking', messages: 'messages' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null, streamAccountId = null;
+  let supportMessages = [], supportUnread = 0, supportDraft = '', supportError = '', supportAccountId = null, supportSending = false;
   let calendarOpen = false, calendarError = '', customRange = null;
   let calendarDraft = {from:'',to:''};
   const dayKey = date => [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),
@@ -358,13 +360,14 @@ if (appEnabled) {
     if (!state.customer) {
       root.hidden = true; document.body.classList.remove('app-signed-in');
       orders = []; cancelledOrders = []; reviewHoldOrders = []; accountId = null;
+      supportMessages=[];supportUnread=0;supportDraft='';supportAccountId=null;
       snapshots.clear(); changes.clear(); stream?.close(); stream = null;
       closeTrackingSheet();
       const target = document.getElementById('sng-app-content');
       if (target) { target.innerHTML = ''; target._sngMarkup = null; }
       return;
     }
-    if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();}
+    if (accountId && String(accountId) !== String(state.customer.id)) {orders=[];cancelledOrders=[];reviewHoldOrders=[];accountId=null;snapshots.clear();changes.clear();supportMessages=[];supportUnread=0;supportDraft='';supportAccountId=null;}
     root.hidden = false; document.body.classList.add('app-signed-in'); document.body.dataset.appView = view;
     document.body.dataset.profileTab = profileTab;
     document.body.dataset.appTheme = theme;
@@ -387,6 +390,7 @@ if (appEnabled) {
     const delta = changes.get(periodKey) || { orders: 0, transit: 0, delivered: 0 };
     const content = document.getElementById('sng-app-content');
     const currentFocus = document.activeElement?.id, cursor = document.activeElement?.selectionStart;
+    if (view === 'messages' && currentFocus === 'sng-app-message-text') supportDraft = document.activeElement?.value || supportDraft;
     const common = rangeButtons() + (state.customer.demo || ADMIN_PREVIEW_MODE ? '<div class="sng-demo-label">DEMO · Sample account</div>' : '') + (error ? `<p class="sng-error" role="status">${e(error)} <button type="button" data-app-refresh>Retry</button></p>` : '') + (busy && !accountId ? '<p class="sng-demo-label" role="status">Loading your checkout data…</p>' : '');
     let html = '';
     if (view === 'home') html = common + '<button class="sng-drop-shortcut" type="button" data-app-view="drops"><span><b>LIVE DROP SKUs</b><small>Select products for Target, Walmart, PKC, Costco or Sam’s</small></span><strong>Choose SKUs →</strong></button>' + hero('TOTAL CHECKOUT VALUE', money(totals.spend), `${totals.orders} orders · ${totals.items} items secured · ${state.membership?.name || state.membership?.planName || 'Member'}`) +
@@ -434,6 +438,21 @@ if (appEnabled) {
     }
     if (view === 'settings') html = `<div class="sng-page-intro"><h1>Settings</h1><p>Manage your app and account preferences.</p></div><div class="sng-settings-list"><button type="button" data-app-theme>${icon('sun')} ${theme === 'night' ? 'Switch to day mode' : 'Switch to night mode'}</button><button type="button" data-app-notification-settings>${icon('notifications')} Notification preferences</button><button type="button" data-setting-profile="edit-profile">${icon('profile')} Saved information</button><button type="button" data-setting-profile="security">${icon('settings')} Account security</button><button type="button" data-setting-profile="orders">${icon('box')} Billing and orders</button></div>`;
     if (view === 'notifications') html = `<div class="sng-page-intro"><h1>Notifications</h1><p>Orders, shipping and messages from SLABSNGRABSACO.</p></div>`;
+    if (view === 'messages') html = `<div class="sng-page-intro"><h1>Messages</h1><p>Send a private message to SLABSNGRABSACO. Replies from our team will appear here, with a notification.</p></div>
+      <section class="sng-support-chat" aria-label="Private support conversation">
+        <div class="sng-support-thread" role="log" aria-live="polite">${supportMessages.length ? supportMessages.map(item =>
+          `<article class="sng-support-bubble ${item.direction === 'customer' ? 'outbound' : 'inbound'}">
+            <strong>${item.direction === 'customer' ? 'You' : 'SLABSNGRABSACO'}</strong>
+            <p>${e(item.text)}</p>
+            <small>${e(new Date(item.createdAt).toLocaleString('en-US', {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}${item.delivery === 'queued' ? ' · Waiting for Discord' : ''}</small>
+          </article>`).join('') : '<p class="sng-support-empty">No messages yet. Send a message below to get started.</p>'}</div>
+        ${supportError ? `<p class="sng-support-error" role="alert">${e(supportError)}</p>` : ''}
+        <form data-app-message-form class="sng-support-compose">
+          <label for="sng-app-message-text">Your message</label>
+          <textarea id="sng-app-message-text" name="text" maxlength="1500" rows="4" required data-app-message-text placeholder="Type your message…">${e(supportDraft)}</textarea>
+          <div class="sng-support-actions"><span>Private to you and the owner</span><button type="submit" ${supportSending ? 'disabled' : ''}>${supportSending ? 'Sending…' : 'Send message'}</button></div>
+        </form>
+      </section>`;
     if (view === 'profile') {
       // Keep the app's membership card synchronized with the existing customer account page.
       const membership = state.membership || null;
@@ -480,6 +499,11 @@ if (appEnabled) {
     // Refreshing identical HTML detached every lazy-loaded image and caused
     // visible flickering every 15 seconds. Keep DOM nodes when data is the same.
     if (content._sngMarkup !== html) { content.innerHTML = html; content._sngMarkup = html; }
+    if (view === 'messages' && currentFocus === 'sng-app-message-text') {
+      const field = content.querySelector('[data-app-message-text]');
+      field?.focus({preventScroll:true});
+      if (field && Number.isSafeInteger(cursor)) field.setSelectionRange(cursor,cursor);
+    }
     renderSearch();
     if (trackingSheet.open && activeTrackingOrderId) {
       const current = trackingRecords().find(item => recordKey(item) === activeTrackingOrderId);
@@ -511,8 +535,49 @@ if (appEnabled) {
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
     render();
     if (view === 'drops' && !dropEditor.isDirty()) void dropEditor.load();
+    if (view === 'messages') void loadSupportMessages({markRead:true});
     if (view === 'success') void refresh();
     window.scrollTo({ top: 0, behavior: 'auto' });
+  }
+  async function loadSupportMessages({markRead=false}={}) {
+    if(!state.customer)return;
+    if(ADMIN_PREVIEW_MODE){supportMessages=[];supportUnread=0;render();return;}
+    const account=String(state.customer.id);
+    try{
+      const response=await fetch('/api/account/support/messages',{credentials:'same-origin',cache:'no-store'});
+      const data=await readJson(response);
+      if(!response.ok)throw Error(data.error||'Unable to load messages.');
+      if(String(state.customer?.id)!==account)return;
+      const incoming=Array.isArray(data.messages)?data.messages:[];
+      const next=JSON.stringify(incoming);
+      const changed=JSON.stringify(supportMessages)!==next||supportAccountId!==account;
+      supportMessages=incoming;supportUnread=Number(data.unread)||0;supportAccountId=account;supportError='';
+      if(markRead&&supportUnread){
+        await fetch('/api/account/support/read',{method:'POST',credentials:'same-origin'});
+        supportUnread=0;
+      }
+      if(changed||view==='messages')render();
+    }catch(error){
+      supportError=String(error.message||'Unable to load messages.');
+      if(view==='messages')render();
+    }
+  }
+  async function sendSupportMessage(form) {
+    if(supportSending)return;
+    const field=form.querySelector('[data-app-message-text]');
+    const text=String(field?.value||'').trim();
+    if(!text||text.length>1500){supportError='Enter a message of up to 1,500 characters.';render();return;}
+    supportSending=true;supportDraft=text;supportError='';render();
+    try{
+      const response=await fetch('/api/account/support/messages',{
+        method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({text})
+      });
+      const data=await readJson(response);
+      if(!response.ok||!data.ok)throw Error(data.error||'Unable to send your message.');
+      supportDraft='';await loadSupportMessages({markRead:true});
+    }catch(error){supportError=String(error.message||'Unable to send your message.');}
+    finally{supportSending=false;render();}
   }
   async function removeCancelledFromView(button) {
     const orderId = String(button.dataset.appHideCancelled || '');
@@ -581,12 +646,16 @@ if (appEnabled) {
     if (button.hasAttribute('data-app-refresh')) void refresh();
   });
   root.addEventListener('input', event => {
+    if (event.target.hasAttribute('data-app-message-text')) supportDraft=event.target.value;
     if (event.target.id === 'sng-search') { query = event.target.value; renderSearch(); }
     if (event.target.hasAttribute('data-app-date-from')) calendarDraft.from=event.target.value;
     if (event.target.hasAttribute('data-app-date-to')) calendarDraft.to=event.target.value;
   });
   root.addEventListener('change', event => { dropEditor.handleChange(event.target); });
   root.addEventListener('submit', event => {
+    if(event.target.matches('[data-app-message-form]')){
+      event.preventDefault();void sendSupportMessage(event.target);return;
+    }
     if(!event.target.matches('[data-app-date-form]'))return;
     event.preventDefault();
     const from=event.target.querySelector('[data-app-date-from]')?.value||'';
@@ -654,7 +723,7 @@ if (appEnabled) {
     streamAccountId = String(state.customer.id);
     stream = new EventSource('/api/account/success/events');
     stream.addEventListener('checkout', () => { void refresh(); void loadCustomerNotifications({showPopup:true}); });
-    stream.addEventListener('data-change', () => void refresh());
+    stream.addEventListener('data-change', () => { void refresh();void loadSupportMessages({markRead:view==='messages'}); });
     stream.addEventListener('open', () => void refresh());
   }
   document.addEventListener('account-session-changed', () => {
