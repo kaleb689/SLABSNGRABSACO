@@ -3365,6 +3365,10 @@
         Pokémon Center Rentals
       </button>
 
+      <button type="button" class="account-tab" data-account-tab="messages">
+        Messages <span id="account-messages-unread" class="customer-messages-unread" hidden></span>
+      </button>
+
       <button
         type="button"
         class="account-tab account-notifications-tab"
@@ -4684,6 +4688,33 @@
     </div>
 
     <!-- =================================================
+         CUSTOMER MESSAGES · PRIVATE DISCORD ADMIN INBOX
+    ================================================== -->
+    <div id="account-tab-messages" class="account-tab-panel" data-account-panel="messages" hidden>
+      <div class="account-card customer-messages-card">
+        <div class="account-card-heading">
+          <div>
+            <span class="eyebrow">DIRECT SUPPORT</span>
+            <h3>Messages</h3>
+            <p class="account-muted">Send a private message to SLABSNGRABSACO support. Replies will appear here, and you'll receive an app notification when notifications are enabled.</p>
+          </div>
+        </div>
+        <p id="customer-messages-status" class="account-muted" role="status" aria-live="polite">Loading your messages…</p>
+        <div id="customer-messages-list" class="customer-messages-list" role="log" aria-label="Private support conversation" aria-live="polite">
+          <p class="account-muted">No messages yet.</p>
+        </div>
+        <form id="customer-message-form" class="customer-message-form">
+          <label for="customer-message-text">Message support</label>
+          <textarea id="customer-message-text" name="text" rows="3" maxlength="1400" required placeholder="What can we help you with?"></textarea>
+          <div class="customer-message-actions">
+            <small>Private to the owner and your account. Do not send passwords or payment-card details.</small>
+            <button type="submit" class="primary" id="customer-message-send">Send message</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- =================================================
          NOTIFICATIONS
     ================================================== -->
 
@@ -5328,6 +5359,7 @@
 
 <link rel="stylesheet" href="/member-extension-actions.css?v=20261114">
 <script src="/app.js?v=20261112-nonpayment-account-code"></script>
+<script src="/customer-messages-ui.js?v=20261115-private-messages-1" defer></script>
 <script src="/member-extension-actions.js?v=20261114"></script>
 
 <script type="module" src="/app-dashboard.js?v=20261113-cancelled-history-1"></script>
