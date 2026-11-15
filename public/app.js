@@ -15024,6 +15024,18 @@ document
   );
 
 
+function safeCustomerDropLink(notification) {
+  if (notification?.kind!=="drop_broadcast") return "";
+  const link=String(notification.sourceUrl||"");
+  return /^https:\/\/discord\.com\/channels\/\d{17,22}\/\d{17,22}\/\d{17,22}$/.test(link)?link:"";
+}
+function isFreshCustomerDrop(notification) {
+  if(!safeCustomerDropLink(notification) ||
+     !["live","recap"].includes(notification.eventType))return false;
+  const timestamp=Date.parse(notification.createdAt||"");
+  const age=Date.now()-timestamp;
+  return Number.isFinite(age)&&age>=-60000&&age<=72*3600000;
+}
 function customerNotificationCardHtml(
   notification
 ) {
@@ -15058,7 +15070,7 @@ function customerNotificationCardHtml(
               notification?.kind ===
                 "missing_info"
                 ? "ACTION NEEDED"
-                : "MESSAGE"
+                : notification?.kind === "drop_broadcast" ? "DROP ALERT" : "MESSAGE"
             }
           </span>
 
@@ -15096,6 +15108,7 @@ function customerNotificationCardHtml(
             .map(label => `<button type="button" class="missing-info-link" data-missing-profile="${escapeHtml(label)}">View ${escapeHtml(label)}</button>`).join("")}
         </div>
       ` : ""}
+      ${safeCustomerDropLink(notification) ? `<p><a href="${escapeHtml(safeCustomerDropLink(notification))}" target="_blank" rel="noopener noreferrer" class="primary">View Discord Drop Post</a></p>` : ""}
     </article>
   `;
 }
@@ -15396,9 +15409,12 @@ function showCustomerNotificationPopup(
     !popup ||
     !notification || !claimCustomerNotification(notification)
   ) {
-    return;
+    return false;
   }
 
+  const isDrop=Boolean(safeCustomerDropLink(notification));
+  const eyebrow=popup.querySelector(".eyebrow");
+  if(eyebrow)eyebrow.textContent=isDrop?"DROP ALERT":"ACTION NEEDED";
   const title =
     document.getElementById(
       "customer-notification-popup-title"
@@ -15428,6 +15444,15 @@ function showCustomerNotificationPopup(
 
   const openProfile = document.getElementById("customer-notification-open-profile");
   if (openProfile) {
+    openProfile.href=isDrop?safeCustomerDropLink(notification):"#my-profile";
+    openProfile.textContent=isDrop?"View Discord Drop Post":"Open Profile Page";
+    if(isDrop){
+      openProfile.target="_blank";
+      openProfile.rel="noopener noreferrer";
+    }else{
+      openProfile.removeAttribute("target");
+      openProfile.removeAttribute("rel");
+    }
     openProfile.onclick = () => {
       if (notification.kind !== "missing_info") return;
       switchAccountTab("edit-profile");
@@ -15440,6 +15465,7 @@ function showCustomerNotificationPopup(
 
   popup.hidden =
     false;
+  return true;
 }
 
 
@@ -15534,8 +15560,18 @@ async function loadCustomerNotifications(
             `;
     }
 
-    if ((showPopup && notifications.length) ||
-        (hadMissingInfo && notifications.some(item => item.kind === "setup_complete"))) {
+    // Global owner-issued drop notices appear even during background polling,
+    // once per account/device. Ordinary account notices retain prior behavior.
+    let displayedDrop=false;
+    for(const notice of notifications){
+      if(!isFreshCustomerDrop(notice))continue;
+      if(showCustomerNotificationPopup(notice)){
+        displayedDrop=true;
+        break;
+      }
+    }
+    if (!displayedDrop && ((showPopup && notifications.length) ||
+        (hadMissingInfo && notifications.some(item => item.kind === "setup_complete")))) {
       showCustomerNotificationPopup(
         notifications.find(item => item.kind === "setup_complete") || notifications[0]
       );
