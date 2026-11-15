@@ -70,7 +70,8 @@ test('One automatic run loops through all 57 aliases and correctly selects two s
  assert.equal(rows.filter(row=>row.status==='live'&&row.forwardingTestedAt).length,56);
  assert.equal(rows.find(row=>row.alias.startsWith('bad')).status,'draft');
  assert.ok(rows.every(row=>!row.poolTarget));
- assert.equal(h.saved.length,5,'encrypted bank saved once per preflight/group, never once per message');
+ assert.equal(h.saved.length,1,'only one encrypted save for 57 results; no synchronous full table redraw per group');
+ assert.equal(h.rendered.length,1,'heavy Email Bank table refreshed only once after the run finishes');
  assert.equal(h.get('randomTestProgress').textContent,'57/57');
  assert.equal(h.get('randomTestPassed').textContent,'56');
  assert.equal(h.get('randomTestFailed').textContent,'0');
@@ -86,25 +87,24 @@ test('Missing sender/receiver passwords never marks drafts working and invites s
  assert.equal(h.get('randomTestSettings').open,true);
 });
 
-test('Catch-all preflight stops after 3 unconfirmed messages and leaves all other aliases untouched',async()=>{
+test('Test All Unverified continues past 3 unconfirmed receipts without freezing or falsely marking delivery',async()=>{
  const rows=Array.from({length:405},(_,i)=>({alias:'draft'+i+'@sng.sarl',randomGenerated:true,target:'inbox@gmail.com',status:'draft',poolTarget:null}));
  const profiles=[{mailbox:'inbox@gmail.com',sender:'sender@gmail.com',smtpHost:'smtp.gmail.com',imapHost:'imap.gmail.com',senderImapHost:'imap.gmail.com'}];
  const h=harness(rows,profiles,{forceNoDelivery:true});
  await h.ctx.run({all:true});
- assert.deepEqual(h.calls.map(call=>call.aliases.length),[3],'no mass testing when first 3 do not reach Inbox');
- assert.equal(h.ctx.testState.done,3);
- assert.equal(h.ctx.testState.unconfirmed,3);
+ assert.equal(h.calls[0].aliases.length,3,'small preflight remains as a routing warning');
+ assert.equal(h.calls.reduce((n,call)=>n+call.aliases.length,0),405,'a failed preflight does not prevent testing the remaining 402');
+ assert.equal(h.ctx.testState.done,405);
+ assert.equal(h.ctx.testState.unconfirmed,405);
  assert.equal(h.ctx.testState.failed,0);
- assert.equal(h.ctx.testState.paused,true);
  assert.equal(h.ctx.testState.passed,0);
+ assert.equal(h.ctx.testState.paused,false);
  assert.equal(rows.filter(r=>r.status==='draft').length,405);
- assert.equal(h.saved.length,1);
- assert.match(h.get('randomTestStatus').textContent,/Verify the aliases actually route/);
- assert.match(h.get('randomTestStatus').textContent,/Spam\/All Mail/);
- assert.equal(h.get('randomTestUnconfirmed').textContent,'3');
- assert.equal(h.get('randomTestFailed').textContent,'0');
+ assert.ok(h.saved.length<=6,'encryption writes batched rather than performed after every 25 messages');
+ assert.equal(h.rendered.length,1,'one heavy Email Bank redraw for the entire run');
+ assert.match(h.get('randomTestStatus').textContent,/full queue was still processed/);
+ assert.match(h.get('randomTestStatus').textContent,/405\/405 completed/);
 });
-
 test('New 400-alias batch is tested independently of a previously failing older email',async()=>{
  const older={alias:'old-bad@sng.sarl',randomGenerated:true,batchId:'old',target:'inbox@gmail.com',status:'draft'};
  const newRows=Array.from({length:400},(_,i)=>({alias:'new'+i+'@sng.sarl',randomGenerated:true,batchId:'new',target:'inbox@gmail.com',status:'draft'}));
@@ -200,4 +200,18 @@ test('Receiver split refuses >200 unpublished aliases without route capacity or 
  h.ctx.testState.selectedBatchKeys=new Set(['batch:batch-1']);
  assert.throws(()=>h.ctx.previewSplit(),/200 individual routing rules/);
  assert.ok(rows.every(r=>r.target==='old@gmail.com'));
+});
+
+test('Single failed email does not interrupt the remaining batches or sender rotation',async()=>{
+ const rows=[{alias:'bad0@sng.sarl',randomGenerated:true,batchId:'old',target:'inbox@gmail.com',status:'draft'},
+  ...Array.from({length:100},(_,i)=>({alias:'works'+i+'@sng.sarl',randomGenerated:true,batchId:'new',target:'inbox@gmail.com',status:'draft'}))];
+ const h=harness(rows,[{mailbox:'inbox@gmail.com',sender:'sender@gmail.com'}]);
+ await h.ctx.run({all:true});
+ assert.equal(h.ctx.testState.total,101);
+ assert.equal(h.ctx.testState.done,101);
+ assert.equal(h.ctx.testState.unconfirmed,1);
+ assert.equal(h.ctx.testState.passed,100);
+ assert.equal(rows[0].forwardingTestedAt,undefined);
+ assert.ok(rows.slice(1).every(r=>r.forwardingTestedAt));
+ assert.equal(h.rendered.length,1);
 });
