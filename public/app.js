@@ -15034,7 +15034,8 @@ function isFreshCustomerDrop(notification) {
      !["live","recap"].includes(notification.eventType))return false;
   const timestamp=Date.parse(notification.createdAt||"");
   const age=Date.now()-timestamp;
-  return Number.isFinite(age)&&age>=-60000&&age<=72*3600000;
+  const maxAge=notification.eventType==="live"?12*3600000:72*3600000;
+  return Number.isFinite(age)&&age>=-60000&&age<=maxAge;
 }
 function customerNotificationCardHtml(
   notification
