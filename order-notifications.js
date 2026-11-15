@@ -94,7 +94,7 @@ export const notificationDefaults = { orders: true, shipping: true, messages: tr
 export function notificationCategory(event) {
   if (["order_confirmed", "order_cancelled", "order_review_hold"].includes(event.kind)) return "orders";
   if (event.kind === "shipping_update") return "shipping";
-  if (["drop_skus_updated","drop_announcement"].includes(event.kind)) return "drops";
+  if (["drop_skus_updated","drop_announcement","drop_broadcast"].includes(event.kind)) return "drops";
   if (/admin_message|missing|action_needed|setup_complete/.test(event.kind || "")) return "messages";
   return "account";
 }
@@ -408,6 +408,48 @@ export function createOrderNotifications({ dataDir, baseUrl, getRecords, getAcco
       state.membershipReminderEvents[logicalKey]=issued;
       await save();
       return {recorded:true,pushQueued:prefs.account&&(state.subscriptions[ownerId]||[]).length>0};
+    }),
+    // Unlike SKU alerts, owner-issued general drop announcements and recaps
+    // go to every enabled customer account, with no retailer-role gate.
+    notifyGlobalDropBroadcast: (accountIds, notification, eventKey) => locked(async () => {
+      const logical=String(eventKey||"");
+      if (!/^drop:[a-f0-9-]{8,64}:(live|recap)$/.test(logical) ||
+          notification?.kind!=="drop_broadcast" ||
+          !["live","recap"].includes(notification?.eventType) ||
+          typeof notification.title!=="string" || notification.title.length>160 ||
+          typeof notification.message!=="string" || notification.message.length>800 ||
+          typeof notification.sourceUrl!=="string" ||
+          !/^https:\/\/discord\.com\/channels\/\d{17,22}\/\d{17,22}\/\d{17,22}$/.test(notification.sourceUrl)) {
+        throw Error("Invalid global drop broadcast");
+      }
+      state.globalDropBroadcasts ||= {};
+      state.inbox ||= {};
+      const createdAt=new Date().toISOString();
+      const recipients=[...new Set((Array.isArray(accountIds)?accountIds:[])
+        .map(value=>String(value||"").trim()).filter(Boolean))];
+      let recorded=0,pushQueued=0;
+      for(const id of recipients) {
+        const key=logical+":"+id;
+        if(state.globalDropBroadcasts[key])continue;
+        const event={
+          id:crypto.randomUUID(),kind:"drop_broadcast",eventType:notification.eventType,
+          title:notification.title,message:notification.message,
+          retailer:String(notification.retailer||"").slice(0,40),
+          sourceUrl:notification.sourceUrl,tab:"drops",
+          createdAt,updatedAt:createdAt,deliveryEventKey:key
+        };
+        const inbox=state.inbox[id] ||= [];
+        inbox.push(event);if(inbox.length>200)inbox.splice(0,inbox.length-200);
+        const prefs={...notificationDefaults,...state.preferences[id]};
+        if(prefs.drops && (state.subscriptions[id]||[]).length) {
+          enqueue(id,event);
+          pushQueued++;
+        }
+        state.globalDropBroadcasts[key]=createdAt;
+        recorded++;
+      }
+      await save();
+      return {recorded,pushQueued};
     }),
     notifyDropUpdate: (accountIds, notification, eventKey) => locked(async () => {
       if (!String(eventKey || "").startsWith("drop:") || !["drop_skus_updated","drop_announcement"].includes(notification?.kind)) {
