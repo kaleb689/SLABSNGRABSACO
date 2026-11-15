@@ -13082,6 +13082,35 @@ body.installed-app{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
   background: rgba(255,216,74,.09);
 }
 
+/* Approval-gated Thanksgiving 2026 upcoming membership rates.
+   Never show an unapproved upcoming charge to customers. */
+.membership-pricing-announcement:not([hidden]) {
+  display: block;
+  margin: 18px auto 20px;
+  max-width: 960px;
+  padding: 12px 16px;
+  border: 1px solid rgba(78,203,221,.5);
+  border-radius: 12px;
+  background: rgba(5,33,45,.45);
+  color: #dbf7ff;
+  text-align: center;
+  font-size: clamp(.84rem,1.2vw,.98rem);
+  font-weight: 650;
+}
+.plan-price .plan-upcoming-price {
+  display: block;
+  margin-top: 7px;
+  font-size: .38em;
+  line-height: 1.45;
+  letter-spacing: 0;
+  color: #8ddde9;
+  white-space: normal;
+}
+.plan-price .plan-upcoming-price strong {
+  font-size: 1.12em;
+  color: #dffcff;
+}
+
 
 /* Customer Messages: private app / Admin Discord correspondence. */
 .installed-app .pwa-bottom-nav {
