@@ -4,6 +4,8 @@ import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
+import {createDiscordDropRecapController,dropControlRows} from "./discord-live-drop-recap.js";
+import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
 import {createNotificationDeliveryGuard} from "./notification-delivery-guard.js";
@@ -1077,6 +1079,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
   }
   let serverRolesChannelId, upcomingChannelId, inStoreChannelId, inStoreRoleId; const retailerRoleIds = new Map();
   let guildId, askChannelId, supportCategoryId, alertsChannelId, ticketLobbyId, oneOnOneLobbyId, chatCategoryId, introChannelId, rulesChannelId, giveawayChannelId, suggestionChannelId, skuRequestsChannelId, targetSkuListChannelId, adminChannelId, adminProfilesChannelId, ownerId, staffRoleId, ogRoleId, appId, roles = [];
+  let dropRecapController = null, dropControlSourceGuildId = null, dropControlChannelId = null;
   async function cleanupLegacyLapseAlerts() {
     let removed = 0, scanned = 0, matched = 0;
     for (const channelId of [adminChannelId, adminProfilesChannelId].filter(Boolean)) {
@@ -1297,6 +1300,82 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
+    // Serve the ORIGINAL SLABSNGRABSTC guild, not the separate ACO app guild.
+    // Confirm the guild from the authoritative Discord #success source itself.
+    try {
+      const sourceChannel=await api(`/channels/${SLABSNGRABSTC_SUCCESS_CHANNEL_ID}`);
+      const sourceGuildId=String(sourceChannel?.guild_id||"");
+      if(!/^\d{17,22}$/.test(sourceGuildId))
+        throw Error("Original Discord Success guild cannot be verified");
+      const sourceGuild=await api(`/guilds/${sourceGuildId}`);
+      const sourceOwnerId=String(sourceGuild?.owner_id||"");
+      if(!/^\d{17,22}$/.test(sourceOwnerId))
+        throw Error("Original Discord guild owner cannot be verified");
+      const sourceChannels=sourceGuildId===String(guildId)?channels:
+        await api(`/guilds/${sourceGuildId}/channels`);
+      const general=sourceChannels.find(ch=>ch.type===0 &&
+        ["general","generalchat"].includes(normalizeName(ch.name)));
+      if(!general)throw Error("Original SLABSNGRABSTC server #general is missing");
+      const readOwnerOnly=[
+        {id:sourceGuildId,type:0,deny:"1024"},
+        {id:appId,type:1,allow:"68624"},
+        {id:sourceOwnerId,type:1,allow:"68608"}
+      ];
+      let controls,controlIsDm=false;
+      try {
+        controls=sourceChannels.find(ch=>ch.type===0 &&
+          normalizeName(ch.name)==="dropcontrols");
+        if(!controls){
+          const adminCategory=sourceChannels.find(ch=>ch.type===4 &&
+            normalizeName(ch.name)==="adminonly");
+          controls=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
+            name:"drop-controls",type:0,
+            ...(adminCategory?{parent_id:adminCategory.id}:{}),
+            topic:"Private owner controls for live drops and verified twelve-hour recaps.",
+            permission_overwrites:readOwnerOnly
+          });
+        } else if(!sameOverwrites(controls.permission_overwrites,readOwnerOnly)){
+          controls=await api(`/channels/${controls.id}`,"PATCH",{
+            permission_overwrites:readOwnerOnly});
+        }
+      }catch(error){
+        // No Manage Channels permission in the source TCG server? Use a
+        // PRIVATE OWNER DM, not an ACO guild or unintended public channel.
+        console.warn("Source guild private drop channel unavailable; using owner DM:",error?.message);
+        controls=await api("/users/@me/channels","POST",{recipient_id:sourceOwnerId});
+        controlIsDm=true;
+      }
+      await ensurePanel(controls.id,"owner-drop-controls",
+        "**OWNER DROP CONTROLS**\nChoose a retailer, then confirm. This announces **DROP IS LIVE** in the original SLABSNGRABSTC #general, then schedules a source-verified recap 12 hours later. Pending / Posted shows active drops.\n\nUnverified totals are **held privately**, never published as guessed numbers.",{
+          components:dropControlRows()
+        });
+      if(!dropRecapController){
+        dropRecapController=createDiscordDropRecapController({
+          dataDir,api,token,guildId:sourceGuildId,ownerId:sourceOwnerId,
+          generalChannelId:general.id,controlChannelId:controls.id,
+          onDropNotification:async({notification,eventKey,messageId})=>{
+            if(typeof onRetailerSkuUpdate!=="function")return;
+            await onRetailerSkuUpdate({notification,eventKey,messageId});
+          }
+        });
+        dropControlSourceGuildId=sourceGuildId;
+        dropControlChannelId=String(controls.id);
+        dropRecapController.start();
+      }
+      discordCommunityStatus.dropControls={
+        ready:true,sourceGuildId,
+        controlChannelId:String(controls.id),generalChannelId:String(general.id),
+        privateToOwner:true,mode:controlIsDm?"owner_dm":"private_channel",
+        recapDelayHours:12
+      };
+      console.log("Discord original-guild live-drop controls ready:",
+        JSON.stringify(discordCommunityStatus.dropControls));
+    }catch(error){
+      discordCommunityStatus.dropControls={
+        ready:false,error:String(error?.message||"unavailable")
+      };
+      console.error("Discord original-guild drop controls:",error?.message||error);
+    }
     // Reuse the owner's existing Target SKUs channel regardless of the
     // presentation of its name (target-skus, Target SKUs, target-sku-list).
     // Do not rename, move, or change the permissions of a channel found here.
@@ -4300,12 +4379,21 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     catch (error) { discordCommunityStatus.lastAiError = error.message; console.error("Discord question:", error.message); }
   }
   async function interaction(payload) {
-    if (payload.t !== "INTERACTION_CREATE" || payload.d?.guild_id !== guildId) return;
-    const d = payload.d, name = d.data?.name, userId = d.member?.user?.id;
+    const isDropControl=String(payload.d?.data?.custom_id||"").startsWith("sngdrop:");
+    if (payload.t !== "INTERACTION_CREATE" ||
+        (!isDropControl && payload.d?.guild_id !== guildId) ||
+        (isDropControl && payload.d?.guild_id !== guildId &&
+          payload.d?.guild_id !== dropControlSourceGuildId &&
+          String(payload.d?.channel_id||"") !== String(dropControlChannelId||""))) return;
+    const d = payload.d, name = d.data?.name, userId = d.member?.user?.id || d.user?.id;
     if (!userId) return;
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if ((d.type===3||d.type===5)&&String(d.data?.custom_id||"").startsWith("sngdrop:")) {
+        if(!dropRecapController)return await reply("The owner drop controls are unavailable. Check the bot status.");
+        return await dropRecapController.handleInteraction(d);
+      }
       // Target master selection: private five-item picker, search and paste.
       // Public master remains read-only. Only paid members (or verified owner
       // test mode) can change their own saved SKU selections.
@@ -5272,7 +5360,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             clearInterval(heartbeat);
             heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
             heartbeat.unref?.();
-            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
+            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | 4096 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
           if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
           if (packet.op === 7 || packet.op === 9) socket.close();

@@ -69,7 +69,7 @@ test("real Pokemon purchases are unaffected", () => {
   const order = parse(message("1580000000000000505", [
     {name: "Site", value: "Pokemon Center US"},
     {name: "Product", value: "Pokemon TCG: 30th Celebration Mini Tin - Pikachu (Day)"},
-    {name: "Quantity", value: "2"}, {name: "Price", value: "9.99"}
+    {name: "Quantity", value: "2"}, {name: "Price", value: "19.98"}
   ]));
   assert.ok(order);
   assert.equal(order.status, "confirmed");
