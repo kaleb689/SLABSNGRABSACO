@@ -264,7 +264,13 @@ function reuseSavedReceiverCredentials(config,store){
 function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeStorage,platform=process.platform}){
  const store=makeMailTestStore({baseDir,safeStorage,platform});
  const authorize=event=>{requireOwner(event);requireCloudflareSession(event);};
- ipcMain.handle('email:test:credentials:status',event=>{authorize(event);return store.status();});
+ // Saved Mac Keychain metadata is local owner data. Its read-only status
+ // MUST NOT depend on the separate Cloudflare login being active after restart.
+ ipcMain.handle('email:test:credentials:status',event=>{requireOwner(event);return store.status();});
+ ipcMain.handle('email:test:credentials:backups',event=>{requireOwner(event);return store.backupStatus();});
+ ipcMain.handle('email:test:credentials:restore-missing',(event,request)=>{
+  requireOwner(event);return store.restoreMissingFromBackup(request);
+ });
  ipcMain.handle('email:test:credentials:forget',(event,selection)=>{authorize(event);return store.forget(selection);});
  ipcMain.handle('email:test:credentials:save',async(event,config)=>{
   authorize(event);
