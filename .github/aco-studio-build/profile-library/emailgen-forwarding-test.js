@@ -23,7 +23,7 @@ function fallbackBoxes(boxes){
 const RECEIPT_SCAN_LOOKBACK_MS=5*60*1000;
 const MAX_RECEIPT_SCAN_IDS=160;
 const MAX_RECEIPT_SOURCE_BYTES=65536;
-const BOUNCE_SUBJECT=/(?:delivery (?:failure|status|notification)|undeliverable|mail delivery (?:failed|subsystem)|message (?:rejected|not delivered))/i;
+const BOUNCE_SUBJECT=/(?:delivery (?:failure|status|notification)|undeliverable|mail delivery (?:failed|subsystem)|message (?:rejected|not delivered)|cloudflare email routing.*(?:missing|fail|error|reject))/i;
 const BOUNCE_SENDER=/(?:mailer-daemon|postmaster|bounce|delivery-status)/i;
 function isDeliveryFailure(message,parsed){
  const subject=String(message.envelope?.subject||parsed?.subject||'');
