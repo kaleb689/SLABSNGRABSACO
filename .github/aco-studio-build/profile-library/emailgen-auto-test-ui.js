@@ -306,6 +306,7 @@
   const stopTest=()=>mailTestState.cancel=true;
   let pendingPersist=0;
   const routingWarnings=new Set();
+  const receiptScanSummary=new Map();
   try{
    const unavailableSenders=new Set();
    let senderGroupCount=0;
@@ -333,6 +334,18 @@
       const response=await api().testForwarding({
        mailbox:profile.mailbox,sender:profile.sender,runId:mailTestState.runId,aliases:pendingSet.map(r=>r.alias)
       });
+      if(response.receiptDiagnostics){
+       const diag=response.receiptDiagnostics;
+       const prior=receiptScanSummary.get(mailbox)||{folders:new Set(),matched:0,outside:0,folderErrors:0};
+       for(const folder of Array.isArray(diag.folders)?diag.folders:[])prior.folders.add(String(folder));
+       prior.matched+=Number(diag.exactMatches||0);
+       prior.outside+=Number(diag.discoveredOutsideInbox||0);
+       if(diag.folderError)prior.folderErrors++;
+       receiptScanSummary.set(mailbox,prior);
+       if(Number(response.sentButUnconfirmed||0)>0&&Number(response.delivered||0)===0)
+        status.textContent='Sent tests were NOT CONFIRMED by exact ID in '+(diag.folders||['INBOX']).join(', ')+
+         '. A message visible in Gmail may be in another folder, have a changed subject, or be delayed. Continuing the queue.';
+      }
       const current=new Map(pendingSet.map(row=>[row.alias,row]));
       const seen=new Set(),retries=[];
       for(const item of response.results||[]){
@@ -395,9 +408,15 @@
       mailTestState.done+'/'+total+' completed, '+mailTestState.passed+' passed, '+mailTestState.failed+' send failed, '+mailTestState.unconfirmed+' not confirmed, '+pending+' not checked.'+
       ' Skipped '+skippedRouting+' draft(s) without catch-all testing enabled, '+skippedAlreadyVerified+' already verified.'+
       (routingWarnings.size?' WARNING: the initial 3 emails to '+[...routingWarnings].join(', ')+' had no confirmed receipts; the full queue was still processed.':'')+
-      (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':' Confirmed test messages are moved to Trash.');
+      (mailTestState.cleanupPending?' '+mailTestState.cleanupPending+' confirmed test message(s) could not be moved to Trash; review cleanup permissions.':([ ...receiptScanSummary.values() ].some(d=>d.outside>0)?' Only exact Inbox test receipts are moved to Trash; verified All Mail/Spam receipts are left in their folders.':' Confirmed Inbox test messages are moved to Trash.'));
    }
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
+   if(receiptScanSummary.size){
+    status.textContent+=' IMAP exact-ID scans: '+[...receiptScanSummary].map(([box,d])=>
+     box+' ['+[...d.folders].join(', ')+'], '+d.matched+' confirmed'+
+     (d.outside?', '+d.outside+' outside INBOX':'')+
+     (d.folderErrors?', '+d.folderErrors+' folder scan error(s)':'')).join('; ')+'.';
+   }
   }catch(error){
    let saveWarning='';
    if(pendingPersist){

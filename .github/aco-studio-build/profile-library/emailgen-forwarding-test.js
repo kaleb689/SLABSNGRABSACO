@@ -7,6 +7,34 @@ const VALID_ALIAS=/^[a-z0-9][a-z0-9._-]{0,63}@sng\.sarl$/i;
 const EMAIL=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HOST=/^[a-z0-9](?:[a-z0-9.-]{1,248})[a-z0-9]$/i;
 const PREFIX='ACO Studio forwarding test ';
+const IMAP_RECEIPT_WAIT_MS=15000;
+const IMAP_POLL_MS=3000;
+const MAX_RECEIPT_CANDIDATES=250;
+function fallbackBoxes(boxes){
+ const available=(Array.isArray(boxes)?boxes:[]).filter(b=>typeof b?.path==='string'&&b.path);
+ const all=available.find(b=>String(b.specialUse||'').toLowerCase().endsWith('all'))||
+  available.find(b=>String(b.path).toLowerCase().endsWith('all mail'));
+ const spam=available.find(b=>String(b.specialUse||'').toLowerCase().endsWith('junk'))||
+  available.find(b=>String(b.path).toLowerCase().endsWith('spam'));
+ return [...new Set([all?.path,spam?.path].filter(path=>path&&path.toUpperCase()!=='INBOX'))];
+}
+async function scanCurrentMailboxForExactMarkers(imap,sent,{started,now,onProgress,folder,diagnostics}){
+ const ids=await imap.search({subject:PREFIX},{uid:true});
+ const recent=Array.isArray(ids)?ids.slice(-MAX_RECEIPT_CANDIDATES):[];
+ diagnostics.scans++;diagnostics.candidates+=recent.length;
+ const expected=new Map(sent.filter(x=>!x.received).map(item=>[item.marker,item]));
+ if(!recent.length||!expected.size)return;
+ for await(const message of imap.fetch(recent,{envelope:true,internalDate:true},{uid:true})){
+  const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
+  if(!Number.isFinite(stamp)||stamp<started-30000||stamp>now()+30000)continue;
+  const subject=String(message.envelope?.subject||'').trim().replace(/^(?:(?:re|fw|fwd):\s*)+/i,'');
+  const match=expected.get(subject);
+  if(!match||match.received)continue;
+  match.received=true;match.receivedFolder=folder;
+  diagnostics.exactMatches++;
+  try{onProgress({alias:match.alias,status:'delivered'});}catch{}
+ }
+}
 function mailboxIdentity(address){
  const [local,domain]=address.split('@');
  return ['gmail.com','googlemail.com'].includes(domain)
@@ -75,7 +103,7 @@ async function moveExactTestsToTrash(imap,box,tests,{now=Date.now,started=0}={})
  if(!trash||trash.path===box)return 0;
  // Only exact nonces minted during this test call are eligible for cleanup.
  const ids=await imap.search({subject:PREFIX},{uid:true});
- const candidates=Array.isArray(ids)?ids.slice(-500):[];
+ const candidates=Array.isArray(ids)?ids.slice(-MAX_RECEIPT_CANDIDATES):[];
  const selected=new Set();
  if(candidates.length){
   for await(const message of imap.fetch(candidates,{envelope:true,internalDate:true},{uid:true})){
@@ -103,7 +131,7 @@ async function cleanSentCopies(cfg,tests,{IMAP,now,started}){
   lock=await senderImap.getMailboxLock(sent.path);
   const expected=matchedMarkers(tests);
   const ids=await senderImap.search({subject:PREFIX},{uid:true});
-  const candidates=Array.isArray(ids)?ids.slice(-500):[],uids=new Set();
+  const candidates=Array.isArray(ids)?ids.slice(-MAX_RECEIPT_CANDIDATES):[],uids=new Set();
   if(candidates.length){
    for await(const message of senderImap.fetch(candidates,{envelope:true,internalDate:true},{uid:true})){
     const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
@@ -129,6 +157,7 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
  const imap=imapClient(IMAP,cfg.imapHost,cfg.mailbox,cfg.pass);
  const tests=cfg.aliases.map(alias=>({alias,marker:PREFIX+crypto.randomBytes(12).toString('hex'),sent:false,received:false,attempted:false}));
  let connected=false,lock=null,receiverMoved=0,rateLimited=false;
+ const receiptDiagnostics={scans:0,candidates:0,exactMatches:0,folders:[],waitMs:0};
  try{
   await imap.connect();connected=true;
   lock=await imap.getMailboxLock('INBOX');
@@ -148,32 +177,44 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
   }
   const sent=tests.filter(t=>t.sent);
   if(sent.length){
-   const deadline=now()+90000;
+   const receiptStart=now(),deadline=receiptStart+IMAP_RECEIPT_WAIT_MS;
+   receiptDiagnostics.folders.push('INBOX');
    do{
-    const ids=await imap.search({subject:PREFIX},{uid:true});
-    if(ids.length){
-     const recent=ids.slice(-500);
-     for await(const message of imap.fetch(recent,{envelope:true,internalDate:true},{uid:true})){
-      const stamp=message.internalDate?new Date(message.internalDate).getTime():NaN;
-      if(!Number.isFinite(stamp)||stamp<started-30000)continue;
-      const subject=String(message.envelope?.subject||'');
-      for(const item of sent)if(!item.received&&subject===item.marker){
-       item.received=true;
-       try{onProgress({alias:item.alias,status:'delivered'});}catch{}
-      }
-     }
-    }
+    await scanCurrentMailboxForExactMarkers(imap,sent,{
+     started,now,onProgress,folder:'INBOX',diagnostics:receiptDiagnostics
+    });
     if(sent.every(x=>x.received)||now()>=deadline)break;
-    await delay(4000);
+    await delay(IMAP_POLL_MS);
    }while(true);
+   receiptDiagnostics.waitMs=Math.max(0,now()-receiptStart);
+  }
+  // Clean up only exact nonce-matched tests actually seen in INBOX.
+  try{receiverMoved=await moveExactTestsToTrash(imap,'INBOX',tests,{now,started});}
+  catch{receiverMoved=0;}
+  // Gmail filters can omit messages from INBOX while making them visible
+  // in All Mail or Spam. Read these folders with exact nonce matching.
+  // Do not delete or relocate messages from fallback folders.
+  if(sent.some(item=>!item.received)&&typeof imap.list==='function'){
+   try{
+    const others=fallbackBoxes(await imap.list());
+    try{lock?.release();}catch{}lock=null;
+    for(const folder of others){
+     if(sent.every(x=>x.received))break;
+     let otherLock=null;
+     try{
+      otherLock=await imap.getMailboxLock(folder);
+      receiptDiagnostics.folders.push(folder);
+      await scanCurrentMailboxForExactMarkers(imap,sent,{
+       started,now,onProgress,folder,diagnostics:receiptDiagnostics
+      });
+     }catch{receiptDiagnostics.folderError=true;}
+     finally{try{otherLock?.release();}catch{}}
+    }
+   }catch{receiptDiagnostics.folderError=true;}
   }
   for(const item of tests)if(item.sent&&!item.received){
    try{onProgress({alias:item.alias,status:'unconfirmed'});}catch{}
   }
-  // Move only the exact delivered test nonces out of INBOX to Trash.
-  // If Trash is unavailable, leave mail alone and report incomplete cleanup.
-  try{receiverMoved=await moveExactTestsToTrash(imap,'INBOX',tests,{now,started});}
-  catch{receiverMoved=0;}
  }finally{
   try{lock?.release();}catch{}
   if(connected)try{await imap.logout();}catch{}
@@ -184,7 +225,11 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
  const received=tests.filter(t=>t.received).length;
  return {total:tests.length,delivered:received,receiverMovedToTrash:receiverMoved,
   senderMovedToTrash:sentCleanup.moved,senderCleanupAvailable:sentCleanup.available,
-  cleanupPending:Math.max(0,received-receiverMoved),rateLimited,
+  cleanupPending:Math.max(0,tests.filter(t=>t.received&&t.receivedFolder==='INBOX').length-receiverMoved),rateLimited,
+  receiptDiagnostics:{scans:receiptDiagnostics.scans,candidates:receiptDiagnostics.candidates,
+   exactMatches:receiptDiagnostics.exactMatches,folders:receiptDiagnostics.folders,
+   waitMs:receiptDiagnostics.waitMs,folderError:receiptDiagnostics.folderError===true,
+   discoveredOutsideInbox:tests.filter(t=>t.received&&t.receivedFolder!=='INBOX').length},
   sentButUnconfirmed:tests.filter(t=>t.sent&&!t.received).length,
   sendFailed:tests.filter(t=>t.attempted&&!t.sent).length,
   skipped:tests.filter(t=>!t.attempted).length,
@@ -241,4 +286,4 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  });
  return {store};
 }
-module.exports={validate,testForwarding,verifyMailLogins,register,moveExactTestsToTrash,cleanSentCopies,reuseSavedReceiverCredentials};
+module.exports={validate,testForwarding,verifyMailLogins,register,moveExactTestsToTrash,cleanSentCopies,reuseSavedReceiverCredentials,fallbackBoxes,IMAP_RECEIPT_WAIT_MS};
