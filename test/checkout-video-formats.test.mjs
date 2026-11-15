@@ -1,4 +1,5 @@
 import test from "node:test";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
@@ -18,7 +19,7 @@ const channel = "1532179373292257290";
 function parse(message) {
   const scope = {
     message, channel, parsed:null, discordCheckoutIdentity:checkoutIdentityFromDiscord,
-    checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
+    checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal, sourcePriceIsLineTotal, retailerFromTrustedSourceImage,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName:s=>String(s||"").slice(0,120).trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(String(s||"").length>=3 &&

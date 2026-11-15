@@ -8,10 +8,12 @@ import {
   checkoutIdentityFromDiscord, checkoutStatusFromDiscord, checkoutProductFromDiscord
 } from "../discord-checkout-identity.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import { isModuleLifecycleDiscordMessage } from "../discord-checkout-event-policy.js";
 
 const src=readFileSync(new URL("../server.js",import.meta.url),"utf8");
 const start=src.indexOf("function discordCheckoutFromMessage(");
+// Parse only the pure checkout parser section; skip the live recap route registration.
 const end=src.indexOf("const DISCORD_HIT_MIRROR_FILE",start);
 assert.ok(start>0 && end>start);
 const parseSource=src.slice(start,end);
@@ -21,6 +23,7 @@ function parse(message) {
     message,channel,parsed:null,
     discordCheckoutIdentity:checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,
+    sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName:s=>String(s||"").slice(0,120).trim(),
     isSafeDiscordCheckoutProductName:s=>Boolean(

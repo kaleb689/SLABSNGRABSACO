@@ -1,4 +1,5 @@
 import test from "node:test";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
@@ -11,7 +12,7 @@ import { resolveApprovedCheckoutAlias } from '../discord-checkout-profile-aliase
 import { uniqueCheckoutOwner } from '../webhook-success.js';
 const source = fs.readFileSync(new URL("../server.js", import.meta.url), "utf8");
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
-const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v => String(v || '').trim().toLowerCase(), publicSuccessImageUrl: () => null, uniqueCheckoutOwner,checkoutAssignmentContains,resolveOwnerVerifiedBackfill,resolveApprovedCheckoutAlias,isModuleLifecycleDiscordMessage,checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,
+const context = { clean: (v,n) => String(v || "").slice(0,n), normalizeEmail: v => String(v || '').trim().toLowerCase(), publicSuccessImageUrl: () => null, uniqueCheckoutOwner,checkoutAssignmentContains,resolveOwnerVerifiedBackfill,resolveApprovedCheckoutAlias,isModuleLifecycleDiscordMessage,checkoutStatusFromDiscord,checkoutProductFromDiscord,checkoutExplicitPaidTotal,sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
  discordCheckoutIdentity:checkoutIdentityFromDiscord,
  assignmentTimeContainsCheckout: (a,t) => new Date(t) >= new Date(a.startsAt) && (!a.endedAt || new Date(t) <= new Date(a.endedAt)) };
 vm.createContext(context);

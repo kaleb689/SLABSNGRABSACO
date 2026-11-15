@@ -9,6 +9,7 @@ export function checkoutPaidAmount(order) {
   const basis = String(order?.orderTotalBasis || "").trim().toLowerCase();
   if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) return null;
   if (basis !== "order_total" && basis !== "retailer_receipt" &&
+    basis !== "discord_verified_breakdown" &&
     !(basis === "" && order?.priceSource === "verified_retailer_receipt")) return null;
   return Math.round(amount * 100) / 100;
 }

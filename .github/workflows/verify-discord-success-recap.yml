@@ -6,6 +6,7 @@ on:
       - discord-source-price-field-policy.js
       - discord-source-recap-report.js
       - discord-checkout-tax-inclusive-policy.js
+      - checkout-price-policy.js
       - server-discord-source-recap-review.js
       - tests/discord-source-recap-tax-shipping.test.js
       - tests/discord-checkout-tax-inclusive-policy.test.js
@@ -17,6 +18,7 @@ on:
       - discord-source-price-field-policy.js
       - discord-source-recap-report.js
       - discord-checkout-tax-inclusive-policy.js
+      - checkout-price-policy.js
       - server-discord-source-recap-review.js
       - tests/discord-source-recap-tax-shipping.test.js
       - tests/discord-checkout-tax-inclusive-policy.test.js

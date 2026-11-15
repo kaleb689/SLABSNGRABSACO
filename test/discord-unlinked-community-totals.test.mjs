@@ -1,4 +1,5 @@
 import test from "node:test";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
@@ -22,7 +23,7 @@ function parse(message) {
   const scope = {
     message, channelId: sourceChannelId, result: null,
     checkoutStatusFromDiscord, checkoutIdentityFromDiscord, checkoutProductFromDiscord,
-    checkoutExplicitPaidTotal,
+    checkoutExplicitPaidTotal, sourcePriceIsLineTotal, retailerFromTrustedSourceImage,
     discordCheckoutIdentity: checkoutIdentityFromDiscord,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName: s => String(s || "").slice(0,120).trim(),

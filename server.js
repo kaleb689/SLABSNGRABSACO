@@ -38990,14 +38990,14 @@ function discordCheckoutFromMessage(message, channelId, diagnostics = null) {
 }
 
 
+const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
+
 
 // Owner-only, read-only original Discord Success recap preview. Never posts.
 registerDirectSourceRecapReview({
   app, requireAdmin, parseCheckout:discordCheckoutFromMessage,
   botToken:()=>String(process.env.DISCORD_BOT_TOKEN||"").trim()
 });
-
-const DISCORD_HIT_MIRROR_FILE = path.join(DATA_DIR, "discord-hit-mirror.json");
 const DISCORD_HIT_MIRROR_VERSION = 9;
 const DISCORD_HIT_RENDER_VERSION = 6;
 let discordHitsChannelIdCache = null;

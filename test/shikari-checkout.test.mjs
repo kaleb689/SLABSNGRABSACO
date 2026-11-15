@@ -9,6 +9,7 @@ import { lateCancellation } from "../order-notifications.js";
 import { verifiedRetailerOrderTotal } from "../retailer-order-total.js";
 import {resolveOwnerVerifiedBackfill} from "../checkout-owner-backfills.js";
 import { checkoutExplicitPaidTotal } from "../checkout-price-policy.js";
+import {sourcePriceIsLineTotal,retailerFromTrustedSourceImage} from "../discord-source-price-field-policy.js";
 
 const channel = "1532179373292257290";
 const product = "Pokemon Trading Card Game: Mega Evolution Delta Reign Three-Booster Blister";
@@ -28,11 +29,13 @@ const makeMessage = (color, id, timestamp, orderId = "102003802680520") => ({
 function parseLiveWebhook(message) {
   const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
   const start = source.indexOf("function discordCheckoutFromMessage(");
+  // Stop before the live admin recap route is registered; this VM only evaluates the parser.
   const end = source.indexOf("const DISCORD_HIT_MIRROR_FILE", start);
   assert.ok(start > 0 && end > start, "extract actual production parser");
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
     checkoutStatusFromDiscord, checkoutProductFromDiscord, checkoutExplicitPaidTotal,
+    sourcePriceIsLineTotal,retailerFromTrustedSourceImage,
     isModuleLifecycleDiscordMessage,
     publicSuccessProductName: s => String(s || "").slice(0, 120).trim(),
     isSafeDiscordCheckoutProductName: s => !/@|password/i.test(s),
@@ -212,6 +215,11 @@ test("preorder and review hold values parse explicit unit prices in description 
     assert.equal(parsed.items[0].price,167.75);
   }
   const message=makeMessage(0x57f287,'1580000000000000301','2026-10-15T18:00:00Z');
+  // On the original Success source, an unqualified Price field is the
+  // combined line price for Quantity 2, not the per-unit amount.
   message.embeds[0].fields=[{name:'Price',value:'||$12.99||'}];
+  assert.equal(parseLiveWebhook(message).orderTotal,12.99);
+  // Explicit Unit Price still represents one item and must be multiplied.
+  message.embeds[0].fields=[{name:'Unit Price',value:'||$12.99||'}];
   assert.equal(parseLiveWebhook(message).orderTotal,25.98);
 });
