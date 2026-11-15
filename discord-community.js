@@ -5644,6 +5644,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   setInterval(() => void refreshTcgcsvMarket(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(() => void refreshTargetSkuPrices(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  // Discord permissions can be granted after the service has started.
+  // Retry only while the private owner drop-controls panel is unavailable.
+  // Provisioning is idempotent: existing channels/panels are reused.
+  let dropProvisionRetryRunning=false;
+  setInterval(()=>{
+    if(!guildId || dropProvisionRetryRunning ||
+       discordCommunityStatus.dropControls?.ready)return;
+    dropProvisionRetryRunning=true;
+    void provision()
+      .catch(error=>console.error("Private TCG Admin drop-controls retry:",error.message))
+      .finally(()=>{dropProvisionRetryRunning=false;});
+  },3*60000).unref?.();
   setInterval(() => void cleanupExpiredDropMessages().catch(error =>
     console.error("Discord ten-day drop cleanup:", error.message)), 5 * 60000).unref?.();
   setInterval(() => {
