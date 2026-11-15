@@ -267,7 +267,7 @@
    (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target)&&
    (catchallForMailbox(r.target)||r.status==='live'));
  }
- async function runAutomaticEmailTests({batchId=null,batchKeys=null,all=false,automatic=false}={}){
+ async function runAutomaticEmailTests({batchId=null,batchKeys=null,all=false,automatic=false,limit=null}={}){
   if(mailTestState.active||mailTestState.starting||randomGenBusy){
    if(automatic&&batchId)mailTestState.autoPendingBatch=batchId;
    else if(!automatic)mailUIElement('randomTestStatus').textContent='A test or email generation is already running. Stop or finish it before starting another batch.';
@@ -285,7 +285,7 @@
    const selectedRows=testRowsForSelection({batchId,batchKeys,all});
    const unverifiedAll=selectedRows.filter(r=>r.randomGenerated===true&&
     (!r.forwardingTestedAt||r.forwardingTestTarget!==r.target));
-   const candidates=collectTestCandidates({batchId,batchKeys,all});
+   const candidates=collectTestCandidates({batchId,batchKeys,all}).slice(0,Number.isSafeInteger(limit)&&limit>0?limit:undefined);
    skippedRouting=unverifiedAll.filter(r=>validEmail(r.target)&&!catchallForMailbox(r.target)&&r.status!=='live').length;
    skippedAlreadyVerified=selectedRows.filter(r=>r.randomGenerated===true&&r.forwardingTestedAt&&r.forwardingTestTarget===r.target).length;
    for(const row of candidates){
@@ -314,7 +314,7 @@
   }finally{mailTestState.starting=false;}
   mailTestState.active=true;randomGenBusy=true;mailTestState.cancel=false;
   // Signal that data mutations are paused during a test run rather than silently ignoring clicks.
-  for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','randomAliasTestMulti','randomReceiverSplitPreview','randomReceiverSplitCommit','emailBatchDeleteReview','emailBatchRemoveOneReview']){
+  for(const id of ['randomAliasCreate','randomAliasTestAll','randomAliasTestBatch','randomAliasTestMulti','randomAliasTestOne','randomReceiverSplitPreview','randomReceiverSplitCommit','emailBatchDeleteReview','emailBatchRemoveOneReview']){
    const button=mailUIElement(id);if(button)button.disabled=true;
   }
   mailTestState.statuses=new Map();
@@ -360,15 +360,20 @@
       });
       if(response.receiptDiagnostics){
        const diag=response.receiptDiagnostics;
-       const prior=receiptScanSummary.get(mailbox)||{folders:new Set(),matched:0,outside:0,folderErrors:0};
+       const prior=receiptScanSummary.get(mailbox)||{folders:new Set(),matched:0,outside:0,folderErrors:0,recent:0,methods:{subject:0,source:0,'decoded-body':0}};
+       prior.recent+=Number(diag.recentCount||0);
+       for(const method of ['subject','source','decoded-body'])prior.methods[method]+=Number(diag.matchMethods?.[method]||0);
        for(const folder of Array.isArray(diag.folders)?diag.folders:[])prior.folders.add(String(folder));
        prior.matched+=Number(diag.exactMatches||0);
        prior.outside+=Number(diag.discoveredOutsideInbox||0);
        if(diag.folderError)prior.folderErrors++;
        receiptScanSummary.set(mailbox,prior);
        if(Number(response.sentButUnconfirmed||0)>0&&Number(response.delivered||0)===0)
-        status.textContent='Sent tests were NOT CONFIRMED by exact ID in '+(diag.folders||['INBOX']).join(', ')+
-         '. A message visible in Gmail may be in another folder, have a changed subject, or be delayed. Continuing the queue.';
+        status.textContent='No exact test ID confirmed in '+(diag.folders||['INBOX']).join(', ')+
+         '. '+Number(diag.recentCount||0)+' recent IMAP message(s) examined. '+
+         (Number(diag.recentCount||0)===0?'No recent mail visible in this saved receiving inbox. Check the actual forwarding destination.':
+          'Mail is visible, but its subject, header or decoded body did not contain this test ID. Verify the arrival is the original test and not a bounce.')+
+         ' The tested aliases remain unverified.';
       }
       const current=new Map(pendingSet.map(row=>[row.alias,row]));
       const seen=new Set(),retries=[];
@@ -437,7 +442,8 @@
    if(missing.size)status.textContent+=' No saved mail account for '+[...missing].join(', ')+'.';
    if(receiptScanSummary.size){
     status.textContent+=' IMAP exact-ID scans: '+[...receiptScanSummary].map(([box,d])=>
-     box+' ['+[...d.folders].join(', ')+'], '+d.matched+' confirmed'+
+     box+' ['+[...d.folders].join(', ')+'], '+d.recent+' recent messages inspected, '+d.matched+' exact-ID confirmed ('+
+      d.methods.subject+' subject, '+d.methods.source+' raw headers/body, '+d.methods['decoded-body']+' MIME decoded)' +
      (d.outside?', '+d.outside+' outside INBOX':'')+
      (d.folderErrors?', '+d.folderErrors+' folder scan error(s)':'')).join('; ')+'.';
    }
@@ -554,6 +560,7 @@
   const apiMethod=api()?.onEmailTestProgress;
   if(typeof apiMethod==='function')apiMethod(handleMailTestProgress);
   const settings=mailUIElement('randomTestSettings');
+  mailUIElement('randomAliasTestOne').addEventListener('click',()=>void runAutomaticEmailTests({limit:1}));
   mailUIElement('randomAliasTestAll').addEventListener('click',()=>void runAutomaticEmailTests({all:true}));
   mailUIElement('randomAliasTestMulti').addEventListener('click',()=>{
    const keys=[...mailTestState.selectedBatchKeys];
