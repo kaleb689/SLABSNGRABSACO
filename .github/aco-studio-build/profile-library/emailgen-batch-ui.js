@@ -115,6 +115,28 @@
    }
    testPicker.value=emailBatchState.key;
   }
+  const multiList=batchElement('randomTestMultiBatchList');
+  if(multiList){
+   if(!mailTestState.batchSelectionInitialized){
+    mailTestState.batchSelectionInitialized=true;
+    mailTestState.selectedBatchKeys=new Set(emailBatchState.key?[emailBatchState.key]:[]);
+   }
+   mailTestState.selectedBatchKeys=new Set([...mailTestState.selectedBatchKeys].filter(key=>validKeys.has(key)));
+   multiList.replaceChildren();
+   for(const g of groups){
+    const label=document.createElement('label');label.className='check';
+    label.style.cssText='display:flex;align-items:center;gap:7px;margin:4px 0';
+    const check=document.createElement('input');check.type='checkbox';check.value=g.key;
+    check.checked=mailTestState.selectedBatchKeys.has(g.key);check.setAttribute('data-test-batch',g.key);
+    const text=document.createElement('span');text.className='tiny';
+    text.textContent=g.name+' · '+g.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length+' pending';
+    label.append(check,text);multiList.appendChild(label);
+   }
+   const chosen=groups.filter(g=>mailTestState.selectedBatchKeys.has(g.key));
+   const sum=batchElement('randomTestMultiBatchSummary');
+   if(sum)sum.textContent=chosen.length+' batch(es) selected · '+chosen.reduce((n,g)=>n+g.rows.length,0)+' saved addresses · '+
+    chosen.reduce((n,g)=>n+g.rows.filter(r=>!r.forwardingTestedAt||r.forwardingTestTarget!==r.target).length,0)+' pending verification.';
+  }
   const group=groups.find(g=>g.key===emailBatchState.key);
   const testMeta=batchElement('randomTestBatchMeta');
   if(testMeta)testMeta.textContent=group?
@@ -372,6 +394,28 @@
   if(!picker)throw Error('Email Bank batch manager is missing from the right panel.');
   if(picker.dataset.bound==='1')return;
   picker.dataset.bound='1';
+  const multiList=batchElement('randomTestMultiBatchList');
+  if(multiList)multiList.addEventListener('change',event=>{
+   const box=event.target;
+   if(!box?.matches?.('input[data-test-batch]'))return;
+   if(mailTestState.active){box.checked=!box.checked;return;}
+   if(box.checked)mailTestState.selectedBatchKeys.add(box.value);
+   else mailTestState.selectedBatchKeys.delete(box.value);
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
+  batchElement('randomTestSelectAllBatches').addEventListener('click',()=>{
+   if(mailTestState.active)return;
+   mailTestState.selectedBatchKeys=new Set(emailBatchGroups().map(g=>g.key));
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
+  batchElement('randomTestClearBatches').addEventListener('click',()=>{
+   if(mailTestState.active)return;
+   mailTestState.selectedBatchKeys.clear();
+   if(typeof cancelReceiverSplitPlan==='function')cancelReceiverSplitPlan();
+   refreshEmailBatchUI();
+  });
   const testPicker=batchElement('randomTestBatchSelect');
   if(testPicker)testPicker.addEventListener('change',()=>{
    emailBatchState.key=testPicker.value;emailBatchState.selected.clear();emailBatchState.page=0;
