@@ -206,3 +206,91 @@ test('Fallback folder discovery uses Gmail All Mail and Spam special-use flags o
  assert.deepEqual(fallbackBoxes([{path:'INBOX'}, {path:'Custom/All Mail'}, {path:'Custom/Spam'}]),
   ['Custom/All Mail','Custom/Spam']);
 });
+
+test('Incoming mail with rewritten subject but intact unique test ID in body is verified',async()=>{
+ const messages=[],sent=[];
+ const mail={createTransport:()=>({async sendMail(info){
+  sent.push(info);
+  messages.push({uid:61,internalDate:new Date(),
+   envelope:{subject:'A forwarded message',from:[{address:mailbox.sender}]},
+   source:Buffer.from('From: '+mailbox.sender+'\r\nTo: '+mailbox.mailbox+
+    '\r\nSubject: A forwarded message\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOriginal unique test ID: '+info.subject)});
+ },close(){}})};
+ class IMAP{
+  constructor(){this.folder='INBOX';}
+  async connect(){}async getMailboxLock(folder){this.folder=folder;return {release(){}};}
+  async search(query){assert.ok(query.since instanceof Date,'no SUBJECT-only search may exclude rewritten mail');return [61];}
+  async *fetch(){if(this.folder==='INBOX')yield* messages;}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['rewrite@sng.sarl']},
+  {mail,IMAP,now:Date.now,delay:async()=>{}});
+ assert.equal(result.delivered,1);
+ assert.equal(result.sentButUnconfirmed,0);
+ assert.equal(result.receiptDiagnostics.matchMethods.source,1);
+ assert.ok(sent[0].headers['X-ACO-Test-ID']);
+ assert.ok(result.receiptDiagnostics.recentCount>0);
+});
+test('MIME base64 forwarded body is decoded before matching the full unique test ID',async()=>{
+ const messages=[];
+ const mail={createTransport:()=>({async sendMail(info){
+  const encoded=Buffer.from('Forwarded original note. Unique test ID: '+info.subject).toString('base64');
+  messages.push({uid:71,internalDate:new Date(),
+   envelope:{subject:'Cloud forwarding notice',from:[{address:mailbox.sender}]},
+   source:Buffer.from('From: '+mailbox.sender+'\r\nTo: '+mailbox.mailbox+
+    '\r\nSubject: Cloud forwarding notice\r\nMIME-Version: 1.0\r\n'+
+    'Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'+encoded+'\r\n')});
+ },close(){}})};
+ class IMAP{
+  constructor(){this.folder='INBOX';}
+  async connect(){}async getMailboxLock(folder){this.folder=folder;return {release(){}};}
+  async search(query){assert.ok(query.since instanceof Date);return [71];}
+  async *fetch(){if(this.folder==='INBOX')yield* messages;}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['encoded@sng.sarl']},{mail,IMAP,now:Date.now,delay:async()=>{}});
+ assert.equal(result.delivered,1);
+ assert.equal(result.receiptDiagnostics.matchMethods['decoded-body'],1);
+ assert.equal(result.sentButUnconfirmed,0);
+});
+test('Bounce quoting valid marker must not be counted as a delivered forwarding email',async()=>{
+ const messages=[];
+ const mail={createTransport:()=>({async sendMail(info){
+  messages.push({uid:81,internalDate:new Date(),
+   envelope:{subject:'Mail Delivery Subsystem: Delivery failure',from:[{address:'mailer-daemon@example.org'}]},
+   source:Buffer.from('From: mailer-daemon@example.org\r\nSubject: Delivery failure\r\n\r\n'+info.subject)});
+ },close(){}})};
+ class IMAP{
+  async connect(){}async getMailboxLock(){return {release(){}};}
+  async search(query){assert.ok(query.since instanceof Date);return [81];}
+  async *fetch(){yield* messages;}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['bounce@sng.sarl']},{
+  mail,IMAP,delay:async()=>{},now:(()=>{let at=Date.now();return ()=>at+=20000;})()
+ });
+ assert.equal(result.delivered,0);
+ assert.equal(result.sentButUnconfirmed,1);
+ assert.equal(result.receiptDiagnostics.exactMatches,0);
+});
+test('Delayed message in Spam is polled within the same bounded receipt interval',async()=>{
+ const delivered=[],clock={t:Date.now(),loops:0};
+ const mail={createTransport:()=>({async sendMail(info){delivered.push({uid:91,
+  internalDate:new Date(),envelope:{subject:'Subject changed'},
+  source:Buffer.from('From: forwarder@example.org\r\nSubject: Subject changed\r\n\r\n'+info.subject)});},close(){}})};
+ class IMAP{
+  constructor(){this.folder='INBOX';}
+  async connect(){}async getMailboxLock(box){this.folder=box;return {release(){}};}
+  async list(){return [{path:'INBOX'},{path:'[Gmail]/All Mail',specialUse:'\\\\All'},{path:'[Gmail]/Spam',specialUse:'\\\\Junk'}];}
+  async search(query){assert.ok(query.since instanceof Date);return this.folder==='[Gmail]/Spam'&&clock.loops>=1?[91]:[];}
+  async *fetch(){if(this.folder==='[Gmail]/Spam')yield* delivered;}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['delay@sng.sarl']},{mail,IMAP,
+  now:()=>clock.t,delay:async(ms)=>{clock.loops++;clock.t+=ms;}
+ });
+ assert.equal(result.delivered,1);
+ assert.equal(result.receiptDiagnostics.discoveredOutsideInbox,1);
+ assert.ok(clock.loops>=1);
+ assert.ok(result.receiptDiagnostics.waitMs<=15000);
+});
