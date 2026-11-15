@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {validate,testForwarding,reuseSavedReceiverCredentials}=require('../emailgen-forwarding-test');
+const {validate,testForwarding,reuseSavedReceiverCredentials,fallbackBoxes,IMAP_RECEIPT_WAIT_MS}=require('../emailgen-forwarding-test');
 const mailbox={mailbox:'owner@example.test',password:'test-password-never-persisted',sender:'sender@example.test',senderPassword:'sender-password-never-persisted',smtpHost:'smtp.example.testmail',imapHost:'imap.example.testmail'};
 test('Forwarding test input rejects duplicate, wrong-domain and missing credentials',()=>{
  const base={...mailbox,aliases:['first@sng.sarl']};
@@ -126,4 +126,83 @@ test('Adding a new sender reuses only exact saved receiver IMAP credentials',()=
  assert.throws(()=>reuseSavedReceiverCredentials({...config,mailbox:'other@gmail.com'},store),/No saved receiver credentials/);
  assert.equal(reuseSavedReceiverCredentials({...config,password:'new-receiver-secret'},store).password,'new-receiver-secret');
  assert.equal(reuseSavedReceiverCredentials({...config,reuseReceiverCredentials:false},store).password,'');
+});
+
+test('Mail found only in Gmail All Mail is accurately confirmed by exact nonce, not SMTP success',async()=>{
+ const folders=[{path:'INBOX'},{path:'[Gmail]/All Mail',specialUse:'\\\\All'},{path:'[Gmail]/Spam',specialUse:'\\\\Junk'},
+  {path:'[Gmail]/Trash',specialUse:'\\\\Trash'}];
+ const actual=[],moves=[];
+ const mail={createTransport:()=>({async sendMail(info){
+  actual.push({envelope:{subject:info.subject},internalDate:new Date()});
+ },close(){}})};
+ class IMAP{
+  constructor(){this.folder='';}
+  async connect(){}async getMailboxLock(folder){this.folder=folder;return {release(){}};}
+  async list(){return folders;}
+  async search(){return this.folder==='[Gmail]/All Mail'?[30]:[];}
+  async *fetch(){if(this.folder==='[Gmail]/All Mail')yield* actual;}
+  async messageMove(ids,folder){moves.push({ids,folder});return true;}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['pass@sng.sarl']},{
+  mail,IMAP,delay:async()=>{},now:(()=>{let n=Date.now();return ()=>n+=16000;})()
+ });
+ assert.equal(result.delivered,1,'exact subject/nonce in All Mail is a verified receipt');
+ assert.equal(result.sentButUnconfirmed,0);
+ assert.deepEqual(result.results.map(r=>r.status),['delivered']);
+ assert.equal(result.receiptDiagnostics.discoveredOutsideInbox,1);
+ assert.ok(result.receiptDiagnostics.folders.includes('[Gmail]/All Mail'));
+ assert.equal(result.cleanupPending,0,'no false cleanup warning for All Mail');
+ assert.equal(moves.length,0,'never move emails in filtered folders to Trash');
+});
+test('Mail found only in Gmail Spam is verified only with matching test ID; unrelated mail is untouched',async()=>{
+ const messages=[],moved=[];
+ const mail={createTransport:()=>({async sendMail(info){messages.push({envelope:{subject:info.subject},internalDate:new Date()});},close(){}})};
+ class IMAP{
+  constructor(){this.folder='';}
+  async connect(){}async getMailboxLock(folder){this.folder=folder;return {release(){}};}
+  async list(){return [{path:'INBOX'},{path:'[Gmail]/All Mail',specialUse:'\\\\All'}, {path:'[Gmail]/Spam',specialUse:'\\\\Junk'}];}
+  async search(){return this.folder==='[Gmail]/Spam'?[4,5]:[];}
+  async *fetch(){if(this.folder==='[Gmail]/Spam'){
+   yield {envelope:{subject:'Unrelated message'},internalDate:new Date()};
+   yield* messages;
+  }}
+  async messageMove(ids,folder){moved.push({ids,folder});}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['spam@sng.sarl']},{
+  mail,IMAP,delay:async()=>{},now:(()=>{let n=Date.now();return ()=>n+=16000;})()
+ });
+ assert.equal(result.delivered,1);
+ assert.equal(result.receiptDiagnostics.discoveredOutsideInbox,1);
+ assert.ok(result.receiptDiagnostics.folders.includes('[Gmail]/Spam'));
+ assert.deepEqual(moved,[],'no Spam messages moved or deleted');
+});
+test('No exact receipt in any folder must stay amber and bound the wait to 15 seconds per group',async()=>{
+ let t=Date.now(),delayCalls=0;
+ const mail={createTransport:()=>({async sendMail(){},close(){}})};
+ class IMAP{
+  constructor(){this.folder='';}
+  async connect(){}async getMailboxLock(folder){this.folder=folder;return {release(){}};}
+  async list(){return [{path:'INBOX'},{path:'[Gmail]/All Mail',specialUse:'\\\\All'}];}
+  async search(){return this.folder==='[Gmail]/All Mail'?[1]:[];}
+  async *fetch(){yield {envelope:{subject:'Not a valid ACO test nonce'},internalDate:new Date(t)};}
+  async logout(){}
+ }
+ const result=await testForwarding({...mailbox,aliases:['missing@sng.sarl']},{
+  mail,IMAP,now:()=>t,delay:async(ms)=>{delayCalls++;t+=ms;}
+ });
+ assert.equal(IMAP_RECEIPT_WAIT_MS,15000);
+ assert.equal(result.receiptDiagnostics.waitMs,15000);
+ assert.ok(delayCalls<=5,'no per-group 90-second wait');
+ assert.equal(result.delivered,0);
+ assert.equal(result.sentButUnconfirmed,1);
+ assert.equal(result.results[0].status,'unconfirmed');
+ assert.ok(result.receiptDiagnostics.folders.includes('[Gmail]/All Mail'));
+});
+test('Fallback folder discovery uses Gmail All Mail and Spam special-use flags or names',()=>{
+ assert.deepEqual(fallbackBoxes([{path:'INBOX'}, {path:'[Gmail]/All Mail',specialUse:'\\\\All'},
+  {path:'[Gmail]/Spam',specialUse:'\\\\Junk'}]),['[Gmail]/All Mail','[Gmail]/Spam']);
+ assert.deepEqual(fallbackBoxes([{path:'INBOX'}, {path:'Custom/All Mail'}, {path:'Custom/Spam'}]),
+  ['Custom/All Mail','Custom/Spam']);
 });
