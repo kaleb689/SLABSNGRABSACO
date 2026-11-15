@@ -8,7 +8,7 @@ import {mentionedRetailers, retailerAlert, retailerFromDropLabel} from './retail
 import {
   TARGET_MASTER_MARKER, initialTargetMaster, targetMasterItems, targetSkuCandidates,
   targetMessageTime, targetMasterAdd, targetMasterRemove, targetMasterRestore,
-  targetMasterDashboard, targetMasterView, targetMasterManage
+  targetMasterDashboard, targetMasterView, targetMasterManage, targetMasterEnsureOwnerRequested
 } from './target-sku-master.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
 import {
@@ -49,7 +49,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,r
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
   withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,
   TARGET_MASTER_MARKER,initialTargetMaster,targetMasterItems,targetSkuCandidates,targetMessageTime,
-  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,
+  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,targetMasterEnsureOwnerRequested,
   newTargetPickDraft,toggleTargetPick,setTargetPickQuantity,searchTargetPicks,pasteTargetPicks,targetPickDiff,
   targetMasterPicker,targetMasterPickReview,inStoreChannelId:'1551070928039845970',
   dropChannelLabel:id=>deps.retailerDropLabels[id]||(id===tonightChannelId?'Dropping Tonight':'Upcoming Drops')};
