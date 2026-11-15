@@ -985,7 +985,7 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1364,8 +1364,9 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           dataDir,api,token,guildId:sourceGuildId,ownerId:sourceOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
           onDropNotification:async({notification,eventKey,messageId})=>{
-            if(typeof onRetailerSkuUpdate!=="function")return;
-            await onRetailerSkuUpdate({notification,eventKey,messageId});
+            if(typeof onGlobalDropNotification!=="function")
+              throw Error("Global app drop broadcaster is not configured");
+            await onGlobalDropNotification({notification,eventKey,messageId});
           }
         });
         dropControlSourceGuildId=sourceGuildId;

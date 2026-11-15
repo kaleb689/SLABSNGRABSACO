@@ -1,0 +1,45 @@
+name: Verify all-user app drop announcements and recaps
+
+on:
+  push:
+    paths:
+      - order-notifications.js
+      - discord-live-drop-recap.js
+      - discord-community.js
+      - server.js
+      - public/app.js
+      - tests/global-drop-app-broadcast.test.js
+      - .github/workflows/verify-global-drop-app-broadcast.yml
+  pull_request:
+    paths:
+      - order-notifications.js
+      - discord-live-drop-recap.js
+      - discord-community.js
+      - server.js
+      - public/app.js
+      - tests/global-drop-app-broadcast.test.js
+      - .github/workflows/verify-global-drop-app-broadcast.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Syntax check frontend, owner bot and server
+        run: |
+          node --check order-notifications.js
+          node --check discord-community.js
+          node --check discord-live-drop-recap.js
+          node --check public/app.js
+          node --check server.js
+      - name: Validate all-user inbox, push-consent and deduplication
+        run: node --test tests/global-drop-app-broadcast.test.js tests/discord-live-drop-recap.test.js
