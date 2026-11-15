@@ -6,6 +6,7 @@ const appEnabled = window.self === window.top && (window.matchMedia('(display-mo
 if (appEnabled) {
   const icons = {
     home: '<path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/>',
+    success: '<path d="m12 2 3 6 7 .9-5 4.9 1.2 7-6.2-3.3-6.2 3.3 1.2-7-5-4.9L9 8z"/>',
     tracking: '<path d="m5 5-3 7v8h3v-3h14v3h3v-8l-3-7zM2 12h20M6 14h1m10 0h1"/>',
     notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
     products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
@@ -17,8 +18,8 @@ if (appEnabled) {
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-  const labels = { home: 'Home', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'tracking', 'profile', 'products', 'history'].map(id => [id, labels[id]]);
+  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', notifications: 'Notifications', settings: 'Settings' };
+  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history'].map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
@@ -26,7 +27,7 @@ if (appEnabled) {
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
-  let view = ({ success: 'home', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let view = ({ success: 'success', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null, streamAccountId = null;
   let calendarOpen = false, calendarError = '', customRange = null;
@@ -392,6 +393,26 @@ if (appEnabled) {
       `<button class="sng-arrival" type="button" data-app-view="tracking">${icon('tracking')}<span><strong>${records.filter(r => shippingStage(r) === 'out_for_delivery').length} packages out for delivery</strong><small>View your shipping tracker</small></span><b>›</b></button>` +
       `<div class="sng-metrics three">${metric('ORDERED', totals.orders, '', 'box', delta.orders)}${metric('IN TRANSIT', totals.transit, 'cyan', 'tracking', delta.transit)}${metric('DELIVERED', totals.delivered, 'green', 'home', delta.delivered)}</div><div class="sng-section-title"><h2>Top products</h2><button type="button" data-app-view="products">View all</button></div>${productRows(products.slice(0, 3), true)}<div class="sng-section-title"><h2>Recent orders</h2><button type="button" data-app-view="tracking">Track all</button></div>${orderRows(records.slice(0, 5))}` +
         (holdsInPeriod().length ? `<div class="sng-section-title"><h2>Orders on review hold</h2></div>${orderRows(holdsInPeriod().slice(0, 5), true)}` : '');
+    if (view === 'success') {
+      // Only use the authenticated customer-scoped success API response; do not surface
+      // order numbers, shipping details, addresses, or tracking identifiers here.
+      const periods = [1, 7, 30].map(period => {
+        const summary = dashboardTotals(selectedOrders(orders, period));
+        return `<button type="button" class="sng-metric" data-app-days="${period}" aria-pressed="${days === period}"><span>${period === 1 ? 'LAST 24 HOURS' : `LAST ${period} DAYS`}</span><strong>${money(summary.spend)}</strong><small>${summary.orders} orders · ${summary.items} items</small></button>`;
+      }).join('');
+      const retailers = Object.entries(records.reduce((counts, order) => {
+        const retailer = String(order.retailer || 'Other');
+        counts[retailer] = (counts[retailer] || 0) + 1;
+        return counts;
+      }, {})).sort((a, b) => b[1] - a[1]);
+      const safeProducts = products.map(product => `<article class="sng-product-row"><div class="sng-product-image">${image(product)}</div><div class="sng-row-main"><strong>${e(product.name)}</strong><small>${e(product.retailer)} · x${Number(product.quantity) || 0} purchased</small></div><div class="sng-row-value"><strong>${money(product.value)}</strong><small>ITEM VALUE</small></div></article>`).join('') || '<p class="sng-empty">No verified purchases in this period.</p>';
+      html = common + '<div class="sng-segment-label">YOUR CHECKOUT SUCCESS</div>' +
+        hero('TOTAL SPENT · ' + rangeName().toUpperCase(), money(totals.spend), `${totals.orders} total orders · ${totals.items} items purchased`, 'insights') +
+        '<div class="sng-metrics three">' + periods + '</div>' +
+        '<div class="sng-metrics three">' + metric('TOTAL ORDERS', totals.orders, 'violet') + metric('ITEMS PURCHASED', totals.items, 'cyan') + metric('TOTAL SPENT', money(totals.spend)) + '</div>' +
+        breakdown('Orders by retailer', retailers, totals.orders) +
+        '<div class="sng-section-title"><h2>Products purchased</h2><span>' + products.length + ' products</span></div>' + safeProducts;
+    }
     if (view === 'tracking') {
       const trackable = [...records, ...holdsInPeriod(), ...cancelledInPeriod()];
       html = common + hero('IN TRANSIT', `${totals.transit} packages`, `${totals.awaiting} awaiting shipment · ${totals.delivered} delivered`, 'orange') +
@@ -490,6 +511,7 @@ if (appEnabled) {
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
     render();
     if (view === 'drops' && !dropEditor.isDirty()) void dropEditor.load();
+    if (view === 'success') void refresh();
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
   async function removeCancelledFromView(button) {
@@ -595,6 +617,19 @@ if (appEnabled) {
         reviewHoldOrders = [];
       } else {
         const requestedRange = checkoutRequestRange(days, new Date(), customRange);
+        // Success displays independent 24h, 7d and 30d cards even when the
+        // chosen filter is shorter. Fetch the union from the same scoped API.
+        if (view === 'success' && days !== 'all') {
+          const thirty = checkoutRequestRange(30, new Date());
+          const startAt = new Date(Math.min(Date.parse(requestedRange.startAt), Date.parse(thirty.startAt)));
+          const endAt = new Date(Math.max(Date.parse(requestedRange.endAt), Date.parse(thirty.endAt)));
+          Object.assign(requestedRange, {
+            start: startAt.toISOString().slice(0, 10),
+            end: new Date(endAt.getTime() - 1).toISOString().slice(0, 10),
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString()
+          });
+        }
         const rangeKey = JSON.stringify([days, customRange]);
         const params = new URLSearchParams({appView:'1', ...requestedRange});
         const response = await fetch(`/api/account/success?${params}`, { credentials: 'same-origin', cache: 'no-store' });
