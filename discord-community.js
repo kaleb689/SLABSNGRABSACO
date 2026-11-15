@@ -1300,75 +1300,34 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
-    // Serve the ORIGINAL SLABSNGRABSTC guild, not the separate ACO app guild.
-    // Confirm the guild from the authoritative Discord #success source itself.
+    // Owner buttons and public announcements belong to the paid-member ACO
+    // Discord guild. The original SLABSNGRABSTC Success channel remains the
+    // ONLY source of checkout/recap totals, never the destination for posts.
     try {
-      const sourceChannel=await api(`/channels/${SLABSNGRABSTC_SUCCESS_CHANNEL_ID}`);
-      const sourceGuildId=String(sourceChannel?.guild_id||"");
-      if(!/^\d{17,22}$/.test(sourceGuildId))
-        throw Error("Original Discord Success guild cannot be verified");
-      const sourceGuild=await api(`/guilds/${sourceGuildId}`);
-      const sourceOwnerId=String(sourceGuild?.owner_id||"");
-      if(!/^\d{17,22}$/.test(sourceOwnerId))
-        throw Error("Original Discord guild owner cannot be verified");
-      const sourceChannels=sourceGuildId===String(guildId)?channels:
-        await api(`/guilds/${sourceGuildId}/channels`);
-      // Report the bot's actual guild-wide permissions without logging any
-      // customer or checkout data. Discord rejects channel creation when
-      // MANAGE_CHANNELS is missing or requested overwrites exceed its rights.
-      try {
-        const member=await api(`/guilds/${sourceGuildId}/members/${appId}`);
-        const ids=new Set([sourceGuildId,...(member?.roles||[]).map(String)]);
-        const assigned=(Array.isArray(sourceGuild?.roles)?sourceGuild.roles:[])
-          .filter(role=>ids.has(String(role.id)));
-        const perms=assigned.reduce((acc,role)=>acc|BigInt(role.permissions||"0"),0n);
-        const status={manageChannels:Boolean(perms&16n),
-          manageRoles:Boolean(perms&(1n<<28n)),
-          viewChannel:Boolean(perms&1024n),sendMessages:Boolean(perms&2048n),
-          administrator:Boolean(perms&8n)};
-        const fingerprint=JSON.stringify(status);
-        if(discordCommunityStatus.sourceBotPermissions!==fingerprint){
-          discordCommunityStatus.sourceBotPermissions=fingerprint;
-          console.log("Original TCG bot effective guild permission flags:",fingerprint);
-        }
-      }catch(error){
-        console.warn("Original TCG bot permission diagnostics unavailable:",error.message);
-      }
-      const general=sourceChannels.find(ch=>ch.type===0 &&
+      const controlGuildId=String(guildId);
+      const controlOwnerId=String(ownerId);
+      const controlChannels=channels;
+      const general=controlChannels.find(ch=>ch.type===0 &&
         ["general","generalchat"].includes(normalizeName(ch.name)));
-      if(!general)throw Error("Original SLABSNGRABSTC server #general is missing");
+      if(!general)throw Error("SLABSNGRABS ACO #general was not found");
+      // Reuse the ACO server's existing private Admin Only category.
+      // It is created by the normal community provisioning later if missing.
+      // Never create a separate TCG category or downgrade to a DM.
+      const adminCategory=controlChannels.find(ch=>ch.type===4 &&
+        normalizeName(ch.name)==="adminonly");
+      if(!adminCategory)
+        throw Error("ACO Admin Only category is not yet ready; retry will locate it");
       const readOwnerOnly=[
-        {id:sourceGuildId,type:0,deny:"1024"},
+        {id:controlGuildId,type:0,deny:"1024"},
         {id:appId,type:1,allow:"68624"},
-        {id:sourceOwnerId,type:1,allow:"68608"}
+        {id:controlOwnerId,type:1,allow:"68608"}
       ];
-      // The owner explicitly requested a channel in this guild's Admin category.
-      // Never silently substitute a DM or a channel in the separate ACO guild.
-      // Match the entire category name, not only the part after a decorative
-      // divider; e.g. "🔒 ADMIN | STAFF" still belongs to Admin.
-      let adminCategory=sourceChannels.find(ch=>{
-        if(ch.type!==4)return false;
-        const whole=String(ch.name||"").toLowerCase().replace(/[^a-z0-9]/g,"");
-        const final=normalizeName(ch.name);
-        return /admin|administration/.test(whole)||
-          ["admin","admins","adminonly","adminsection"].includes(final);
-      });
-      if(!adminCategory){
-        // Owner confirmed Manage Channels was granted. This TCG server
-        // currently has only the two default categories, so create a
-        // private Admin section rather than guessing an unrelated category.
-        adminCategory=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
-          name:"Admin",type:4,
-          permission_overwrites:readOwnerOnly
-        });
-        console.log("Created private original TCG Admin category:",adminCategory.id);
-      }
-      let controls=sourceChannels.find(ch=>ch.type===0 &&
+      let controls=controlChannels.find(ch=>ch.type===0 &&
         normalizeName(ch.name)==="dropcontrols");
       if(!controls){
-        controls=await api(`/guilds/${sourceGuildId}/channels`,"POST",{
+        controls=await api(`/guilds/${controlGuildId}/channels`,"POST",{
           name:"drop-controls",type:0,parent_id:adminCategory.id,
-          topic:"Private owner controls for live drops and verified twelve-hour recaps.",
+          topic:"Owner-only launch controls. Recaps use original TCG Success webhooks.",
           permission_overwrites:readOwnerOnly
         });
       }else if(String(controls.parent_id||"")!==String(adminCategory.id) ||
@@ -1377,12 +1336,12 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           parent_id:adminCategory.id,permission_overwrites:readOwnerOnly});
       }
       await ensurePanel(controls.id,"owner-drop-controls",
-        "**OWNER DROP CONTROLS**\nChoose a retailer, then confirm. This announces **DROP IS LIVE** in the original SLABSNGRABSTC #general, then schedules a source-verified recap 12 hours later. Pending / Posted shows active drops.\n\nUnverified totals are **held privately**, never published as guessed numbers.",{
+        "**OWNER DROP CONTROLS**\nChoose a retailer, then confirm. This announces **DROP IS LIVE** to the SLABSNGRABS ACO member server #general and schedules the recap 12 hours later. The verified data source remains SLABSNGRABSTC #success. Pending / Posted shows active drops.\n\nUnverified totals are **held privately**, never published as guessed numbers.",{
           components:dropControlRows()
         });
       if(!dropRecapController){
         dropRecapController=createDiscordDropRecapController({
-          dataDir,api,token,guildId:sourceGuildId,ownerId:sourceOwnerId,
+          dataDir,api,token,guildId:controlGuildId,ownerId:controlOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
           onDropNotification:async({notification,eventKey,messageId})=>{
             if(typeof onGlobalDropNotification!=="function")
@@ -1390,23 +1349,23 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
             await onGlobalDropNotification({notification,eventKey,messageId});
           }
         });
-        dropControlSourceGuildId=sourceGuildId;
+        dropControlSourceGuildId=controlGuildId;
         dropControlChannelId=String(controls.id);
         dropRecapController.start();
       }
       discordCommunityStatus.dropControls={
-        ready:true,sourceGuildId,
+        ready:true,controlGuildId,
         controlChannelId:String(controls.id),generalChannelId:String(general.id),
         privateToOwner:true,mode:"admin_channel",adminCategoryId:String(adminCategory.id),
-        recapDelayHours:12
+        recapSourceChannelId:SLABSNGRABSTC_SUCCESS_CHANNEL_ID,recapDelayHours:12
       };
-      console.log("Discord original-guild live-drop controls ready:",
+      console.log("Discord ACO member-guild live-drop controls ready:",
         JSON.stringify(discordCommunityStatus.dropControls));
     }catch(error){
       discordCommunityStatus.dropControls={
         ready:false,error:String(error?.message||"unavailable")
       };
-      console.error("Discord original-guild drop controls:",error?.message||error);
+      console.error("Discord ACO member-guild drop controls:",error?.message||error);
     }
     // Reuse the owner's existing Target SKUs channel regardless of the
     // presentation of its name (target-skus, Target SKUs, target-sku-list).
