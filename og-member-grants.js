@@ -96,7 +96,7 @@ export async function reconcileApprovedOgMembers({
     if (error?.code !== "resource_missing") throw error;
     coupon = await stripe.coupons.create({
       id: OG_DISCOUNT_COUPON_ID,
-      name: "SLABSNGRABSACO OG Member - Lifetime 10% Renewals",
+      name: "SLABSNGRABSACO OG 10% Lifetime",
       percent_off: 10,
       duration: "forever",
       metadata: { sng_purpose: "og_renewal", sng_nonstacking: "true" }
