@@ -154,7 +154,62 @@ test('Removing one unassigned generated email keeps other batches and original e
  assert.ok([...storage.values()].includes(old));
 });
 test('Single-email removal rejects any address assigned to a retailer pool',()=>{
- assert.match(app,/if\(row\.poolTarget\|\|row\.poolImportedAt\)throw Error/);
+ assert.match(app,/if\(row\.poolTarget\|\|row\.poolImportedAt\)/);
  assert.match(html,/id="emailBatchRemoveOneConfirmArea"/);
  assert.match(html,/id="emailBatchRemoveOneTyped"/);
+});
+
+test('Remove button accepts an exact failed email from a different batch without requiring a checkbox',async()=>{
+ const rows=[
+  {alias:'broken@sng.sarl',randomGenerated:true,batchId:'old',batchCreatedAt:'2026-11-13T15:00:00Z',status:'draft',target:'inbox@gmail.com'},
+  {alias:'keep@sng.sarl',randomGenerated:true,batchId:'new',batchCreatedAt:'2026-11-15T15:00:00Z',status:'draft',target:'inbox@gmail.com'},
+  {alias:'manual@sng.sarl',status:'live',target:'inbox@gmail.com'}
+ ];
+ const original=JSON.stringify(rows.slice(1)),storage=new Map([['email.bank','ciphertext-before']]);
+ const widgets=new Map(),get=id=>{
+  if(!widgets.has(id))widgets.set(id,{textContent:'',value:'',hidden:true,checked:false});
+  return widgets.get(id);
+ };
+ const ctx={records:rows,unlocked:true,randomGenBusy:false,requireOwner(){},mailTestState:{active:false},
+  validEmail:v=>/^[^@ ]+@[^@ ]+\.[^@ ]+$/.test(v),Date,Set,Map,KEY:'email.bank',
+  crypto:{getRandomValues:bytes=>{bytes.fill(9);return bytes;}},
+  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},
+  $e:get,refreshEmailBatchUI:()=>{},RANDOM_RETAILERS:{target:'Target'},
+  store:async()=>{storage.set('email.bank','ciphertext-after');return true;}};
+ vm.createContext(ctx);
+ vm.runInContext(app.slice(start,app.indexOf(' function setupEmailBatchUI(){',start))+
+  ";refreshEmailBatchUI=()=>{};emailBatchState.key='batch:new';this.reviewOne=reviewEmailBatchRemoveOne;this.removeOne=confirmEmailBatchRemoveOne;",ctx);
+ get('emailBatchRemoveOneExact').value=' BROKEN@SNG.SARL ';
+ ctx.reviewOne();
+ assert.equal(get('emailBatchRemoveOneConfirmArea').hidden,false);
+ assert.match(get('emailBatchRemoveOneStatus').textContent,/Reviewing broken@sng.sarl/);
+ assert.equal(rows.length,3,'preview must be read-only');
+ get('emailBatchRemoveOneTyped').value='DELETE';get('emailBatchRemoveOneAcknowledge').checked=true;
+ await ctx.removeOne();
+ assert.deepEqual(rows.map(r=>r.alias),['keep@sng.sarl','manual@sng.sarl']);
+ assert.equal(JSON.stringify(rows),original);
+ assert.match(get('emailBatchRemoveOneStatus').textContent,/REMOVED broken@sng.sarl/);
+ assert.ok([...storage.keys()].some(k=>k.includes('single-email-delete-backup')));
+ assert.ok([...storage.values()].includes('ciphertext-before'));
+});
+test('Exact removal rejects assigned profiles and duplicate records; no cards or security codes change',()=>{
+ const linked={alias:'linked@sng.sarl',status:'draft',randomGenerated:true,batchId:'a',
+  poolTarget:'target',poolImportedAt:'2026-11-15T15:00:00Z',card:{last4:'0024'},profileSecurityCode:'003'};
+ const records=[linked,{alias:'dup@sng.sarl',status:'draft'},{alias:'dup@sng.sarl',status:'live'}];
+ const original=JSON.stringify(records),widgets=new Map(),get=id=>{
+  if(!widgets.has(id))widgets.set(id,{value:'',textContent:'',hidden:true,checked:false});
+  return widgets.get(id);
+ };
+ const ctx={records,requireOwner(){},unlocked:true,randomGenBusy:false,mailTestState:{active:false},
+  validEmail:v=>/^[^@ ]+@[^@ ]+\.[^@ ]+$/.test(v),Date,Set,Map,KEY:'email.bank',
+  $e:get,RANDOM_RETAILERS:{target:'Target'}};
+ vm.createContext(ctx);
+ vm.runInContext(app.slice(start,app.indexOf(' function setupEmailBatchUI(){',start))+
+  ";refreshEmailBatchUI=()=>{};emailBatchState.key='batch:a';this.reviewOne=reviewEmailBatchRemoveOne;",ctx);
+ get('emailBatchRemoveOneExact').value='linked@sng.sarl';
+ assert.throws(()=>ctx.reviewOne(),/connected to a retailer pool\/profile/);
+ get('emailBatchRemoveOneExact').value='dup@sng.sarl';
+ assert.throws(()=>ctx.reviewOne(),/Duplicate Email Bank entries/);
+ assert.equal(JSON.stringify(records),original);
+ assert.equal(linked.profileSecurityCode,'003');
 });
