@@ -398,7 +398,7 @@ if (appEnabled) {
       // order numbers, shipping details, addresses, or tracking identifiers here.
       const periods = [1, 7, 30].map(period => {
         const summary = dashboardTotals(selectedOrders(orders, period));
-        return `<button type="button" class="sng-metric" data-app-days="${period}" aria-pressed="${days === period}"><span>${period === 1 ? 'LAST 24 HOURS' : `LAST ${period} DAYS`}</span><strong>${money(summary.spend)}</strong><small>${summary.orders} orders · ${summary.items} items</small></button>`;
+        return `<button type="button" class="sng-metric sng-success-period" data-app-days="${period}" aria-pressed="${days === period}"><span>${period === 1 ? 'LAST 24 HOURS' : `LAST ${period} DAYS`}</span><strong>${money(summary.spend)}</strong><small>${summary.orders} orders · ${summary.items} items</small></button>`;
       }).join('');
       const retailers = Object.entries(records.reduce((counts, order) => {
         const retailer = String(order.retailer || 'Other');
