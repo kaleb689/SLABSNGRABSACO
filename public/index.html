@@ -3470,13 +3470,14 @@
             <p id="extensionCurrentRenewal">Your current renewal date will appear here.</p>
             <div class="member-extension-fields">
               <label>Extension period (months)
-                <input type="number" id="extensionMonths" min="1" max="1200" step="1" value="1" required>
+                <input type="number" id="extensionMonths" min="1" max="1200" step="1" value="1" required aria-describedby="extension-promo-six-month-cap">
               </label>
               <label>Membership tier
                 <select id="extensionTier" aria-label="Current or upgraded membership tier"></select>
               </label>
               <label class="member-extension-code">Extension discount code (optional)
-                <input type="text" id="extensionDiscountCode" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="e.g. THANKSGIVING20">
+                <input type="text" id="extensionDiscountCode" maxlength="40" autocomplete="off" autocapitalize="characters" placeholder="e.g. THANKS25">
+                <small id="extension-promo-six-month-cap">Thanksgiving 25% discount is valid for up to 6 prepaid membership months only (November 15–27, 2026). Longer extensions remain available without this code.</small>
               </label>
             </div>
             <div class="member-extension-actions">
