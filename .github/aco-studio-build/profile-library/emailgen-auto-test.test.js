@@ -82,7 +82,7 @@ test('Missing sender/receiver passwords never marks drafts working and invites s
  assert.equal(h.calls.length,0);
  assert.equal(h.ctx.testState.passed,0);
  assert.equal(rows[0].status,'draft');
- assert.match(h.get('randomTestStatus').textContent,/Automatic test pending/);
+ assert.match(h.get('randomTestStatus').textContent,/NO EMAILS TESTED/);
  assert.equal(h.get('randomTestSettings').open,true);
 });
 
@@ -99,7 +99,7 @@ test('Catch-all preflight stops after 3 unconfirmed messages and leaves all othe
  assert.equal(h.ctx.testState.passed,0);
  assert.equal(rows.filter(r=>r.status==='draft').length,405);
  assert.equal(h.saved.length,1);
- assert.match(h.get('randomTestStatus').textContent,/Cloudflare catch-all is Active/);
+ assert.match(h.get('randomTestStatus').textContent,/Verify the aliases actually route/);
  assert.match(h.get('randomTestStatus').textContent,/Spam\/All Mail/);
  assert.equal(h.get('randomTestUnconfirmed').textContent,'3');
  assert.equal(h.get('randomTestFailed').textContent,'0');
@@ -136,7 +136,7 @@ test('Testing controls include a direct batch chooser',()=>{
  assert.match(html,/id="randomTestBatchSelect"/);
  assert.match(html,/id="emailBatchRemoveOneReview"/);
  assert.match(html,/id="emailBatchRemoveOneConfirm"/);
- assert.match(app,/randomAliasTestBatch[\\s\\S]*batchId:group.key.slice\\(6\\)/);
+ assert.match(app,/batchId:group\.key\.slice\(6\)/);
 });
 
 test('Two checked batches are tested together, without including unchecked batch or prior failed address',async()=>{
