@@ -229,7 +229,9 @@ async function testForwarding(input,{mail=require('nodemailer'),IMAP=require('im
   }
   const sent=tests.filter(t=>t.sent);
   if(sent.length){
-   const receiptStart=now(),deadline=receiptStart+IMAP_RECEIPT_WAIT_MS;
+   // Explicit one-email diagnosis allows a longer check for delayed delivery.
+   const receiptWaitMs=cfg.aliases.length===1&&input.diagnostic===true?60000:IMAP_RECEIPT_WAIT_MS;
+   const receiptStart=now(),deadline=receiptStart+receiptWaitMs;
    let scanFolders=['INBOX'];
    if(typeof imap.list==='function'){
     try{scanFolders=[...new Set(['INBOX',...fallbackBoxes(await imap.list())])];}
@@ -335,7 +337,7 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
   const config=store.read({mailbox,sender});
   if(!config)throw Error('No secure mail-test account matches '+mailbox+(sender?' with sender '+sender:'')+'. Save the sending/receiving account pair first.');
   const runId=typeof request.runId==='string'&&/^[a-z0-9-]{8,90}$/i.test(request.runId)?request.runId:null;
-  return testForwarding({...config,aliases:request.aliases},{
+  return testForwarding({...config,aliases:request.aliases,diagnostic:request.diagnostic===true},{
    onProgress:progress=>{
     if(runId&&!event.sender.isDestroyed?.())event.sender.send('email:test:progress',{runId,...progress});
    }
