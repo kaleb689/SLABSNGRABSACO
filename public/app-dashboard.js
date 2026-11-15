@@ -9,6 +9,7 @@ if (appEnabled) {
     success: '<path d="m12 2 3 6 7 .9-5 4.9 1.2 7-6.2-3.3-6.2 3.3 1.2-7-5-4.9L9 8z"/>',
     tracking: '<path d="m5 5-3 7v8h3v-3h14v3h3v-8l-3-7zM2 12h20M6 14h1m10 0h1"/>',
     notifications: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="m2 6 10 8L22 6"/>',
+    messages: '<path d="M4 5h16v12H8l-4 4V5zM8 9h8M8 13h5"/>',
     products: '<rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V3h8v4M3 12h18"/>',
     history: '<path d="M3 21h18M5 21V12h3v9m3 0V5h3v16m3 0V8h3v13"/>',
     profile: '<path d="M3 9V5h18v4M5 10h14v11H5zM9 14h6M9 18h6"/>',
@@ -18,8 +19,8 @@ if (appEnabled) {
     box: '<path d="m3 6 9-4 9 4v12l-9 4-9-4zM3 6l9 4 9-4M12 10v12M7 4l9 4"/>'
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history'].map(id => [id, labels[id]]);
+  const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', messages: 'Messages', notifications: 'Notifications', settings: 'Settings' };
+  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history'].concat('messages').map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
@@ -27,7 +28,7 @@ if (appEnabled) {
   const e = value => escapeHtml(String(value ?? ''));
   const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value) || 0);
   const dateLabel = value => value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Pending';
-  let view = ({ success: 'success', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking' })[new URLSearchParams(location.search).get('appTab')] || 'home';
+  let view = ({ success: 'success', membership: 'profile', drops: 'drops', notifications: 'notifications', tracking: 'tracking', messages: 'messages' })[new URLSearchParams(location.search).get('appTab')] || 'home';
   let days = 30, status = 'all', query = '', orders = [], cancelledOrders = [], reviewHoldOrders = [], busy = false, queued = false, error = '', accountId = null;
   let profileTab = 'membership', stream = null, streamAccountId = null;
   let calendarOpen = false, calendarError = '', customRange = null;
@@ -46,13 +47,25 @@ if (appEnabled) {
   const selected = rows => selectedOrders(rows,days,new Date(),customRange);
   const activityFor = rows => dashboardActivity(rows,days,new Date(),customRange);
   const expanded = new Set();
+  const showMessageUnread = () => {
+    const original = document.getElementById('account-messages-unread');
+    const badge = root.querySelector('.sng-app-message-unread');
+    const count = original && !original.hidden ? Math.min(99,Number(original.textContent)||0) : 0;
+    if(badge){
+      badge.hidden = !count;
+      badge.textContent = count ? String(count) : '';
+      badge.setAttribute('aria-label',count ? count+' unread customer messages' : 'No unread messages');
+    }
+    const tab = root.querySelector('[data-app-view="messages"]');
+    if(tab)tab.setAttribute('aria-label',count ? 'Messages, '+count+' unread' : 'Messages');
+  };
   let activeTrackingOrderId = null, latestSheetMarkup = '';
   const recordKey = order => String(order?.id || order?.orderNumber || '');
   const root = document.createElement('div');
   root.id = 'app-dashboard'; root.hidden = true;
   root.innerHTML = `<header class="sng-app-header"><div class="sng-app-brand"><img src="/slabsngrabs-aco-logo-transparent.png" alt=""><div><strong>SLABSNGRABSACO</strong><span id="sng-app-title"></span></div></div>
     <div class="sng-app-header-actions"><button type="button" data-app-theme aria-label="Switch to day mode">${icon('sun')}</button><button type="button" data-app-view="settings" aria-label="Settings">${icon('settings')}</button><button type="button" data-app-view="notifications" aria-label="Notifications">${icon('notifications')}<span id="sng-app-unread" hidden></span></button></div></header>
-    <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${navLabels.map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span></button>`).join('')}</nav>`;
+    <div id="sng-app-content"></div><nav class="sng-app-nav" aria-label="App navigation">${navLabels.map(([id, label]) => `<button type="button" data-app-view="${id}" aria-label="${label}">${icon(id)}<span>${label}</span>${id === 'messages' ? '<b class="sng-app-message-unread" hidden></b>' : ''}</button>`).join('')}</nav>`;
   document.getElementById('customer-dashboard').before(root);
   const trackingSheet = document.createElement('dialog');
   trackingSheet.className = 'sng-tracking-sheet';
@@ -378,6 +391,7 @@ if (appEnabled) {
       button.classList.toggle('active', button.dataset.appView === view);
       button.setAttribute('aria-pressed', String(button.dataset.appView === view));
     });
+    showMessageUnread();
     const records = selected(orders), totals = dashboardTotals(records), products = dashboardProducts(records);
     const periodKey = days==='custom' ? 'custom:'+customRange?.from+':'+customRange?.to : String(days);
     const previous = snapshots.get(periodKey);
@@ -434,6 +448,7 @@ if (appEnabled) {
     }
     if (view === 'settings') html = `<div class="sng-page-intro"><h1>Settings</h1><p>Manage your app and account preferences.</p></div><div class="sng-settings-list"><button type="button" data-app-theme>${icon('sun')} ${theme === 'night' ? 'Switch to day mode' : 'Switch to night mode'}</button><button type="button" data-app-notification-settings>${icon('notifications')} Notification preferences</button><button type="button" data-setting-profile="edit-profile">${icon('profile')} Saved information</button><button type="button" data-setting-profile="security">${icon('settings')} Account security</button><button type="button" data-setting-profile="orders">${icon('box')} Billing and orders</button></div>`;
     if (view === 'notifications') html = `<div class="sng-page-intro"><h1>Notifications</h1><p>Orders, shipping and messages from SLABSNGRABSACO.</p></div>`;
+    if (view === 'messages') html = `<div class="sng-page-intro"><h1>Messages</h1><p>Your private conversation with SLABSNGRABSACO support.</p></div>`;
     if (view === 'profile') {
       // Keep the app's membership card synchronized with the existing customer account page.
       const membership = state.membership || null;
@@ -508,6 +523,7 @@ if (appEnabled) {
     view = next; query = ''; calendarOpen=false; document.body.dataset.appView = view;
     if (location.hash !== '#my-profile') go('my-profile');
     if (view === 'notifications') document.querySelector('button[data-account-tab="notifications"]')?.click();
+    if (view === 'messages') document.querySelector('button[data-account-tab="messages"]')?.click();
     if (view === 'profile') document.querySelector(`button[data-account-tab="${profileTab}"]`)?.click();
     render();
     if (view === 'drops' && !dropEditor.isDirty()) void dropEditor.load();
@@ -659,6 +675,8 @@ if (appEnabled) {
   }
   document.addEventListener('account-session-changed', () => {
     if (!state.customer || (accountId && state.customer.id !== accountId)) dropEditor.reset();
+    if(state.customer && view === 'messages')
+      document.querySelector('button[data-account-tab="messages"]')?.click();
     render(); connect();
     if (state.customer && state.customer.id !== accountId) {
       snapshots.clear(); changes.clear(); void refresh();
@@ -666,6 +684,7 @@ if (appEnabled) {
   });
   document.addEventListener('account-data-updated', () => { render(); void refresh(); });
   document.addEventListener('account-notifications-updated', render);
+  document.addEventListener('customer-message-unread-changed', showMessageUnread);
   document.addEventListener('visibilitychange', () => { connect(); if (!document.hidden) void refresh(); });
   window.addEventListener('pageshow', () => { connect(); void refresh(); });
   window.addEventListener('pagehide', () => { stream?.close(); stream = null; });
