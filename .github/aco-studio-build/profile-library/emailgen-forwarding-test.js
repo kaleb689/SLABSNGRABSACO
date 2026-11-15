@@ -215,7 +215,15 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  ipcMain.handle('email:test:credentials:forget',(event,selection)=>{authorize(event);return store.forget(selection);});
  ipcMain.handle('email:test:credentials:save',async(event,config)=>{
   authorize(event);
-  const verified=await verifyMailLogins(config);
+  // Reuse only the receiver IMAP secret for the exact same saved mailbox.
+  // No plaintext password is returned to the renderer.
+  let effective=config;
+  if(config?.reuseReceiverCredentials===true&&!String(config.password||'').trim()){
+   const original=store.read({mailbox:config.mailbox});
+   if(!original)throw Error('No saved receiver credentials match this inbox. Enter and verify its app password first.');
+   effective={...config,password:original.password,imapHost:original.imapHost};
+  }
+  const verified=await verifyMailLogins(effective);
   return store.save(verified);
  });
  ipcMain.handle('email:forwarding-test',async(event,request)=>{
