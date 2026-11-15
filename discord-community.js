@@ -2281,6 +2281,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
       const temp = `${panelFile}.${crypto.randomUUID()}.tmp`;
       await fs.writeFile(temp, JSON.stringify(panels), { mode: 0o600 });
       await fs.rename(temp, panelFile);
+      // Retire the former bot-owned DM panel only after the new Admin panel
+      // is safely posted and persisted; never delete unrelated messages.
+      if(key==="owner-drop-controls" && previous?.messageId &&
+         previous.channelId!==channelId){
+        await api(`/channels/${previous.channelId}/messages/${previous.messageId}`,"DELETE")
+          .catch(error=>console.error("Old DM drop panel cleanup:",error.message));
+      }
       await api(`/channels/${channelId}/pins/${message.id}`, "PUT").catch(error => console.error("Discord panel pin:", error.message));
       return message.id;
     });
