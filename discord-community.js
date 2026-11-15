@@ -5360,7 +5360,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
             clearInterval(heartbeat);
             heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
             heartbeat.unref?.();
-            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
+            socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | 4096 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
           if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
           if (packet.op === 7 || packet.op === 9) socket.close();
