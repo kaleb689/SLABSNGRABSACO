@@ -30,7 +30,7 @@ function parseLiveWebhook(message) {
   const source = readFileSync(new URL("../server.js", import.meta.url), "utf8");
   const start = source.indexOf("function discordCheckoutFromMessage(");
   // Stop before the live admin recap route is registered; this VM only evaluates the parser.
-  const end = source.indexOf("registerDirectSourceRecapReview({", start);
+  const end = source.indexOf("const DISCORD_HIT_MIRROR_FILE", start);
   assert.ok(start > 0 && end > start, "extract actual production parser");
   const sandbox = {
     message, channel, parsed: null, discordCheckoutIdentity: checkoutIdentityFromDiscord,
