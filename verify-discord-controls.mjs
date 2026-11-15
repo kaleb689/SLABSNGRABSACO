@@ -11,6 +11,7 @@ import {
   targetMasterDashboard, targetMasterView, targetMasterManage, targetMasterEnsureOwnerRequested
 } from './target-sku-master.js';
 import {isFormattedDropPost} from './drop-monitor-format.js';
+import {addFixedTargetRetail} from './target-sku-fixed-retail.js';
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity, searchTargetPicks,
   pasteTargetPicks, targetPickDiff, targetMasterPicker, targetMasterPickReview
@@ -49,7 +50,7 @@ const deps={fs,path,crypto,dataDir,tonightChannelId,upcomingChannelId:upcoming,r
   skuItemToken:key=>crypto.createHash('sha256').update(key).digest('hex').slice(0,16),skuReminderOwnerPanel,createDropMessageRetention,discordCommunityStatus:{},
   withoutSupersededSkus,mentionedRetailers,retailerAlert,retailerFromDropLabel,isFormattedDropPost,
   TARGET_MASTER_MARKER,initialTargetMaster,targetMasterItems,targetSkuCandidates,targetMessageTime,
-  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,targetMasterEnsureOwnerRequested,
+  targetMasterAdd,targetMasterRemove,targetMasterRestore,targetMasterDashboard,targetMasterView,targetMasterManage,targetMasterEnsureOwnerRequested,addFixedTargetRetail,
   newTargetPickDraft,toggleTargetPick,setTargetPickQuantity,searchTargetPicks,pasteTargetPicks,targetPickDiff,
   targetMasterPicker,targetMasterPickReview,inStoreChannelId:'1551070928039845970',
   dropChannelLabel:id=>deps.retailerDropLabels[id]||(id===tonightChannelId?'Dropping Tonight':'Upcoming Drops')};
@@ -57,7 +58,8 @@ const make = new Function('deps', `const {${Object.keys(deps).join(',')}}=deps; 
 const controls=make(deps);
 try {
   const seedCount = await controls.initializeTargetMaster();
-  assert.equal(seedCount,46,"Owner's approved initial Target master has 46 items");
+  const expectedSeedCount=targetMasterItems(addFixedTargetRetail(targetMasterEnsureOwnerRequested(initialTargetMaster()).master).master).length;
+  assert.equal(seedCount,expectedSeedCount,"Initial Target master includes the approved extra SKUs");
   const masterOriginal = JSON.parse(await fs.readFile(
     path.join(dataDir,'discord-target-sku-master.json'),'utf8'));
   assert.ok(messages.has(masterOriginal.messageId),"Target master dashboard is published in targetskulist");
@@ -78,7 +80,7 @@ try {
   assert.deepEqual(await controls.recordTargetMasterPost(ambiguous,parseDropSkus(ambiguous)),[],
     'mixed retailers must not contaminate the Target master');
   let masterAfter = await controls.loadTargetMaster();
-  assert.equal(targetMasterItems(masterAfter).length,48);
+  assert.equal(targetMasterItems(masterAfter).length,seedCount+2);
   assert.equal(masterAfter.messageId,masterOriginal.messageId,
     'owner master dashboard must be edited, never duplicated');
   // An owner removal remains excluded even when the same post is reprocessed.
