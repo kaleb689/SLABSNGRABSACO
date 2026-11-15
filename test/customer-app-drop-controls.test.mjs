@@ -122,7 +122,7 @@ test('Membership is centered, and the Admin app shows right-side tier badges', (
   const admin=readFileSync(new URL('../public/admin-mobile.js',import.meta.url),'utf8');
   const page=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
   const adminPage=readFileSync(new URL('../public/admin-app.html',import.meta.url),'utf8');
-  assert.match(app,/const navLabels = \['home', 'tracking', 'profile', 'products', 'history'\]/);
+  assert.match(app,/const navLabels = \['home', 'success', 'tracking', 'profile', 'products', 'history'\]/);
   assert.match(app,/profile: 'Membership'/);
   assert.match(app,/if \(view === 'drops'\) html = dropEditor.render\(\)/);
   assert.match(admin,/class="admin-customer-tier-badge"/);
