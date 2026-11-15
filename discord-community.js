@@ -1313,6 +1313,27 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         throw Error("Original Discord guild owner cannot be verified");
       const sourceChannels=sourceGuildId===String(guildId)?channels:
         await api(`/guilds/${sourceGuildId}/channels`);
+      // Report the bot's actual guild-wide permissions without logging any
+      // customer or checkout data. Discord rejects channel creation when
+      // MANAGE_CHANNELS is missing or requested overwrites exceed its rights.
+      try {
+        const member=await api(`/guilds/${sourceGuildId}/members/${appId}`);
+        const ids=new Set([sourceGuildId,...(member?.roles||[]).map(String)]);
+        const assigned=(Array.isArray(sourceGuild?.roles)?sourceGuild.roles:[])
+          .filter(role=>ids.has(String(role.id)));
+        const perms=assigned.reduce((acc,role)=>acc|BigInt(role.permissions||"0"),0n);
+        const status={manageChannels:Boolean(perms&16n),
+          manageRoles:Boolean(perms&(1n<<28n)),
+          viewChannel:Boolean(perms&1024n),sendMessages:Boolean(perms&2048n),
+          administrator:Boolean(perms&8n)};
+        const fingerprint=JSON.stringify(status);
+        if(discordCommunityStatus.sourceBotPermissions!==fingerprint){
+          discordCommunityStatus.sourceBotPermissions=fingerprint;
+          console.log("Original TCG bot effective guild permission flags:",fingerprint);
+        }
+      }catch(error){
+        console.warn("Original TCG bot permission diagnostics unavailable:",error.message);
+      }
       const general=sourceChannels.find(ch=>ch.type===0 &&
         ["general","generalchat"].includes(normalizeName(ch.name)));
       if(!general)throw Error("Original SLABSNGRABSTC server #general is missing");
