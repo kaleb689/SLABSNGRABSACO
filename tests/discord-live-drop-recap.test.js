@@ -190,3 +190,20 @@ test("source parser supports multiple independent product embeds",()=>{
   assert.equal(parsed.items.length,2);
   assert.equal(parsed.items.reduce((n,i)=>n+i.quantity,0),3);
 });
+
+test("legacy recaps from a different Discord general channel cannot post in the member server",async t=>{
+  const h=await harness(t);
+  const oldGeneral="1570500003850354729";
+  await fs.writeFile(path.join(h.dataDir,"discord-live-drop-recaps.json"),JSON.stringify({
+    drops:[{id:"legacy-tcg-post",retailer:"target",
+      startedAt:new Date(startAt-13*3600000).toISOString(),
+      dueAt:new Date(startAt-3600000).toISOString(),
+      status:"scheduled",generalChannelId:oldGeneral}]
+  }));
+  await h.controller.dueRecaps();
+  assert.equal(publicPosts(h).length,0);
+  assert.equal(h.scan.length,0);
+  assert.match(await h.controller.statusText(),/No drops started/);
+  await h.controller.startRetailer("target");
+  assert.equal(publicPosts(h).length,1);
+});
