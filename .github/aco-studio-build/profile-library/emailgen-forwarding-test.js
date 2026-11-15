@@ -208,6 +208,14 @@ async function verifyMailLogins(config,{mail=require('nodemailer'),IMAP=require(
   if(sentConnected)try{await sentBox.logout();}catch{}
  }
 }
+function reuseSavedReceiverCredentials(config,store){
+ if(config?.reuseReceiverCredentials!==true||String(config.password||'').trim())return config;
+ // Owner-only: the stored IMAP secret stays inside the main process and can
+ // only be reused for this EXACT receiver, never another destination.
+ const original=store.read({mailbox:config.mailbox});
+ if(!original)throw Error('No saved receiver credentials match this inbox. Enter and verify its app password first.');
+ return {...config,password:original.password,imapHost:original.imapHost};
+}
 function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeStorage,platform=process.platform}){
  const store=makeMailTestStore({baseDir,safeStorage,platform});
  const authorize=event=>{requireOwner(event);requireCloudflareSession(event);};
@@ -215,15 +223,7 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  ipcMain.handle('email:test:credentials:forget',(event,selection)=>{authorize(event);return store.forget(selection);});
  ipcMain.handle('email:test:credentials:save',async(event,config)=>{
   authorize(event);
-  // Reuse only the receiver IMAP secret for the exact same saved mailbox.
-  // No plaintext password is returned to the renderer.
-  let effective=config;
-  if(config?.reuseReceiverCredentials===true&&!String(config.password||'').trim()){
-   const original=store.read({mailbox:config.mailbox});
-   if(!original)throw Error('No saved receiver credentials match this inbox. Enter and verify its app password first.');
-   effective={...config,password:original.password,imapHost:original.imapHost};
-  }
-  const verified=await verifyMailLogins(effective);
+  const verified=await verifyMailLogins(reuseSavedReceiverCredentials(config,store));
   return store.save(verified);
  });
  ipcMain.handle('email:forwarding-test',async(event,request)=>{
@@ -241,4 +241,4 @@ function register({ipcMain,requireOwner,requireCloudflareSession,baseDir,safeSto
  });
  return {store};
 }
-module.exports={validate,testForwarding,verifyMailLogins,register,moveExactTestsToTrash,cleanSentCopies};
+module.exports={validate,testForwarding,verifyMailLogins,register,moveExactTestsToTrash,cleanSentCopies,reuseSavedReceiverCredentials};
