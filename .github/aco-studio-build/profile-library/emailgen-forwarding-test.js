@@ -22,7 +22,7 @@ function fallbackBoxes(boxes){
 // delivery merely because SMTP accepted a send, or a message arrived.
 const RECEIPT_SCAN_LOOKBACK_MS=5*60*1000;
 const MAX_RECEIPT_SCAN_IDS=160;
-const MAX_RECEIPT_SOURCE_BYTES=65536;
+const MAX_RECEIPT_SOURCE_BYTES=32768;
 const BOUNCE_SUBJECT=/(?:delivery (?:failure|status|notification)|undeliverable|mail delivery (?:failed|subsystem)|message (?:rejected|not delivered)|cloudflare email routing.*(?:missing|fail|error|reject))/i;
 const BOUNCE_SENDER=/(?:mailer-daemon|postmaster|bounce|delivery-status)/i;
 function isDeliveryFailure(message,parsed){
@@ -69,7 +69,7 @@ async function scanCurrentMailboxForExactMarkers(imap,sent,{started,now,onProgre
   if(isDeliveryFailure(message))continue;
   const source=Buffer.isBuffer(message.source)?message.source:null;
   let match=matchExactMarker(message.envelope?.subject,source,expected);
-  if(!match&&source&&typeof parseSource==='function'){
+  if(!match&&source&&typeof parseSource==='function'&&/content-transfer-encoding\s*:\s*(?:base64|quoted-printable)/i.test(source.toString('latin1',0,8192))){
    try{
     const parsed=await parseSource(source);
     if(!isDeliveryFailure(message,parsed))
