@@ -7,7 +7,7 @@ const app=readFileSync(new URL("../public/app-dashboard.js",import.meta.url),"ut
 const styles=readFileSync(new URL("../public/app-dashboard.css",import.meta.url),"utf8");
 
 test("Customer app has a dedicated Success nav tab without removing current features",()=>{
-  assert.match(app,/const navLabels = \['home', 'success', 'tracking', 'profile', 'products', 'history'\]/);
+  assert.match(app,/const navLabels = \['home', 'success', 'tracking', 'profile', 'products', 'history'(?:, 'messages')?\]/);
   assert.match(app,/success: 'success'/);
   assert.match(app,/if \(view === 'success'\)/);
   assert.match(app,/if \(view === 'drops'\) html = dropEditor\.render\(\)/);
