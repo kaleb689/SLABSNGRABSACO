@@ -14,12 +14,12 @@ export function cleanSupportText(value) {
     Error("Use 1 to "+MAX_TEXT+" characters."),{status:400});
   return text;
 }
-export function resolveOwnerSupportReply(message,threads,accounts) {
+export function resolveOwnerSupportReply(message,threads,accounts,botId=null) {
   const content=String(message?.content||"");
+  // Discord may implicitly add the replied-to BOT to mentions. Only
+  // explicit @mentions in the typed content address customers.
   const inText=[...content.matchAll(/<@!?(\d{17,22})>/g)].map(row=>row[1]);
-  const inMentions=(message?.mentions||[]).map(row=>String(row.id||""))
-    .filter(id=>SNOWFLAKE.test(id));
-  const ids=[...new Set([...inText,...inMentions])];
+  const ids=[...new Set(inText.filter(id=>id!==String(botId||"")))];
   if(ids.length>1)return null;
   const reference=String(message?.message_reference?.message_id||"");
   const fromReference=reference?Object.entries(threads||{}).find(([,thread])=>
@@ -141,7 +141,7 @@ export function createCustomerMessageBridge({dataDir,getAccounts,notifyReply,pos
         await load();
         if(store.seen[id])return store.seen[id];
         const accounts=await getAccounts();
-        const target=resolveOwnerSupportReply(message,store.threads,accounts);
+        const target=resolveOwnerSupportReply(message,store.threads,accounts,config.botId);
         if(!target)return null;
         const conversation=thread(target.accountId);
         const row={id:crypto.randomUUID(),role:"owner",text:target.text,
