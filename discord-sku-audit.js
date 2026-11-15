@@ -1,13 +1,13 @@
 // Pure, privacy-minimized audit batches for confirmed Discord SKU interactions.
 // Old selections are never backfilled or represented as historical evidence.
-const snowflake = value => /^\\d{17,22}$/.test(String(value || ""));
+const snowflake = value => /^\d{17,22}$/.test(String(value || ""));
 const clean = (value, max = 100) => String(value ?? "").trim().slice(0, max);
 const qty = value => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.min(2, Math.floor(n))) : 0;
 };
 const sourceOf = row => {
-  const m = /^(\\d{17,22}):(\\d{17,22}):/.exec(clean(row?.key, 180));
+  const m = /^(\d{17,22}):(\d{17,22}):/.exec(clean(row?.key, 180));
   return {channelId:m?.[1] || null,sourceMessageId:m?.[2] || null};
 };
 export function safeSkuAuditItems(items) {
