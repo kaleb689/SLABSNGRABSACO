@@ -123,3 +123,38 @@ test('Batch deletion refuses retailer-assigned records even if they are generate
  assert.match(app,/localStorage\.setItem\(backupKey,previous\)/);
  assert.doesNotMatch(app.slice(app.indexOf(' function reviewEmailBatchDeletion'),app.indexOf(' function setupEmailBatchUI')),/api\(\)\.publish/);
 });
+
+test('Removing one unassigned generated email keeps other batches and original encrypted backup',async()=>{
+ const rows=[
+  {alias:'failed@sng.sarl',randomGenerated:true,batchId:'bad',batchCreatedAt:'2026-11-12T15:00:00Z',status:'draft',target:'inbox@gmail.com'},
+  {alias:'good@sng.sarl',randomGenerated:true,batchId:'bad',batchCreatedAt:'2026-11-12T15:00:00Z',status:'live',target:'inbox@gmail.com'},
+  {alias:'new@sng.sarl',randomGenerated:true,batchId:'new',batchCreatedAt:'2026-11-13T15:00:00Z',status:'draft',target:'inbox@gmail.com'}
+ ];
+ const old='encrypted-before-removal',storage=new Map([['email.bank',old]]);
+ const controls=new Map(),get=id=>{
+  if(!controls.has(id))controls.set(id,{textContent:'',hidden:false,checked:false,value:''});
+  return controls.get(id);
+ };
+ const ctx={records:rows,randomGenBusy:false,unlocked:true,mailTestState:{active:false},
+  requireOwner(){},Date,Set,Map,KEY:'email.bank',crypto:{getRandomValues:b=>{b.fill(8);return b;}},
+  localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},
+  $e:get,refreshEmailBatchUI:()=>{},RANDOM_RETAILERS:{target:'Target'},
+  store:async()=>{storage.set('email.bank','encrypted-after-removal');return true;}};
+ vm.createContext(ctx);
+ const end=app.indexOf(' function setupEmailBatchUI(){',start);
+ vm.runInContext(app.slice(start,end)+
+  ";refreshEmailBatchUI=()=>{};emailBatchState.key='batch:bad';emailBatchState.selected=new Set(['failed@sng.sarl']);this.reviewOne=reviewEmailBatchRemoveOne;this.removeOne=confirmEmailBatchRemoveOne;",ctx);
+ ctx.reviewOne();
+ assert.match(get('emailBatchRemoveOneSummary').textContent,/failed@sng.sarl/);
+ assert.equal(rows.length,3);
+ get('emailBatchRemoveOneTyped').value='DELETE';get('emailBatchRemoveOneAcknowledge').checked=true;
+ await ctx.removeOne();
+ assert.deepEqual(rows.map(r=>r.alias),['good@sng.sarl','new@sng.sarl']);
+ assert.ok([...storage.keys()].some(k=>k.startsWith('email.bank.single-email-delete-backup.')));
+ assert.ok([...storage.values()].includes(old));
+});
+test('Single-email removal rejects any address assigned to a retailer pool',()=>{
+ assert.match(app,/if\\(row.poolTarget\\|\\|row.poolImportedAt\\)throw Error/);
+ assert.match(html,/id="emailBatchRemoveOneConfirmArea"/);
+ assert.match(html,/id="emailBatchRemoveOneTyped"/);
+});
