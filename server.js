@@ -12774,7 +12774,18 @@ async function announceThanksgivingOfferOnce() {
   const promotion = await stripe.promotionCodes.retrieve(record.stripePromotionCodeId);
   if (!promotion.active) return false;
 
-  const channels = await referralDiscordChannels();
+  // Posts go to the paid-member ACO guild, not the TCG Success guild.
+  const memberGuildId = "1551070928039845929";
+  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
+  if (!token) throw new Error("Discord bot is not configured.");
+  const guildChannels = await fetch("https://discord.com/api/v10/guilds/" +
+    memberGuildId + "/channels", {
+      headers: {Authorization: "Bot " + token},
+      signal: AbortSignal.timeout(12000)
+    });
+  if (!guildChannels.ok) throw new Error("ACO member announcement channel lookup failed (HTTP " + guildChannels.status + ").");
+  const channels = await guildChannels.json();
+  if (!Array.isArray(channels)) throw new Error("Discord did not return the ACO member server channels.");
   const importantCategory = channels.find(x => x.type === 4 &&
     discordChannelLabel(x.name) === "important");
   const candidates = channels.filter(x => [0, 5].includes(x.type) &&
@@ -12784,8 +12795,8 @@ async function announceThanksgivingOfferOnce() {
     (candidates.length === 1 ? candidates[0] : null);
   if (!destination) throw new Error("ACO #announcements channel not found unambiguously; no message sent.");
 
-  const token = String(process.env.DISCORD_BOT_TOKEN || "").trim();
-  if (!token) throw new Error("Discord bot is not configured.");
+  if (String(destination.guild_id) !== memberGuildId)
+    throw new Error("Announcement channel is not in the ACO member server.");
   const url = "https://discord.com/api/v10/channels/" + destination.id + "/messages";
   const headers = {Authorization: "Bot " + token};
   // If an earlier attempt reached Discord but could not persist the receipt,
