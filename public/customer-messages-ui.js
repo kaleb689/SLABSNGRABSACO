@@ -22,6 +22,7 @@
     unread.hidden=!value;
     unread.textContent=value>0?String(value):"";
     unread.setAttribute("aria-label",value?value+" unread support replies":"No unread replies");
+    document.dispatchEvent(new CustomEvent("customer-message-unread-changed",{detail:{unread:value}}));
   }
   function render(rows) {
     const safe=Array.isArray(rows)?rows:[];
