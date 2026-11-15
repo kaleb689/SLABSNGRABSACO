@@ -229,6 +229,7 @@
     const destinations = [
       ["Membership", "membership", "◇"], ["Success", "success", "✓"],
       ["Orders", "orders", "▤"], ["Profiles", "edit-profile", "◎"],
+       ["Messages", "messages", "✉"],
       ["Notifications", "notifications", "♧"], ["Security", "security", "⚙"]
     ];
     for (const [label, tab, icon] of destinations) {
@@ -260,7 +261,7 @@
     if (signedIn() && !initialAppTabApplied) {
       initialAppTabApplied = true;
       const tab = new URLSearchParams(location.search).get("appTab");
-      if (["success", "membership", "notifications"].includes(tab)) setTimeout(() => document.querySelector(`button[data-account-tab="${tab}"]`)?.click(), 0);
+      if (["success", "membership", "notifications", "messages"].includes(tab)) setTimeout(() => document.querySelector(`button[data-account-tab="${tab}"]`)?.click(), 0);
     }
     if (!nav) return;
     if (nav.hidden !== !signedIn()) nav.hidden = !signedIn();
@@ -270,6 +271,12 @@
       link.classList.toggle("active", Boolean(active));
       if (active) link.setAttribute("aria-current", "page");
       else link.removeAttribute("aria-current");
+      if (link.dataset.appTab === "messages") {
+        const counter=document.getElementById("account-messages-unread");
+        const pending=counter&&!counter.hidden;
+        link.classList.toggle("has-notifications",Boolean(pending));
+        link.setAttribute("aria-label",pending?"Messages, unread support reply":"Messages");
+      }
       if (link.dataset.appTab === "notifications") {
         const light = document.getElementById("account-notification-light");
         const unread = light && !light.classList.contains("clear");
@@ -280,5 +287,6 @@
   }
   if (dashboard) new MutationObserver(sync).observe(dashboard, { attributes: true, subtree: true, attributeFilter: ["hidden", "class"] });
   window.addEventListener("hashchange", sync);
+  document.addEventListener("customer-message-unread-changed", sync);
   sync();
 })();
