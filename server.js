@@ -13,6 +13,7 @@ import { registerStudioCustomerRoutes } from "./server-studio-customer-sync.js";
 import { giftedBillingWindow } from "./membership-gift-billing.js";
 import { requestedMembershipExtension, requestedMembershipDuration, requestedMaximumMembershipExtension } from "./membership-extension-billing.js";
 import {registerMembershipExtensionCommerce} from "./membership-extension-commerce.js";
+import { validateThanksgivingPromotionSetup } from "./thanksgiving-2026.js";
 import {registerPoolAlertMonitoring} from "./pool-availability-alerts.js";
 import { stripeMembershipRevenue } from "./stripe-membership-revenue.js";
 import express from "express";
@@ -53,6 +54,8 @@ import { adminVerifiedReceiptTotal } from "./checkout-admin-receipt-policy.js";
 import { collectDiscordCheckoutPages } from "./discord-source-history.js";
 import { updateMatchingImap, effectiveAdminImap } from "./imap-credential-sync.js";
 import { correctedMembershipPrice } from "./membership-prices.js";
+import { approvedUpcomingSchedule } from "./membership-thanksgiving-2026.js";
+import { qualifiesForPaidReferral, referralProfileAllowance, nextPermanentReferralBonus } from "./referral-lifetime-policy.js";
 import { mailboxFailureReason, normalizeImapPassword, protectImapClient, savedSuccessMailboxes } from "./mailbox-sync.js";
 import Stripe from "stripe";
 import { authenticator } from "otplib";
@@ -356,14 +359,14 @@ const PLANS = {
   6: {
     name: "Power User",
     profiles: 20,
-    amount: 225,
+    amount: 150,
     priceId: process.env.STRIPE_TIER6_PRICE_ID
   },
 
   7: {
     name: "Elite",
     profiles: 50,
-    amount: 435,
+    amount: 290,
     priceId: process.env.STRIPE_TIER7_PRICE_ID
   },
 
@@ -375,6 +378,14 @@ const PLANS = {
   }
 };
 
+const NOV28_PRICE_EFFECTIVE_AT = Date.parse("2026-11-28T05:00:00.000Z");
+const NOV28_MEMBERSHIP_PRICES = Object.freeze({1:20,2:35,3:55,4:95,5:170,6:210,7:410,8:1135});
+function activateNov28MembershipPricing(now = Date.now()) {
+  if (now < NOV28_PRICE_EFFECTIVE_AT) return false;
+  for (const [tier, amount] of Object.entries(NOV28_MEMBERSHIP_PRICES)) PLANS[tier].amount = amount;
+  return true;
+}
+activateNov28MembershipPricing();
 const CUSTOMER_RENTAL_RETAILERS = new Set(["pokemoncenter"]);
 
 const RENTAL_PACKAGES = {
@@ -4852,10 +4863,10 @@ async function notifyReferralSignup(account) {
 }
 
 async function notifyReferralAward(account, referrer) {
-  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). A one-month gifted profile reward was granted.`);
+  await sendPrivateReferralNotice(`Referral confirmed: ${account.email} was referred by @${referrer.discordUsername} (${referrer.discordUserId}). ${account.referralRewardType === "membership_lifetime_bonus" ? "One additional ACO profile was earned for the remainder of the referrer\u0027s active paid membership." : "A historical one-month gifted profile reward was granted."}`);
 }
 
-async function announceReferralReward(referrer) {
+async function announceReferralReward(referrer, referred) {
   const channels = await referralDiscordChannels();
   const general = channels.find(item => item.type === 0 && discordChannelLabel(item.name) === "general");
   if (!general) throw new Error("Discord General channel is unavailable.");
@@ -4864,10 +4875,10 @@ async function announceReferralReward(referrer) {
     signal: AbortSignal.timeout(12000)
   });
   if (!member.ok) throw new Error(`Referral member is not currently available in Discord (HTTP ${member.status}).`);
-  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> Thank you for the referral. You have received your free profile for 1 month`, [String(referrer.discordUserId)]);
+  await sendDiscordReferralMessage(general.id, `<@${referrer.discordUserId}> ${referred?.referralRewardType === "membership_lifetime_bonus" ? "Thank you for the referral! You earned +1 ACO profile for the duration of your active paid membership." : "Thank you for the referral. You have received your free profile for 1 month."}`, [String(referrer.discordUserId)]);
 }
 
-const REFERRAL_REWARD_MESSAGE = "Thank you for the referral. You have received your free profile for 1 month";
+const REFERRAL_REWARD_MESSAGE = "Referral confirmed: +1 ACO profile for every successful new paid signup using your Discord username, retained while your paid membership remains active.";
 
 async function assignReferralRewardProfiles(referralId) {
   const gifts = await getGiftedMemberships();
@@ -4940,6 +4951,12 @@ async function assignReferralRewardProfiles(referralId) {
 async function processPendingReferrals() {
   const accounts = await getCustomerAccounts();
   for (const account of accounts) {
+    // A referral counts only after a verified new member becomes PAID.
+    // Retry pending referrals, idempotently, after Stripe webhook confirmation.
+    if (account.referredByAccountId && account.emailVerifiedAt && !account.referralAwardedAt) {
+      try { if (await awardVerifiedReferral(account)) continue; }
+      catch (error) { console.error("Pending paid referral award:", error.message); }
+    }
     if (account.referralAwardedAt) {
       try { await assignReferralRewardProfiles(account.id); }
       catch (error) { console.error("Referral managed profile assignment:", error.message); }
@@ -4967,7 +4984,7 @@ async function processPendingReferrals() {
       }
       if (!account.referralAnnouncementAt) {
         try {
-          await announceReferralReward(referrer);
+          await announceReferralReward(referrer, account);
           account.referralAnnouncementAt = new Date().toISOString();
           await saveCustomerAccounts(accounts);
         } catch (error) {
@@ -4979,30 +4996,38 @@ async function processPendingReferrals() {
 }
 
 async function awardVerifiedReferral(account) {
-  if (!account.emailVerifiedAt || !account.referredByAccountId || account.referralAwardedAt) return false;
+  if (!account?.emailVerifiedAt || !account?.referredByAccountId || account.referralAwardedAt) return false;
   const accounts = await getCustomerAccounts();
-  const referred = accounts.find(item => item.id === account.id);
-  const referrer = accounts.find(item => item.id === account.referredByAccountId && item.discordLinkedAt && item.discordUserId && item.disabled !== true);
-  if (!referred || !referrer || referred.id === referrer.id || referred.referralAwardedAt) return false;
-  const grants = await getGiftedMemberships();
-  if (grants.some(item => item.referralSourceAccountId === referred.id)) return false;
-  const now = new Date();
-  const end = new Date(now);
-  end.setUTCMonth(end.getUTCMonth() + 1);
-  grants.push({ id: crypto.randomUUID(), customerAccountId: referrer.id,
-    customerEmail: referrer.email || "", tier: 1, tierName: "Referral reward",
-    profiles: 3, months: 1, startsAt: now.toISOString(), expiresAt: end.toISOString(),
-    createdAt: now.toISOString(), createdBy: "referral", referralSourceAccountId: referred.id });
-  await saveGiftedMemberships(grants);
+  const referred = accounts.find(item => String(item.id) === String(account.id));
+  const referrer = accounts.find(item => String(item.id) === String(account.referredByAccountId));
+  const paid = await readJson(PAID_FILE, []);
+  if (!qualifiesForPaidReferral(referred, referrer, paid, subscriptionAllowsProfiles)) return false;
+  // One additional profile requires an ACTIVE paid referrer too. The reward
+  // remains on their record and is disabled automatically while they lapse.
+  const referrerPaid = (Array.isArray(paid) ? paid : []).find(record =>
+    String(record.customerAccountId) === String(referrer.id) && subscriptionAllowsProfiles(record));
+  if (!referrerPaid) return false;
+  // Never double-award an older, already granted one-month referral.
+  const historicalGrants = await getGiftedMemberships();
+  if (historicalGrants.some(item => String(item.referralSourceAccountId) === String(referred.id))) return false;
+  const now = new Date().toISOString();
+  referrer.referralBonusProfiles = nextPermanentReferralBonus(referrer.referralBonusProfiles);
+  referred.referralAwardedAt = now;
+  referred.referralRewardType = "membership_lifetime_bonus";
   const notes = customerNotifications(referrer);
   if (!notes.some(item => item.kind === "referral_reward" && item.referralSourceAccountId === referred.id)) {
-    notes.push({ id: crypto.randomUUID(), kind: "referral_reward", title: "Referral reward",
+    notes.push({ id: crypto.randomUUID(), kind: "referral_reward",
+      title: "Your permanent membership referral profile",
       message: REFERRAL_REWARD_MESSAGE, referralSourceAccountId: referred.id,
-      createdAt: now.toISOString(), updatedAt: now.toISOString() });
+      createdAt: now, updatedAt: now });
   }
-  referred.referralAwardedAt = now.toISOString();
   await saveCustomerAccounts(accounts);
-  void processPendingReferrals().catch(error => console.error("Referral announcement:", error.message));
+  // Reuse the regular Target/PKC pool provisioner, which never auto-assigns
+  // Walmart, so the earned slot gets populated whenever inventory permits.
+  if (referrerPaid.autoPoolProvisioningRequestedAt) {
+    void queuePaidPoolAutoAssignment(() => provisionPaidMembershipPool(referrerPaid))
+      .catch(error => console.error("Referral bonus pool provision:", error.message));
+  }
   return true;
 }
 
@@ -7108,7 +7133,8 @@ async function provisionPaidMembershipPool(record) {
  const customerAccountId=String(record.customerAccountId);
  const customer=(await getCustomerAccounts()).find(a=>String(a.id)===customerAccountId);
  if(!customer)return;
- const quantity=Math.min(100,Math.max(0,profileAllowanceForRecord(record)));
+ const earnedBonus=Math.max(0,Number(customer.referralBonusProfiles)||0);
+ const quantity=Math.max(0,profileAllowanceForRecord(record))+earnedBonus;
  if(!quantity)return;
  const retailers=["target","pokemoncenter"]; // NEVER automatically link Walmart.
  const reservedJigs=new Set();
@@ -12635,6 +12661,118 @@ async function saveDiscountCodes(records) {
   await writeJson(DISCOUNT_CODES_FILE, records);
 }
 
+// Owner-approved Thanksgiving 2026 sale. Stripe + website creation is idempotent.
+const THANKS25_START_AT = "2026-11-15T22:00:00.000Z"; // Nov 15 at 5 PM Eastern
+const THANKS25_END_AT = "2026-11-28T05:00:00.000Z";   // Nov 27 at 11:59 PM Eastern
+const THANKS25_COUPON_ID = "SNG_THANKS25_SIX_MONTHS_2026";
+
+async function ensureThanksgivingPromotionConfigured() {
+  if (Date.now() >= Date.parse(THANKS25_END_AT)) return false;
+  const existing = (await getDiscountCodes()).find(x => x.code === "THANKS25");
+  if (existing?.stripeCouponId && existing?.stripePromotionCodeId) {
+    validateThanksgivingPromotionSetup(existing);
+    const coupon = await stripe.coupons.retrieve(existing.stripeCouponId);
+    if (coupon.percent_off !== 25 || coupon.duration !== "repeating" ||
+        coupon.duration_in_months !== 6) {
+      throw new Error("Existing THANKS25 coupon terms differ from approved six-month limit.");
+    }
+    return true;
+  }
+  if (existing) throw new Error("Incomplete THANKS25 record requires manual reconciliation.");
+  const priceIds = Object.values(PLANS).map(x => x.priceId).filter(Boolean);
+  if (priceIds.length !== 8) throw new Error("THANKS25 requires eight verified Stripe membership prices.");
+  const prices = await Promise.all(priceIds.map(id => stripe.prices.retrieve(id)));
+  const productIds = [...new Set(prices.map(price =>
+    typeof price.product === "string" ? price.product : price.product?.id).filter(Boolean))];
+  if (!productIds.length) throw new Error("THANKS25 membership product IDs unavailable.");
+  let coupon;
+  try {
+    coupon = await stripe.coupons.retrieve(THANKS25_COUPON_ID);
+  } catch (error) {
+    if (error?.code !== "resource_missing") throw error;
+    coupon = await stripe.coupons.create({
+      id: THANKS25_COUPON_ID, name: "SNG Thanksgiving 2026 - 25%",
+      percent_off: 25, duration: "repeating", duration_in_months: 6,
+      applies_to: { products: productIds },
+      metadata: { sng_promotion: "thanksgiving_2026", sng_max_extension_months: "6" }
+    }, { idempotencyKey: "sng-thanks25-2026-six-months" });
+  }
+  if (coupon?.percent_off !== 25 || coupon?.duration !== "repeating" ||
+      coupon?.duration_in_months !== 6)
+    throw new Error("THANKS25 coupon does not match 25% for six recurring months.");
+  const matchingCodes = await stripe.promotionCodes.list({ code: "THANKS25", limit: 100 });
+  if (matchingCodes.has_more) throw new Error("Incomplete THANKS25 Stripe code search.");
+  let promotion = matchingCodes.data.find(p =>
+    String(p.coupon?.id || p.coupon || "") === coupon.id);
+  if (!promotion && matchingCodes.data.length)
+    throw new Error("A conflicting THANKS25 Stripe promotion exists.");
+  if (!promotion) {
+    promotion = await stripe.promotionCodes.create({
+      coupon: coupon.id, code: "THANKS25",
+      active: Date.now() >= Date.parse(THANKS25_START_AT),
+      expires_at: Math.floor(Date.parse(THANKS25_END_AT) / 1000)
+    }, { idempotencyKey: "sng-thanks25-promo-2026" });
+  }
+  const record = {
+    id: "thanksgiving-2026-sitewide-25", code: "THANKS25", percent: 25,
+    discountType: "percent", discountScope: "both", discountLabel: "Thanksgiving 2026",
+    tier: "all", sitewide: true, ogOnly: false, recipientEmail: null,
+    appliesToRentals: false, duration: "repeating", durationMonths: 6,
+    extensionDiscountMonths: 6, startsAt: THANKS25_START_AT, expiresAt: THANKS25_END_AT,
+    active: true, maxUses: null, usesBeforeCurrentCoupon: 0,
+    stripeCouponId: coupon.id, stripePromotionCodeId: promotion.id,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+  };
+  validateThanksgivingPromotionSetup(record);
+  const records = await getDiscountCodes();
+  if (records.some(x => x.code === "THANKS25")) throw new Error("Concurrent THANKS25 creation detected.");
+  records.push(record);
+  await saveDiscountCodes(records);
+  console.log("Thanksgiving 2026 configured:", JSON.stringify({
+    code: record.code, durationMonths: 6, endsAt: record.expiresAt
+  }));
+  return true;
+}
+
+const THANKSGIVING_DISCORD_ANNOUNCEMENT = [
+  "🦃 **SLABSNGRABSACO THANKSGIVING SALE + MEMBERSHIP NEWS**",
+  "",
+  "**25% OFF: THANKS25**",
+  "Use code \`THANKS25\` for new memberships and paid extensions, ending **November 27, 2026 at 11:59 PM ET**. The discount is limited to **six months maximum**: 1–6 prepaid months or the first six monthly payments on a new subscription. No seventh discounted month.",
+  "",
+  "**NEW RATES NOVEMBER 28**",
+  "Regular membership prices increase 42% before rounding **DOWN to the nearest $5**:",
+  "Starter $15 → $20 | Intermediate $25 → $35 | Advanced $40 → $55 | Pro $70 → $95",
+  "High Volume $120 → $170 | Power User $150 → $210 | Elite $290 → $410 | Ultimate $800 → $1,135",
+  "",
+  "**OG MEMBERS:** Our six approved original members keep OG status and receive a **permanent 10% discount on their monthly renewals**. Discounts never stack: eligible OG members receive the larger 25% Thanksgiving offer when applicable, with their 10% OG benefit remaining afterward.",
+  "",
+  "**REFERRALS:** When a new member joins using your linked Discord username, verifies their account and pays, you earn **+1 ACO profile** for the duration of your active paid membership.",
+  "",
+  "Visit the website to view membership prices, extend your plan or upgrade."
+].join("\n");
+
+async function announceThanksgivingOfferOnce() {
+  if (Date.now() < Date.parse(THANKS25_START_AT) ||
+      Date.now() >= Date.parse(THANKS25_END_AT)) return false;
+  const sentFile = path.join(DATA_DIR, "thanksgiving-2026-discord-announcement.json");
+  if ((await readJson(sentFile, {})).sentAt) return false;
+  const record = (await getDiscountCodes()).find(x => x.code === "THANKS25" && x.active &&
+    x.stripePromotionCodeId && Date.parse(x.startsAt) <= Date.now() &&
+    Date.parse(x.expiresAt) > Date.now());
+  if (!record) return false;
+  const promotion = await stripe.promotionCodes.retrieve(record.stripePromotionCodeId);
+  if (!promotion.active) return false;
+  const channels = await referralDiscordChannels();
+  const general = channels.find(x => x.type === 0 && discordChannelLabel(x.name) === "general");
+  if (!general) throw new Error("Discord #general is unavailable.");
+  await sendDiscordReferralMessage(general.id, THANKSGIVING_DISCORD_ANNOUNCEMENT, []);
+  await writeJson(sentFile, { sentAt: new Date().toISOString(), channelId: general.id, code: "THANKS25" });
+  console.log("Thanksgiving 2026 sale announcement sent to Discord #general.");
+  return true;
+}
+
+
 // Consult Stripe for limits on currently redeemable codes. Local records
 // preserve historical use counts if a code's coupon is edited/replaced.
 const activatedScheduledPromotionCodes=new Set();
@@ -14128,11 +14266,11 @@ async function getCustomerProfileAllowance(
   const referralAllowance = activeGifts
     .filter(item => item.createdBy === "referral")
     .reduce((sum, item) => sum + Math.max(0, Number(item.profiles) || 0), 0);
-  const baseAllowance = Math.max(paidAllowance, giftedAllowance) + referralAllowance;
-  if (!baseAllowance) return 0;
   const customer = (await getCustomerAccounts()).find(item => String(item.id) === String(accountId));
-  const bonus = Math.max(0, Number(customer?.referralBonusProfiles) || 0);
-  return Math.min(100, baseAllowance + bonus);
+  return referralProfileAllowance({
+    paidAllowance, giftedAllowance, legacyReferralAllowance: referralAllowance,
+    earnedReferralBonus: customer?.referralBonusProfiles
+  });
 }
 
 function customerVisibleProfile(record = {}) {
@@ -16646,12 +16784,19 @@ app.get("/api/public/membership-discounts", async (req, res) => {
   for (const tier of Object.keys(PLANS)) {
     const sale = activeSitewideDiscount(records, tier);
     if (sale) discounts[tier] = {
-      percent: sale.percent, duration: sale.duration,
+      code: sale.code, percent: sale.percent, duration: sale.duration,
+      durationMonths: sale.durationMonths, endsAt: sale.expiresAt || null,
       ...(sale.discountType === "fixed-price" ? { fixedPrice: sale.fixedPrice } : {})
     };
   }
+  // The 42% proposed increase is informational and NEVER changes Stripe.
+  // Do not publish an upcoming price until the owner explicitly approves it
+  // and the separately scheduled billing migration has been reviewed.
+  const upcoming = approvedUpcomingSchedule(PLANS, {
+    approved: process.env.SNG_NOV28_UPCOMING_PRICE_DISPLAY_APPROVED === "true"
+  });
   res.set("Cache-Control", "no-store");
-  return res.json({ discounts });
+  return res.json({ discounts, ...(upcoming ? { upcoming } : {}) });
 });
 
 // Remove a customer from the website, the ACO Studio app and admin rosters.
@@ -16771,6 +16916,17 @@ async function saveAdminDiscount(req, res, existingId = null) {
     const expiration = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
     if (startsAt && expiration && expiration <= startsAt)
       return res.status(400).json({error:"The discount expiration must be after its start time."});
+    // Thanksgiving 25% applies to at most SIX months (signup and prepaid
+    // extension). Reject malformed configurations before any Stripe writes.
+    try {
+      validateThanksgivingPromotionSetup({
+        code,discountScope,discountType,percent:requestedPercent,duration,durationMonths,
+        extensionDiscountMonths,sitewide,ogOnly,recipientEmail,appliesToRentals,
+        tier,startsAt:startsAt?.toISOString(),expiresAt:expiration?.toISOString()
+      });
+    } catch (error) {
+      return res.status(400).json({error:error.message});
+    }
     if (!/^[A-Z0-9]{3,40}$/.test(code) ||
         (tier !== "all" && !PLANS[tier]) ||
         (expiration && (!Number.isFinite(expiration.getTime()) || expiration.getTime() <= Date.now()))) {
@@ -50936,6 +51092,29 @@ await initializeArrayFile(
     await migrateCustomerJigs();
 
     await synchronizeMembershipPrices();
+    try {
+      await ensureThanksgivingPromotionConfigured();
+    } catch (error) {
+      console.error("Thanksgiving 2026 startup promotion setup:", error?.message || error);
+    }
+    // Retry approved Nov 28 price activation until all eight Stripe tier prices
+    // have been reconciled, without altering existing subscriptions.
+    let nov28PricingUpdated = Date.now() >= NOV28_PRICE_EFFECTIVE_AT;
+    const nov28PricingTimer = setInterval(async () => {
+      if (nov28PricingUpdated || Date.now() < NOV28_PRICE_EFFECTIVE_AT) return;
+      try {
+        activateNov28MembershipPricing();
+        await synchronizeMembershipPrices();
+        if (Object.values(PLANS).every(plan => Boolean(plan.priceId))) {
+          nov28PricingUpdated = true;
+          broadcastLiveDataChange("membership-pricing-updated");
+          console.log("November 28 membership prices now active.");
+        }
+      } catch (error) {
+        console.error("November 28 pricing activation:", error?.message || error);
+      }
+    }, 60000);
+    nov28PricingTimer.unref?.();
 
     await appOrderNotifications.initialize();
 
@@ -50968,9 +51147,13 @@ await initializeArrayFile(
         void reconcileOg();
         const ogReconcileTimer = setInterval(reconcileOg, 6 * 60 * 60 * 1000);
         ogReconcileTimer.unref?.();
-        void activateStartedScheduledPromotions().catch(error=>console.error("Initial promotion activation:",error?.message));
+        void activateStartedScheduledPromotions()
+          .then(() => announceThanksgivingOfferOnce())
+          .catch(error => console.error("Initial promotion activation/announcement:", error?.message));
         const scheduledPromotionCheck=setInterval(()=>{
-          void activateStartedScheduledPromotions().catch(error=>console.error("Scheduled promotion check:",error?.message));
+          void activateStartedScheduledPromotions()
+            .then(() => announceThanksgivingOfferOnce())
+            .catch(error => console.error("Scheduled promotion check/announcement:", error?.message));
         },60*1000);
         scheduledPromotionCheck.unref?.();
         startShippingTrackerScheduler();
