@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload } from "./drop-sku-alerts.js";
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
-import { parseMonitorDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
+import { parseMonitorDropProducts, parseSkuStockDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
 import {applyApprovedDiscordBotAvatar} from "./discord-bot-avatar.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
@@ -24,7 +24,7 @@ import {
   targetMasterDashboard, targetMasterView, targetMasterManage
 } from "./target-sku-master.js";
 import { applyAuthorizedSkuPrices, fetchAuthorizedSkuPriceFeed, fetchTcgcsvPokemonMarket, applyTcgcsvPokemonMarket } from "./target-sku-pricing.js";
-import { addFixedTargetRetail } from "./target-sku-fixed-retail.js";
+import { addFixedTargetRetail, withVerifiedTargetRetail } from "./target-sku-fixed-retail.js";
 import {
   newTargetPickDraft, toggleTargetPick, setTargetPickQuantity,
   searchTargetPicks, pasteTargetPicks, targetPickDiff,
@@ -361,6 +361,7 @@ export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
   if(!raw || raw.pinned || String(raw.author?.id)!==String(ownerId) ||
       raw.author?.bot || raw.webhook_id) return false;
   let original=parseMonitorDropProducts(raw);
+  if(!original.length)original=parseSkuStockDropProducts(raw).products;
   if(!original.length){const news=parseDropNews(raw);if(isDropNewsPaste(news))original=news.products;}
   if(!original.length)return false;
   const at=message=> {
@@ -4055,6 +4056,21 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const drafts=await readSkuFile(skuDraftsFile);
     return Object.keys(drafts).some(key=>key.endsWith(":"+sourceId));
   }
+
+  // Target's saved SKU catalog is the retail authority, never a price guess.
+  // Posts for other retailers retain their own price or stay pending.
+  async function priceKnownTargetDropProducts(products,message) {
+    const channelLabel=dropChannelLabel(message?.channel_id);
+    const target=/\btarget\b/i.test(channelLabel) ||
+      (/upcoming|tonight/i.test(channelLabel) && upcomingDropRetailer(message)==="target");
+    if(!target||!Array.isArray(products)||!products.length)return products;
+    try{return withVerifiedTargetRetail(products,await loadTargetMaster());}
+    catch(error){
+      console.error("Target drop price lookup unavailable; no retail guessed:",error.message);
+      return products;
+    }
+  }
+
   async function onDropPost(d) {
     if(d?.channel_id === upcomingChannelId && String(d?.author?.id || "") !== String(appId || "")) {
       console.log("Discord Upcoming Drops pasted message:",JSON.stringify({
@@ -4074,12 +4090,15 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // staff drop posts and free-form messages keep their existing behavior.
     const trusted = isNewDropPost(d) && await isTrustedDropPublisher(d);
     const monitored = trusted ? parseMonitorDropProducts(d) : [];
-    await recordTargetMasterPost(d, monitored.length ? monitored : parseDropSkus(d))
+    const stockParsed = trusted && !monitored.length ? parseSkuStockDropProducts(d) : {products:[],header:""};
+    const structuredProducts = monitored.length ? monitored : stockParsed.products;
+    await recordTargetMasterPost(d, structuredProducts.length ? structuredProducts : parseDropSkus(d))
       .catch(error => console.error("Target SKU master raw post:", error.message));
-    if (monitored.length) {
+    if (structuredProducts.length) {
       try {
         const label = dropChannelLabel(d.channel_id);
-        const payloads = formattedDropPayloads(monitored, label);
+        const priced = await priceKnownTargetDropProducts(structuredProducts,d);
+        const payloads = formattedDropPayloads(priced,label,{header:stockParsed.header});
         const rendered = [];
         for (const payload of payloads) {
           const saved = await api(`/channels/${d.channel_id}/messages`, "POST", payload);
@@ -4099,7 +4118,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
               await api("/channels/" + d.channel_id + "/messages/" + d.id, "DELETE");
               await retireReformattedRawSource(d.channel_id,d.id);
             }
-            console.log("Discord converted trusted monitor paste:",d.channel_id,d.id,monitored.length);
+            console.log("Discord converted trusted structured drop:",d.channel_id,d.id,structuredProducts.length);
           } catch (error) {
             console.error("Formatted drop published; could not remove raw paste:", error.message);
           }
@@ -4112,9 +4131,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // Owner "drop news" pastes (Product / Retail / Resale / Link blocks) are
     // re-posted in the community layout. The raw paste is removed only after
     // every card posts and the cards carry exactly the same SKUs.
-    if (!monitored.length && trusted) {
+    if (!structuredProducts.length && trusted) {
       const label = dropChannelLabel(d.channel_id);
-      const payloads = dropNewsPayloads(parseDropNews(d), label, d.content || "");
+      const parsedNews=parseDropNews(d);
+      parsedNews.products=await priceKnownTargetDropProducts(parsedNews.products,d);
+      const payloads = dropNewsPayloads(parsedNews, label, d.content || "");
       const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
       const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
       if (payloads.length && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
