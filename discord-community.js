@@ -5750,6 +5750,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       console.log("Discord gateway connection started before maintenance.");
       void verifyAiConnection();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
+      // Recover missed owner inventory posts before lengthy historical maintenance.
+      await repairRecentStockDropPosts().catch(error =>
+        console.error("Discord recent stock drop formatting repair:",error.message));
       await repairExistingSkuDuplicates().catch(error => console.error("SKU duplicate repair:", error.message));
       await refreshExistingOwnerCopyButtons()
         .catch(error => console.error("SKU copy controls startup:", error.message));
@@ -5757,8 +5760,6 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
       await cleanupExpiredDropMessages();
-      await repairRecentStockDropPosts().catch(error =>
-        console.error("Discord recent stock drop formatting repair:",error.message));
       await repairUpcomingMainText().catch(error =>
         console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
