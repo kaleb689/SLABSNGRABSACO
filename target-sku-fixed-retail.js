@@ -59,3 +59,56 @@ export function addFixedTargetRetail(master) {
   if(added.length) next.updatedAt=new Date().toISOString();
   return {master:next, added};
 }
+
+
+const usablePrice = value =>
+  typeof value==="number" && Number.isFinite(value) && value>0 && value<50000 ? value : null;
+const exactNameKey = value => String(value||"").normalize("NFKD").toLowerCase()
+  .replace(/[\u0300-\u036f]/g,"")
+  .replace(/\b(?:pokemon|trading card game|tcg|mega evolution)\b/g," ")
+  .replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ").trim();
+const validatedRetail = (entry,sku) => {
+  const price=usablePrice(entry?.prices?.target?.price);
+  if(price!==null && entry.prices.target.seller==="Target")return price;
+  const fixed={...VERIFIED_TARGET_RETAIL_20261112,...VERIFIED_TARGET_RETAIL_20261115};
+  return usablePrice(fixed[sku]);
+};
+
+// Only add Target's authorized/saved retail price when absent. A direct TCIN
+// match is preferred; a unique exact normalized product name is the fallback.
+// A name match never silently changes a posted SKU (typos stay visible).
+export function withVerifiedTargetRetail(products,master) {
+  if(!Array.isArray(products))return [];
+  const entries=Object.values(master?.entries||{});
+  const byName=new Map();
+  for(const entry of entries) {
+    const key=exactNameKey(entry?.name);
+    if(!key||!entry?.sku)continue;
+    if(!byName.has(key))byName.set(key,[]);
+    byName.get(key).push(entry);
+  }
+  return products.map(product=>{
+    const sku=String(product?.sku||"").trim().toUpperCase();
+    const fields=Array.isArray(product?.fields)?product.fields:[];
+    const hasPrice=usablePrice(Number(product?.price))!==null ||
+      fields.some(field=>/^(?:retail|price|msrp)$/i.test(String(field?.label||"").trim()));
+    if(hasPrice)return {...product};
+    const direct=master?.entries?.[sku];
+    let price=validatedRetail(direct,sku),needsReview=false;
+    if(price===null){
+      const matches=byName.get(exactNameKey(product?.name))||[];
+      if(matches.length===1){
+        price=validatedRetail(matches[0],String(matches[0].sku));
+        needsReview=price!==null && String(matches[0].sku)!==sku;
+      }
+    }
+    if(price===null)return {...product};
+    const enriched={...product,price:price.toFixed(2)};
+    if(needsReview)enriched.itemNumberNeedsReview=true;
+    if(Array.isArray(product?.fields)){
+      enriched.fields=[...fields,{label:"Retail",value:"$"+price.toFixed(2)}];
+      if(needsReview)enriched.fields.push({label:"Note",value:"Posted item number needs verification"});
+    }
+    return enriched;
+  });
+}
