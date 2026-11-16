@@ -77,9 +77,11 @@ export function resolveBulkProfileMatches({ emails, retailer, managed, available
   const wanted = new Set(emails);
   const matches = new Map(emails.map(email => [email, []]));
   for (const account of managed) {
-    // Never silently skip a broken encrypted record: fail safely rather than
-    // mistakenly treating its email as missing or assignable.
-    const credentials = decodeCredentials(account);
+    // A broken encrypted record must never be assigned, but should not block
+    // otherwise healthy Unused profiles from being linked.
+    let credentials;
+    try { credentials = decodeCredentials(account); }
+    catch { continue; }
     for (const key of selected) {
       const email = String(credentials?.[key]?.username || '').trim().toLowerCase();
       if (!wanted.has(email)) continue;
