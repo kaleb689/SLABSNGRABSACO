@@ -1874,6 +1874,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
        }
        discordCommunityStatus.retailerDrops = retailerChannels;
        discordCommunityStatus.retailerDropsReady = retailerChannels.length === 5;
+       // Begin safe recovery while unrelated server channel setup continues.
+       // The Target Master was initialized before these retailer channels.
+       stockRepairReady=true;
+       setTimeout(() => void repairRecentStockDropPosts().catch(error =>
+         console.error("Discord early stock formatting recovery:",error.message)),1500).unref?.();
        const targetDropsChannel = retailerChannels.find(row => normalizeName(row.name) === "targetdrops");
        if (targetDropsChannel && targetSkuListChannelId) {
          await placeTargetMasterBelowDrops(targetDropsChannel.id).catch(error => {
@@ -3751,7 +3756,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
            String(raw.author?.id)!==String(ownerId)||![0,19].includes(raw.type??0)||
            !isNewDropPost(raw))continue;
         const sourceAt=targetMessageTime(raw);
-        if(!Number.isFinite(sourceAt)||sourceAt<Date.now()-48*3600000)continue;
+        // Let the live event handler finish before recovering a newly posted announcement.
+        if(!Number.isFinite(sourceAt)||sourceAt<Date.now()-48*3600000||
+           sourceAt>Date.now()-60*1000)continue;
         const stock=parseSkuStockDropProducts(raw);
         if(!stock.products.length||isCoveredRawMonitorPost(raw,history,ownerId,appId))continue;
         stats.candidates++;
