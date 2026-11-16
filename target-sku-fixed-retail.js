@@ -28,10 +28,20 @@ export const VERIFIED_TARGET_RETAIL_20261112 = Object.freeze({
   "1012850572": 249.99,
   "1012850573": 39.99
 });
+
+/* Additional exact TCIN retail prices verified on official Target product pages
+ * on 2026-11-15. These are reference retail prices, not inventory guarantees. */
+export const VERIFIED_TARGET_RETAIL_20261115 = Object.freeze({
+  "1012793604": 59.99,
+  "1013166573": 14.99,
+  "1013166576": 179.99,
+  "1013166578": 31.99
+});
+
 export function addFixedTargetRetail(master) {
   if (!master?.entries) throw Error("Invalid Target SKU master");
   const next = structuredClone(master),added=[];
-  for (const [sku, price] of Object.entries(VERIFIED_TARGET_RETAIL_20261112)) {
+  for (const [sku, price] of Object.entries({ ...VERIFIED_TARGET_RETAIL_20261112, ...VERIFIED_TARGET_RETAIL_20261115 })) {
     const entry=next.entries[sku];
     if (!entry) continue;
     entry.prices ||= {};
@@ -40,7 +50,7 @@ export function addFixedTargetRetail(master) {
       price,
       url:"https://www.target.com/p/-/A-"+sku,
       seller:"Target",
-      checkedAt:"2026-11-12",
+      checkedAt:Object.hasOwn(VERIFIED_TARGET_RETAIL_20261115,sku) ? "2026-11-15" : "2026-11-12",
       source:"Target product page (verified)",
       locked:true
     };
