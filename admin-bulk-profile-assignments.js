@@ -158,8 +158,8 @@ export function registerAdminBulkProfileAssignments({
       if (!paid) throw inputError('The selected customer needs an active paid or gifted membership.', 403);
       const selection = await preview(req.body);
       if (selection.blocked || !selection.ready.length) {
-        return json(res, 409, { error: 'Some pasted emails are no longer available or uniquely matched. No profiles were assigned.',
-          ...publicPreview(selection) });
+        return json(res, 409, { ...publicPreview(selection), ok: false,
+          error: 'Some pasted emails are no longer available or uniquely matched. No profiles were assigned.' });
       }
       const existing = type === 'free' ? await getFreeAssignments() : await getRentalAssignments();
       const now = new Date().toISOString();
