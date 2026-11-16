@@ -20,7 +20,7 @@ Delta Reign Booster Bundle
 SKU: 1013166578
 Stock: 30k+
 Delta Reign Three-Booster Blister
-SKU: 1013166573S
+SKU: 1013166573Ś
 Stock: 9k+
 30th Celebration Ultra-Premium Collection - Day
 SKU: 1012850570
@@ -45,6 +45,9 @@ test("owner stock-only screenshot parses 10 SKUs without an entered price",()=>{
   const parsed=parseSkuStockDropProducts(screenshot);
   assert.equal(parsed.products.length,10);
   assert.equal(new Set(parsed.products.map(x=>x.sku)).size,10);
+  assert.equal(parsed.products[4].sku,"1013166573");
+  assert.equal(parsed.products[4].itemNumberNeedsReview,true);
+  assert.deepEqual(parseDropSkus({content:screenshot}).map(x=>x.sku),parsed.products.map(x=>x.sku));
   assert.deepEqual(parsed.products.map(x=>x.stock),[
     "40k+","50k+","4k+","30k+","9k+","10k+","3k+","20k+","9k+","3k+"
   ]);
@@ -58,7 +61,7 @@ test("verified Target retail fills ten recognized products and never changes pos
     "249.99","39.99","59.99","31.99","14.99",
     "249.99","179.99","39.99","49.99","54.99"
   ]);
-  assert.equal(filled[4].sku,"1013166573S");
+  assert.equal(filled[4].sku,"1013166573");
   assert.equal(filled[4].itemNumberNeedsReview,true);
   assert.equal(VERIFIED_TARGET_RETAIL_20261115["1013166573"],14.99);
   const cards=formattedDropPayloads(filled,"Target Drops",{header:parsed.header});
