@@ -3727,14 +3727,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
 
 
-  // One-time, narrowly scoped recovery for recent owner announcements that
-  // the previous price-required parser left raw. Only exact, fully represented
-  // SKU sets are replaced; posts with saved selections or pinned content stay.
+  // Safely recover recent owner stock announcements missed during a restart.
+  // Require complete SKU coverage before retiring the raw source, preserve
+  // existing selections, and never re-post an already covered source.
   const stockRepairFile=path.join(dataDir,"discord-stock-drop-format-repairs.json");
+  let stockRepairRunning=false,stockRepairReady=false;
   async function repairRecentStockDropPosts(){
-    if(!ownerId||!dropChannelIds.size)return;
+    if(stockRepairRunning||!stockRepairReady||!ownerId||!dropChannelIds.size)return;
+    stockRepairRunning=true;
+    const stats={channels:0,candidates:0,recovered:0,protected:0,failed:0};
+    try{
     const repairedState=await readSkuFile(stockRepairFile);
     for(const channelId of dropChannelIds){
+      stats.channels++;
       let history;
       try{history=await api("/channels/"+channelId+"/messages?limit=100");}
       catch(error){console.error("Recent drop formatting history unavailable:",channelId,error.message);continue;}
@@ -3749,7 +3754,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if(!Number.isFinite(sourceAt)||sourceAt<Date.now()-48*3600000)continue;
         const stock=parseSkuStockDropProducts(raw);
         if(!stock.products.length||isCoveredRawMonitorPost(raw,history,ownerId,appId))continue;
-        if(await hasSavedDropReferences(channelId,raw.id))continue;
+        stats.candidates++;
+        if(await hasSavedDropReferences(channelId,raw.id)){stats.protected++;continue;}
         const priced=await priceKnownTargetDropProducts(stock.products,{...raw,channel_id:channelId});
         const payloads=formattedDropPayloads(priced,dropChannelLabel(channelId),{header:stock.header});
         const originalSkus=new Set(parseDropSkus(raw).map(x=>x.sku));
@@ -3770,12 +3776,19 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
           await api("/channels/"+channelId+"/messages/"+raw.id,"DELETE");
           await retireReformattedRawSource(channelId,raw.id);
           repaired++;
+          stats.recovered++;
           console.log("Discord recovered formatted stock announcement:",
             JSON.stringify({channelId,sourceId:raw.id,products:stock.products.length,cards:posted.length}));
         }catch(error){
+          stats.failed++;
           console.error("Discord stock formatting repair preserved original:",channelId,raw.id,error.message);
         }
       }
+    }
+    } finally {
+      stockRepairRunning=false;
+      // Diagnostic counts only: never log message content or customer data.
+      console.log("Discord stock format sweep:",JSON.stringify(stats));
     }
   }
 
@@ -5750,6 +5763,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       console.log("Discord gateway connection started before maintenance.");
       void verifyAiConnection();
       await initializeTargetMaster().catch(error => console.error("Target master initialization:", error.message));
+      stockRepairReady=true;
       // Recover missed owner inventory posts before lengthy historical maintenance.
       await repairRecentStockDropPosts().catch(error =>
         console.error("Discord recent stock drop formatting repair:",error.message));
@@ -5783,6 +5797,13 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   setInterval(() => void refreshTcgcsvMarket(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(() => void refreshTargetSkuPrices(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  // Periodic idempotent safety net for messages missed while a deployment
+  // temporarily disconnects the gateway. Never formats arbitrary chat text.
+  setInterval(() => {
+    if(!stockRepairReady)return;
+    void repairRecentStockDropPosts().catch(error =>
+      console.error("Discord stock format safety sweep:",error.message));
+  },3*60000).unref?.();
   // Discord permissions can be granted after the service has started.
   // Retry only while the private owner drop-controls panel is unavailable.
   // Provisioning is idempotent: existing channels/panels are reused.
