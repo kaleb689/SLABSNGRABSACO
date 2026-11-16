@@ -3768,7 +3768,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const originalSkus=new Set(parseDropSkus(raw).map(x=>x.sku));
         const resultSkus=new Set(payloads.flatMap(p=>parseDropSkus(p).map(x=>x.sku)));
         if(!originalSkus.size||originalSkus.size!==resultSkus.size||
-           [...originalSkus].some(sku=>!resultSkus.has(sku)))continue;
+           [...originalSkus].some(sku=>!resultSkus.has(sku))){
+          stats.skippedSkuCoverage=(stats.skippedSkuCoverage||0)+1;
+          console.warn("Discord stock formatting SKU coverage held:",JSON.stringify({
+            channelId,sourceId:raw.id,
+            parsedSkuCount:stock.products.length,
+            rawSkuCount:originalSkus.size,
+            cardSkuCount:resultSkus.size,
+            missingFromCard:[...originalSkus].filter(sku=>!resultSkus.has(sku)).slice(0,20),
+            rawHadContent:Boolean(raw.content)
+          }));
+          continue;
+        }
         try{
           const posted=[];
           for(const payload of payloads){
