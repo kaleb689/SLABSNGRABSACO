@@ -11232,11 +11232,13 @@ function specialProfileExpiresAt(
   // Compute it at activation; never silently turn a malformed custom
   // duration into an indefinite assignment.
   if (String(durationType || "").trim().toLowerCase() === "custom") {
-    return customProfileExpiration(
+    const customExpiry = customProfileExpiration(
       startValue,
       customOptions?.customDurationAmount,
       customOptions?.customDurationUnit
     );
+    if (!customExpiry) throw new Error("Invalid custom profile duration; activation was not saved.");
+    return customExpiry;
   }
 
   if (
@@ -29829,7 +29831,8 @@ registerStudioAssignmentActions({app,requireAdmin,serialize:serializeManagedCust
   clearAssignment:clearManagedAssignmentCustomerData,normalizeDuration:normalizeSpecialProfileDuration,broadcastLiveDataChange});
 registerAdminBulkProfileAssignments({
   app, requireAdmin, serialize: serializeManagedCustomerDetails,
-  getManagedAccounts, getAvailableManagedAccountsForRetailer, getCustomerAccounts,
+  getManagedAccounts, getAvailableManagedAccountsForRetailer,
+  getRestoreHolds, heldManagedAccountIdsFromHolds, getCustomerAccounts,
   activeMembershipForCustomer: async id => activeMembershipRecordForCustomer(id, await readJson(PAID_FILE, [])),
   getFreeAssignments, saveFreeAssignments, getRentalAssignments, saveRentalAssignments,
   normalizeRetailerCredentials, decryptJson, sanitizeProfile, membershipEncryptedPackage,
