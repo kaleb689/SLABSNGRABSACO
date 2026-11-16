@@ -77,6 +77,59 @@ export function parseMonitorDropProducts(input) {
  }
  return products.slice(0,200);
 }
+
+// A human announcement such as:
+// Product name
+// SKU: 1012850572
+// Stock: 40k+
+// is a valid structured drop without a Price line. Keep the exact posted SKU
+// and stock text; a separate verified retailer catalog supplies missing prices.
+export function parseSkuStockDropProducts(input) {
+ const lines=sourceText(input).split(/\r?\n/).map(clean);
+ const products=[],seen=new Set();
+ let firstProductAt=-1,stockCount=0;
+ const skuLine=/^(?:SKU|PID|TCIN)\s*(?:[:#-]\s*|\s+)([A-Z0-9][A-Z0-9._-]{2,79})$/i;
+ const stockLine=/^Stock\s*:\s*([\d,.]+\s*[kKmM]?\+?)$/i;
+ const moneyLine=/^(?:Price|Retail|MSRP)\s*:\s*\$?\s*(\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?)\s*$/i;
+ for(let i=1;i<lines.length;i++){
+  const match=skuLine.exec(lines[i]);
+  if(!match)continue;
+  const sku=match[1].toUpperCase();
+  if(seen.has(sku))continue;
+  let titleAt=i-1;
+  while(titleAt>=0&&!lines[titleAt])titleAt--;
+  const name=lines[titleAt]||"";
+  if(!name||name.length>280||isNoise(name)||
+     /^(?:SKU|PID|TCIN|Stock|Price|Retail|MSRP|Resale|Seller|Time|Date|Release|Demand|Cart Limit|Link|https?:\/\/)\s*:/i.test(name)||
+     /^https?:\/\//i.test(name)||
+     !/[a-z]/i.test(name))continue;
+  const row={name,sku};
+  for(let j=i+1;j<Math.min(i+4,lines.length);j++){
+   const line=lines[j];
+   if(skuLine.test(line))break;
+   const stock=stockLine.exec(line);
+   if(stock&&!row.stock){row.stock=stock[1].replace(/\s+/g,"");stockCount++;}
+   const price=moneyLine.exec(line);
+   if(price&&!row.price)row.price=Number(price[1].replace(/,/g,"")).toFixed(2);
+   if(line&&j>i+1&&!stock&&!price)break;
+  }
+  if(row.price===undefined){
+   for(let j=titleAt+1;j<i;j++){
+    const p=moneyLine.exec(lines[j]);
+    if(p){row.price=Number(p[1].replace(/,/g,"")).toFixed(2);break;}
+   }
+  }
+  seen.add(sku);
+  products.push(row);
+  if(firstProductAt<0)firstProductAt=titleAt;
+ }
+ // Avoid taking precedence over rich Retail/Resale announcements. This path
+ // is for inventory-style posts that actually provide stock quantities.
+ if(!stockCount)return {products:[],header:""};
+ const header=firstProductAt>=0?lines.slice(0,firstProductAt).filter(Boolean).join("\n").slice(0,900):"";
+ return {products:products.slice(0,200),header};
+}
+
 export function formattedDropName(label) {
   const name = String(label || "Retailer").replace(/\s+Drops?$/i, "").trim();
   if (/walmart/i.test(name)) return "Walmart Draw";
@@ -86,7 +139,7 @@ export function formattedDropName(label) {
   if (/tonight/i.test(name)) return "Dropping Tonight";
   return (name || "Retailer") + " Drop";
 }
-export function formattedDropPayloads(products,label){
+export function formattedDropPayloads(products,label,options={}){
  if(!Array.isArray(products)||!products.length)return [];
  const title=formattedDropName(label);
  const walmart=/walmart/i.test(label);
@@ -94,11 +147,14 @@ export function formattedDropPayloads(products,label){
  for(let start=0;start<products.length;start+=10){
   const block=products.slice(start,start+10),pages=Math.ceil(products.length/10);
   const embeds=block.map((product,index)=>{
+   const price=Number(product.price);
    const lines=[
     "**"+safe(product.name).slice(0,280)+"**",
-    "Price $"+Number(product.price).toFixed(2),
+    Number.isFinite(price)&&price>0?"Price $"+price.toFixed(2):"Price pending",
     "SKU: "+safe(product.sku).slice(0,80)
    ];
+   if(product.stock)lines.push("Stock: "+safe(product.stock).slice(0,70));
+   if(product.itemNumberNeedsReview)lines.push("⚠️ Posted item number needs verification");
    if(Number.isInteger(product.cartLimit)&&product.cartLimit>0)lines.push("Cart limit: "+product.cartLimit);
    if(product.type)lines.push("Type: "+safe(product.type).slice(0,80));
    if(product.seller)lines.push("Seller: "+safe(product.seller).slice(0,100));
@@ -108,7 +164,8 @@ export function formattedDropPayloads(products,label){
    const image=imageUrl(product.imageUrl);
    return {
     ...(index===0?{title:title+(pages>1?" ("+(blocks.length+1)+"/"+pages+")":"")}:{}),
-    description:lines.join("\n"),color:COLOR,
+    description:(start===0&&index===0&&options.header
+      ? "**Drop details**\n"+safe(options.header).slice(0,900)+"\n\n":"")+lines.join("\n"),color:COLOR,
     ...(image?{thumbnail:{url:image}}:{}),
     footer:{text:FORMATTED_DROP_MARKER}
    };
