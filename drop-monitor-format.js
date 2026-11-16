@@ -92,7 +92,15 @@ export function parseSkuStockDropProducts(input) {
  const stockLine=/^Stock\s*:\s*([\d,.]+\s*[kKmM]?\+?)$/i;
  const moneyLine=/^(?:Price|Retail|MSRP)\s*:\s*\$?\s*(\d{1,7}(?:,\d{3})*(?:\.\d{1,2})?)\s*$/i;
  for(let i=1;i<lines.length;i++){
-  const match=skuLine.exec(lines[i]);
+  // Normalize combining accents, then tolerate a stray non-ASCII suffix
+  // only after a Target-style numeric ID. Discord's existing selection reader
+  // already recognizes that numeric prefix; never invent a different SKU.
+  const skuText=lines[i].normalize("NFC");
+  let match=skuLine.exec(skuText),hadUnsupportedSuffix=false;
+  if(!match){
+   match=/^(?:SKU|PID|TCIN)\s*(?:[:#-]\s*|\s+)(\d{7,12})[\u0080-\uFFFF]{1,3}$/u.exec(skuText);
+   hadUnsupportedSuffix=Boolean(match);
+  }
   if(!match)continue;
   const sku=match[1].toUpperCase();
   if(seen.has(sku))continue;
@@ -104,6 +112,7 @@ export function parseSkuStockDropProducts(input) {
      /^https?:\/\//i.test(name)||
      !/[a-z]/i.test(name))continue;
   const row={name,sku};
+  if(hadUnsupportedSuffix)row.itemNumberNeedsReview=true;
   for(let j=i+1;j<Math.min(i+4,lines.length);j++){
    const line=lines[j];
    if(skuLine.test(line))break;
