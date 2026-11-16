@@ -195,7 +195,20 @@
       } catch (error) { preview = null; setStatus(error.message + ' Preview again to retry safely.'); }
       finally { busy = false; previewButton.disabled = false; assignButton.disabled = true; }
     });
-    void loadCustomers();
+    // Desktop Admin mounts before login; refresh the member roster after
+    // authentication rather than leaving a stale "session expired" dropdown.
+    const dashboard = document.getElementById('dashboard');
+    if (dashboard) {
+      new MutationObserver(() => {
+        if (!dashboard.hidden) void loadCustomers();
+      }).observe(dashboard, {attributes:true,attributeFilter:['hidden']});
+      if (!dashboard.hidden) void loadCustomers();
+    } else {
+      void loadCustomers();
+    }
+    form.elements.namedItem('customerAccountId').addEventListener('focus', () => {
+      if (!busy) void loadCustomers();
+    });
   }
 
   function mountDesktop() {
