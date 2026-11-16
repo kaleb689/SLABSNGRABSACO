@@ -1,6 +1,7 @@
 import { sourcePriceIsLineTotal, retailerFromTrustedSourceImage } from "./discord-source-price-field-policy.js";
 import {registerDirectSourceRecapReview} from "./server-discord-source-recap-review.js";
 import {registerStudioAssignmentActions} from "./server-studio-assignment-actions.js";
+import {registerAdminBulkProfileAssignments, customProfileExpiration} from "./admin-bulk-profile-assignments.js";
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
 import { registerPrivateStudioLicensing } from "./private-studio-license.js";
@@ -11219,12 +11220,26 @@ function normalizeSpecialProfileDuration(
 
 function specialProfileExpiresAt(
   durationType,
-  startValue = new Date()
+  startValue = new Date(),
+  customOptions = null
 ) {
   const duration =
     normalizeSpecialProfileDuration(
       durationType
     );
+
+  // Admin-only bulk profiles may carry a bounded custom access period.
+  // Compute it at activation; never silently turn a malformed custom
+  // duration into an indefinite assignment.
+  if (String(durationType || "").trim().toLowerCase() === "custom") {
+    const customExpiry = customProfileExpiration(
+      startValue,
+      customOptions?.customDurationAmount,
+      customOptions?.customDurationUnit
+    );
+    if (!customExpiry) throw new Error("Invalid custom profile duration; activation was not saved.");
+    return customExpiry;
+  }
 
   if (
     !duration ||
@@ -13903,7 +13918,8 @@ function activateManagedAssignmentTimer(
   assignment.expiresAt =
     specialProfileExpiresAt(
       assignment.durationType,
-      now
+      now,
+      assignment
     );
   assignment.deactivatedAt = null;
   assignment.endedAt = null;
@@ -13916,7 +13932,8 @@ function activateManagedAssignmentTimer(
 
 
 function specialProfileDurationLabel(
-  durationType
+  durationType,
+  record = null
 ) {
   const duration =
     normalizeSpecialProfileDuration(
@@ -13939,6 +13956,16 @@ function specialProfileDurationLabel(
     duration === "1_month"
   ) {
     return "1 MONTH";
+  }
+
+  if (String(durationType || "").trim().toLowerCase() === "custom") {
+    const amount = Number(record?.customDurationAmount);
+    const unit = String(record?.customDurationUnit || "").trim().toUpperCase();
+    if (Number.isSafeInteger(amount) && amount > 0 &&
+        ["HOURS", "DAYS", "WEEKS", "MONTHS", "YEARS"].includes(unit)) {
+      return amount + " " + (amount === 1 ? unit.slice(0, -1) : unit);
+    }
+    return "CUSTOM DURATION";
   }
 
   return "INDEFINITELY";
@@ -14018,7 +14045,8 @@ function safeSpecialProfile(
 
     durationLabel:
       specialProfileDurationLabel(
-        record.durationType
+        record.durationType,
+        record
       ),
 
     startsAt:
@@ -14123,7 +14151,8 @@ function adminSpecialProfile(
 
     durationLabel:
       specialProfileDurationLabel(
-        record.durationType
+        record.durationType,
+        record
       ),
 
     startsAt:
@@ -14924,7 +14953,8 @@ try {
 
               durationLabel:
                 specialProfileDurationLabel(
-                  assignment.durationType
+                  assignment.durationType,
+                  assignment
                 ),
 
               daysRemaining:
@@ -15241,7 +15271,8 @@ try {
 
               durationLabel:
                 specialProfileDurationLabel(
-                  assignment.durationType
+                  assignment.durationType,
+                  assignment
                 ),
 
               daysRemaining:
@@ -29798,6 +29829,16 @@ registerStudioAssignmentActions({app,requireAdmin,serialize:serializeManagedCust
   findAssignment:(type,rows,id)=>type==='free'?linkedFreeAssignment(rows,id):linkedRentalAssignment(rows,id),
   activeMembershipForCustomer:async id=>activeMembershipRecordForCustomer(id,await readJson(PAID_FILE,[])),
   clearAssignment:clearManagedAssignmentCustomerData,normalizeDuration:normalizeSpecialProfileDuration,broadcastLiveDataChange});
+registerAdminBulkProfileAssignments({
+  app, requireAdmin, serialize: serializeManagedCustomerDetails,
+  getManagedAccounts, getAvailableManagedAccountsForRetailer,
+  getRestoreHolds, heldManagedAccountIdsFromHolds, getCustomerAccounts,
+  activeMembershipForCustomer: async id => activeMembershipRecordForCustomer(id, await readJson(PAID_FILE, [])),
+  getFreeAssignments, saveFreeAssignments, getRentalAssignments, saveRentalAssignments,
+  normalizeRetailerCredentials, decryptJson, sanitizeProfile, membershipEncryptedPackage,
+  encryptJson, prepareNewManagedAssignment, ensureManagedProfileDiscordMessage,
+  broadcastLiveDataChange
+});
 registerStudioLinkedLoginSync({app,requireAdmin,serialize:serializeManagedCustomerDetails,
  getManagedAccounts,saveManagedAccounts,
  getAssignments:type=>type==='free'?getFreeAssignments():getRentalAssignments(),

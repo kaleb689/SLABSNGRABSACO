@@ -1,0 +1,27 @@
+.admin-bulk-profile-assign{margin:18px 0 22px;padding:20px;border:1px solid #2d92ad;border-radius:15px;background:linear-gradient(150deg,#103245,#0a1b2b);color:#ebf8ff}
+.admin-bulk-profile-assign header small{font-size:10px;letter-spacing:1px;font-weight:850;color:#70e5ff}
+.admin-bulk-profile-assign h2{margin:7px 0;font-size:clamp(18px,2.5vw,23px);color:#f4fbff}
+.admin-bulk-profile-assign p{font-size:13px;line-height:1.5;color:#bed4e5}
+.admin-bulk-profile-assign form{display:grid;gap:14px}
+.admin-bulk-profile-assign label{display:grid;gap:7px;font-weight:750;font-size:12px;color:#e6f8ff}
+.admin-bulk-profile-assign textarea,.admin-bulk-profile-assign input,.admin-bulk-profile-assign select{width:100%;min-width:0;box-sizing:border-box;padding:11px;background:#061522;border:1px solid #3c7d98;border-radius:9px;color:#fff;font:inherit;font-size:15px}
+.admin-bulk-profile-assign textarea{resize:vertical;min-height:100px;line-height:1.5}
+.admin-bulk-profile-assign small{font-size:11px;color:#b7cfdd;font-weight:500;line-height:1.4}
+.admin-bulk-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.admin-bulk-profile-custom{display:grid;grid-template-columns:1fr 1fr;gap:12px;grid-column:1/-1}
+.admin-bulk-profile-custom[hidden]{display:none}
+.admin-bulk-profile-assign .admin-bulk-profile-note{margin:0;font-size:12px}
+.admin-bulk-profile-actions{display:flex;gap:10px;flex-wrap:wrap}
+.admin-bulk-profile-assign button{border:1px solid #66cbe7;border-radius:9px;padding:12px 14px;background:#155876;color:#fff;font-weight:800;cursor:pointer;min-height:44px}
+.admin-bulk-profile-assign button[data-assign]{background:#1d8764;border-color:#79e7ba}
+.admin-bulk-profile-assign button:disabled{opacity:.45;cursor:not-allowed}
+.admin-bulk-profile-status{margin:0;min-height:1.5em}
+.admin-bulk-profile-results{max-height:430px;overflow:auto}
+.admin-bulk-profile-summary{font-weight:850;color:#dcf8ff!important}
+.admin-bulk-profile-warning{color:#ffce98!important}
+.admin-bulk-profile-result-list{display:grid;gap:5px}
+.admin-bulk-profile-result{padding:9px 11px;background:#071a29;border:1px solid #245066;border-radius:8px;display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:space-between;font-size:12px}
+.admin-bulk-profile-result strong{overflow-wrap:anywhere;color:#f3faff}
+.admin-bulk-profile-result span{color:#98efd0}
+.admin-bulk-profile-result:not([data-status="ready"]) span{color:#ffbdac}
+@media(max-width:620px){.admin-bulk-profile-assign{padding:14px}.admin-bulk-profile-grid{grid-template-columns:1fr}.admin-bulk-profile-actions button{flex:1 1 100%}}
