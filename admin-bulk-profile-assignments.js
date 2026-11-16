@@ -105,6 +105,7 @@ export function resolveBulkProfileMatches({ emails, retailer, managed, available
 
 export function registerAdminBulkProfileAssignments({
   app, requireAdmin, serialize, getManagedAccounts, getAvailableManagedAccountsForRetailer,
+  getRestoreHolds, heldManagedAccountIdsFromHolds,
   getCustomerAccounts, activeMembershipForCustomer,
   getFreeAssignments, saveFreeAssignments, getRentalAssignments, saveRentalAssignments,
   normalizeRetailerCredentials, decryptJson, sanitizeProfile, membershipEncryptedPackage,
@@ -122,8 +123,12 @@ export function registerAdminBulkProfileAssignments({
     const [managed, ...available] = await Promise.all([
       getManagedAccounts(), ...selected.map(key => getAvailableManagedAccountsForRetailer(key))
     ]);
+    // This existing pool helper prioritizes held stock LAST but still returns it.
+    // Bulk assignment is specifically Unused-only: exclude every Restore Hold.
+    const held = heldManagedAccountIdsFromHolds(await getRestoreHolds());
     const availableByRetailer = Object.fromEntries(selected.map((key, i) =>
-      [key, new Set(available[i].map(account => String(account.id)))]));
+      [key, new Set(available[i].filter(account => !held.has(String(account.id)))
+        .map(account => String(account.id)))]));
     const rows = resolveBulkProfileMatches({ emails, retailer, managed, availableByRetailer,
       decodeCredentials: account => account.credentials
         ? normalizeRetailerCredentials(decryptJson(account.credentials)) : {} });
@@ -194,7 +199,8 @@ export function registerAdminBulkProfileAssignments({
       // One ledger write for the entire batch. No partial assignment response.
       if (type === 'free') await saveFreeAssignments(existing);
       else await saveRentalAssignments(existing);
-      broadcastLiveDataChange('admin-bulk-profile-assigned');
+      try { broadcastLiveDataChange('admin-bulk-profile-assigned'); }
+      catch (error) { console.error('Bulk assignment live broadcast:', error?.message); }
       let notificationFailures = 0;
       for (const record of created) {
         try { await ensureManagedProfileDiscordMessage(record, type); }
