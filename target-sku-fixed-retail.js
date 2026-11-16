@@ -82,6 +82,9 @@ export function withVerifiedTargetRetail(products,master) {
   const entries=Object.values(master?.entries||{});
   const byName=new Map();
   for(const entry of entries) {
+    // An unpriced duplicate from a mistyped owner SKU must not make an
+    // otherwise unique, verified-name price match ambiguous.
+    if(validatedRetail(entry,String(entry?.sku||""))===null)continue;
     const key=exactNameKey(entry?.name);
     if(!key||!entry?.sku)continue;
     if(!byName.has(key))byName.set(key,[]);
