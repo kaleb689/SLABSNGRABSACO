@@ -3726,6 +3726,59 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     }
   }
 
+
+  // One-time, narrowly scoped recovery for recent owner announcements that
+  // the previous price-required parser left raw. Only exact, fully represented
+  // SKU sets are replaced; posts with saved selections or pinned content stay.
+  const stockRepairFile=path.join(dataDir,"discord-stock-drop-format-repairs.json");
+  async function repairRecentStockDropPosts(){
+    if(!ownerId||!dropChannelIds.size)return;
+    const repairedState=await readSkuFile(stockRepairFile);
+    for(const channelId of dropChannelIds){
+      let history;
+      try{history=await api("/channels/"+channelId+"/messages?limit=100");}
+      catch(error){console.error("Recent drop formatting history unavailable:",channelId,error.message);continue;}
+      if(!Array.isArray(history))continue;
+      let repaired=0;
+      for(const raw of history){
+        if(repaired>=3)break;
+        if(!raw?.id||repairedState[raw.id]||raw.pinned||raw.author?.bot||raw.webhook_id||
+           String(raw.author?.id)!==String(ownerId)||![0,19].includes(raw.type??0)||
+           !isNewDropPost(raw))continue;
+        const sourceAt=targetMessageTime(raw);
+        if(!Number.isFinite(sourceAt)||sourceAt<Date.now()-48*3600000)continue;
+        const stock=parseSkuStockDropProducts(raw);
+        if(!stock.products.length||isCoveredRawMonitorPost(raw,history,ownerId,appId))continue;
+        if(await hasSavedDropReferences(channelId,raw.id))continue;
+        const priced=await priceKnownTargetDropProducts(stock.products,{...raw,channel_id:channelId});
+        const payloads=formattedDropPayloads(priced,dropChannelLabel(channelId),{header:stock.header});
+        const originalSkus=new Set(parseDropSkus(raw).map(x=>x.sku));
+        const resultSkus=new Set(payloads.flatMap(p=>parseDropSkus(p).map(x=>x.sku)));
+        if(!originalSkus.size||originalSkus.size!==resultSkus.size||
+           [...originalSkus].some(sku=>!resultSkus.has(sku)))continue;
+        try{
+          const posted=[];
+          for(const payload of payloads){
+            const card=await api("/channels/"+channelId+"/messages","POST",payload);
+            posted.push(card.id);
+            await ensureSkuControls({...card,channel_id:channelId,guild_id:guildId,
+              content:payload.content||"",embeds:payload.embeds,type:0,
+              author:card.author||{id:appId,bot:true}});
+          }
+          repairedState[raw.id]={cards:posted,at:new Date().toISOString()};
+          await writeSkuFile(stockRepairFile,repairedState);
+          await api("/channels/"+channelId+"/messages/"+raw.id,"DELETE");
+          await retireReformattedRawSource(channelId,raw.id);
+          repaired++;
+          console.log("Discord recovered formatted stock announcement:",
+            JSON.stringify({channelId,sourceId:raw.id,products:stock.products.length,cards:posted.length}));
+        }catch(error){
+          console.error("Discord stock formatting repair preserved original:",channelId,raw.id,error.message);
+        }
+      }
+    }
+  }
+
   async function backfillDropMenus() {
     for (const channelId of dropChannelIds) {
       try {
@@ -5704,6 +5757,8 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await cleanupLegacyLapseAlerts().catch(error => console.error("Discord legacy lapse cleanup:", error.message));
       await repairRtpReturnSummaryButtons().catch(error => console.error("Discord RTP summary repair:", error.message));
       await cleanupExpiredDropMessages();
+      await repairRecentStockDropPosts().catch(error =>
+        console.error("Discord recent stock drop formatting repair:",error.message));
       await repairUpcomingMainText().catch(error =>
         console.error("Discord Upcoming Drops presentation repair:",error.message));
       await backfillDropMenus().catch(error => console.error("Discord SKU menu backfill:", error.message));
