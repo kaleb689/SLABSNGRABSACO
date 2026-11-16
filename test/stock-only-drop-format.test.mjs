@@ -100,3 +100,17 @@ test("more than ten stock-only products keep all IDs across multiple cyan cards"
   assert.deepEqual(cards.map(x=>x.embeds.length),[10,10,1]);
   assert.equal(cards.flatMap(x=>parseDropSkus(x)).length,21);
 });
+
+
+test("an accidental duplicate SKU in the Target master cannot hide a verified name match",()=>{
+  const polluted=structuredClone(verified);
+  polluted.entries["1013166573S"]={
+    sku:"1013166573S",name:"Delta Reign Three-Booster Blister",source:"discord"
+  };
+  const rows=withVerifiedTargetRetail([
+    {sku:"1013166573S",name:"Delta Reign Three-Booster Blister",stock:"9k+"}
+  ],polluted);
+  assert.equal(rows[0].price,"14.99");
+  assert.equal(rows[0].sku,"1013166573S");
+  assert.equal(rows[0].itemNumberNeedsReview,true);
+});
