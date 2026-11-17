@@ -558,7 +558,7 @@ function membershipUpcomingHtml(tier) {
   const label = effective.toLocaleDateString("en-US", {
     timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric"
   });
-  return `<span class="plan-upcoming-price">Upcoming ${label}: <strong>$${(value / 100).toFixed(2)}/month</strong> (42% before rounding DOWN to $5)</span>`;
+  return `<span class="plan-upcoming-price">Upcoming ${label}: <strong>$${(value / 100).toFixed(2)}/month</strong></span>`;
 }
 function membershipPriceHtml(tier, plan) {
   const sale = membershipSales[tier];
@@ -731,7 +731,7 @@ function renderPricing() {
     if (!notice) continue;
     notice.hidden = !membershipUpcoming;
     notice.textContent = membershipUpcoming
-      ? "Upcoming November 28, 2026: regular membership prices increase by 42% before rounding DOWN to the nearest $5. See the new monthly rates above."
+      ? "Upcoming November 28, 2026: regular membership prices will increase. See the new monthly rates above."
       : "";
   }
 
