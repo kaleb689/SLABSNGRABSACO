@@ -74,16 +74,18 @@ test('Query joins exact aliases, exact markers and a recent timestamp via parame
 });
 test('One-click mode is wired into actual Email Gen desktop UI and cannot auto-approve staged emails',()=>{
  const root=path.resolve(__dirname,'..');
- const panel=fs.readFileSync(path.join(root,'emailgen-random-panel.html'),'utf8');
- const ui=fs.readFileSync(path.join(root,'emailgen-oneclick-ui.js'),'utf8');
- const auto=fs.readFileSync(path.join(root,'emailgen-auto-test-ui.js'),'utf8');
- const app=fs.readFileSync(path.join(root,'apply.cjs'),'utf8');
+ const panel=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
+ const preload=fs.readFileSync(path.join(root,'preload.js'),'utf8');
  for(const id of ['randomCloudReceiptMode','randomOneClickStatus','randomCloudCheckStatus'])assert.ok(panel.includes('id="'+id+'"'));
- assert.match(ui,/SAFE STOP: none of the first/);
- assert.match(ui,/row\.verificationSource='cloudflare-d1'/);
- assert.match(ui,/result\?\.provider!=='cloudflare-d1'/);
- assert.match(auto,/runCloudReceiptTests\(/);
- assert.match(app,/inboundWorkerStatus:.*email:worker:status/);
+ assert.match(app,/SAFE STOP: none of the first/);
+ assert.match(app,/row\.verificationSource='cloudflare-d1'/);
+ assert.match(app,/result\?\.provider!=='cloudflare-d1'/);
+ assert.match(app,/runCloudReceiptTests\(/);
  assert.match(app,/setupOneClickEmailGen\(\)/);
- assert.doesNotMatch(ui,/api\(\)\.publish/);
+ assert.match(preload,/inboundWorkerStatus:.*email:worker:status/);
+ // The Cloudflare one-click handler does not publish individual routing rules.
+ const start=app.indexOf(' async function runCloudReceiptTests('),end=app.indexOf(' function setupOneClickEmailGen(',start);
+ assert.ok(start>=0&&end>start);
+ assert.doesNotMatch(app.slice(start,end),/api\(\)\.publish/);
 });
