@@ -21,8 +21,8 @@
 <div id="emailBatchManager" class="emailBatchManager" aria-label="Email generation batches" style="margin:12px 0 16px;padding:13px;border:1px solid #3b6072;border-radius:12px;background:#102236">
 
  <section id="randomAliasTestArea" style="border:1px solid #3d6881;border-radius:12px;padding:14px;background:#102c3a;margin-bottom:14px">
-  <h3 style="font-size:16px;margin:0 0 5px;color:#b5fdf3">Automatic email testing</h3>
-  <p class="tiny">After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified starts with 3 preflight emails per catch-all inbox. If none arrive, it pauses instead of sending hundreds more. After preflight, it tests in groups of 25. Green means delivered, amber means not confirmed in Inbox, and red means the sending server rejected the message.</p>
+  <h3 style="font-size:16px;margin:0 0 5px;color:#b5fdf3">Automatic email verification</h3>
+  <p class="tiny">With Cloudflare mode, ACO Studio uses your saved sender and real Cloudflare R2/D1 receipt confirmations instead of Gmail Inbox scanning. Its first three tests must reach Cloudflare before bulk testing continues. Existing IMAP mode remains available for older Gmail-forwarded emails. After generating a batch, ACO Studio will test its addresses automatically when a matching saved sender/receiver configuration is available. Test All Unverified starts with 3 preflight emails per catch-all inbox. If none arrive, it pauses instead of sending hundreds more. After preflight, it tests in groups of 25. Green means delivered, amber means not confirmed in Inbox, and red means the sending server rejected the message.</p>
   <label for="randomTestBatchSelect" class="tiny" style="display:block;margin:9px 0 4px">Choose batch to test (newest first)</label>
   <select id="randomTestBatchSelect" aria-label="Choose exact generated email batch to test" style="width:100%;margin-bottom:7px"><option value="">Unlock the Email Bank to choose a batch</option></select>
   <p id="randomTestBatchMeta" class="tiny" role="status" style="margin:2px 0 9px">Each batch can be tested independently. An older failed email does not need to be deleted to test a new batch.</p>
@@ -49,7 +49,7 @@
    <div class="test-metric"><span class="tiny">Send failed</span><strong id="randomTestFailed" style="color:#fc7378">0</strong></div>
   </div>
   <div class="batch-progress-rail" aria-hidden="true"><div id="randomTestGreenBar" class="batch-progress-pass"></div><div id="randomTestAmberBar" class="batch-progress-unconfirmed"></div><div id="randomTestRedBar" class="batch-progress-fail"></div></div>
-  <p id="randomTestStatus" class="tiny" role="status" aria-live="polite" style="margin:9px 0">Automatic testing starts after each generated batch when matching secure mail credentials are saved.</p>
+  <p id="randomTestStatus" class="tiny" role="status" aria-live="polite" style="margin:9px 0">Generate & Auto-Verify creates the batch first. Cloudflare mode confirms only real received messages; staging alone does not prove live routing.</p>
   <div id="randomTestRecent" class="tiny" style="max-height:120px;overflow:auto" aria-label="Recent test results"></div>
   <details id="randomTestSettings" style="margin-top:12px;padding:11px;border:1px solid #365168;border-radius:10px">
    <summary style="cursor:pointer;font-weight:700">Mail accounts &amp; forwarding settings (securely remembered)</summary>
