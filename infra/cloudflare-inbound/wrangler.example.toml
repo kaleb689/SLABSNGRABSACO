@@ -28,12 +28,14 @@ binding = "RECEIPTS"
 database_name = "sng-inbound-index"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
-# These values are adjustable without changing generated email addresses.
-# Supported hour values: 1, 6, 12, 24, 48, 72, 168.
-# Verification/security-code emails: 24 hours; other mail: 7 days.
+# Verification-code messages expire after 24 hours by default.
+# All other messages (including orders and shipping) last AT LEAST 14 days.
+# Default 30 days. Allowed regular-mail values: 336 (14d), 504 (21d),
+# 720 (30d), 1080 (45d), 1440 (60d), 2160 (90d) hours.
+# Code options: 1, 6, 12, 24, 48, 72, 168 hours.
 [vars]
 CODE_RETENTION_HOURS = "24"
-OTHER_RETENTION_HOURS = "168"
+OTHER_RETENTION_HOURS = "720"
 
 # Hourly UTC expiry removes both the original R2 MIME and its D1 index.
 [triggers]
