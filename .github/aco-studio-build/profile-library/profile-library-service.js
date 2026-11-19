@@ -2063,7 +2063,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   const plan=jigPlans.get(p.token);
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
-  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled&&!x.cardChange))throw Error('No profile address, phone or card changes to apply.');
+  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled&&!x.cardChange))throw Error(plan.cardAssignmentMode==='none'?'No profile address changes or phone additions to apply.':'No profile address, phone or card changes to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank||plan.targetMainFromBank?await reusableShippingChoices(a,latest):[];
   const latestById=new Map(latest.map(row=>[row.id,row]));
