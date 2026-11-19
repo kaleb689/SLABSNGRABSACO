@@ -1342,7 +1342,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           parent_id:adminCategory.id,permission_overwrites:readOwnerOnly});
       }
       await ensurePanel(controls.id,"owner-drop-controls",
-        "**OWNER DROP CONTROLS**\nChoose a retailer, then confirm. This announces **DROP IS LIVE** to the SLABSNGRABS ACO member server #general and schedules the recap 12 hours later. The verified data source remains SLABSNGRABSTC #success. Pending / Posted shows active drops.\n\nUnverified totals are **held privately**, never published as guessed numbers.",{
+        "**OWNER DROP CONTROLS**\nChoose a retailer to announce **DROP IS LIVE** to the SLABSNGRABS ACO member server #general and schedule an automatic verified recap 12 hours later.\n\n**CREATE MANUAL RECAP:** Select the retailer, date, start and end time (Eastern). Privately preview the verified Discord Success totals, then choose whether to show **Placed Orders**, **Cancelled**, and **Stick Rate** before confirming a post to #general. Manual recaps do not ping @everyone.\n\nAll recap totals come only from the original SLABSNGRABSTC #success channel. Missing or unverified totals are **held privately**, never guessed. Pending / Posted shows automatic drops.",{
           components:dropControlRows()
         });
       if(!dropRecapController){
