@@ -58,7 +58,7 @@ function harness(now=Date.now()){
      throw Error('Unexpected select '+sql);
     }
    };
-  }}}
+  }}}}
  };
  return {env,objects,receipts,retention,sent,setFail(v){failDelete=v}};
 }
