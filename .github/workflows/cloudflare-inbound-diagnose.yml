@@ -31,6 +31,13 @@ jobs:
             echo "${name}: HTTP ${status}; Cloudflare codes: ${codes}"
             rm -f response.json
           }
+          # This ID was reported by Wrangler's account discovery under the
+          # existing token; only print a yes/no comparison with the secret.
+          if [[ "${CF_ACCOUNT}" == "2cf1cfd109c7a0a8fea197fb50ed591b" ]]; then
+            echo "GitHub account ID matches Cloudflare token's discovered account: YES"
+          else
+            echo "::error::GitHub account ID matches Cloudflare token's discovered account: NO"
+          fi
           check 'Token active' '/user/tokens/verify'
           check 'Account metadata' "/accounts/${CF_ACCOUNT}"
           check 'R2 bucket list (read-only)' "/accounts/${CF_ACCOUNT}/r2/buckets?per_page=1"
