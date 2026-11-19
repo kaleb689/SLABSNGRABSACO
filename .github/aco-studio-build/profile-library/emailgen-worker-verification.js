@@ -51,7 +51,8 @@ async function readReceipts(cfg,dbId,tests,after,request=globalThis.fetch){
   tests.map(()=>'?').join(',')+') AND received_ms>=? LIMIT 100';
  const response=await cfRequest(cfg,'/accounts/'+cfg.accountId+'/d1/database/'+dbId+'/query',
   {method:'POST',body:{sql,params:[...markers,after]}},request);
- const rows=Array.isArray(response)?response.flatMap(x=>Array.isArray(x.results)?x.results:[]):[];
+ const sets=Array.isArray(response)?response:response&&typeof response==='object'?[response]:[];
+ const rows=sets.flatMap(x=>Array.isArray(x.results)?x.results:[]);
  const expected=new Set(tests.map(x=>x.alias+'|'+x.marker.toLowerCase()));
  return new Set(rows.filter(r=>expected.has(String(r.alias||'').toLowerCase()+'|'+String(r.marker||'').toLowerCase()))
   .map(x=>String(x.alias||'').toLowerCase()));
