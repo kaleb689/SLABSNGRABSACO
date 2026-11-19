@@ -3,7 +3,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const Policy=require('./card-pool-policy');
+const Policy=require(fs.existsSync(path.join(__dirname,'card-pool-policy.js'))?'./card-pool-policy':'../card-pool-policy');
 
 test('Hard Cards are first, and regular card ordering is stable',()=>{
  let settings={};
