@@ -314,9 +314,12 @@
    if(randomGenBusy)return;randomGenBusy=true;create.disabled=true;
    try{
     requireOwner();
-    const count=Number($e('randomAliasCount').value),target=$e('emailTarget').value.trim().toLowerCase();
+    const count=Number($e('randomAliasCount').value),cloudMode=cloudOneClickEnabled();
+    const target=cloudMode?cloudFallbackDestination():$e('emailTarget').value.trim().toLowerCase();
     if(!Number.isSafeInteger(count)||count<1||count>10000)throw Error('Choose 1–10,000 random forwarding emails.');
-    if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error('Enter your verified external IMAP inbox in the forwarding destination field above.');
+    if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error(cloudMode?
+     'Save and select a sending account once under Mail accounts & forwarding settings. Its existing external receiver is kept only as legacy bank metadata; Cloudflare storage will receive the tests.':
+     'Enter your verified external IMAP inbox in the forwarding destination field above.');
     if(records.length+count>10000)throw Error('Encrypted Email Bank capacity would be exceeded.');
     const existing=new Set(records.map(r=>r.alias)),batch=[];
     const batchCreatedAt=new Date().toISOString();
@@ -331,6 +334,7 @@
      existing.add(alias);
      const row=makeAlias('Random '+local,local,target,currentDomain());
      row.randomGenerated=true;row.batchId=batchId;row.batchCreatedAt=batchCreatedAt;
+     if(cloudMode)row.deliveryMode='cloudflare-inbound';
      row.poolTarget=null;row.poolImportedAt=null;batch.push(row);
      // Yield periodically so large local-only batches do not freeze the Email Gen window.
      if((i+1)%250===0&&i+1<count){
@@ -344,7 +348,9 @@
      render();throw Error('The encrypted bank did not save. No addresses were retained.');
     }
     emailBatchState.key='batch:'+batchId;emailBatchState.selected.clear();emailBatchState.page=0;
-    randomNotice('Saved '+batch.length+' emails in the Email Bank; starting automatic delivery checks if matching secure mail accounts are configured. No retailer pool was assigned.',true);
+    randomNotice('Saved '+batch.length+' unique emails in the encrypted Email Bank. '+(cloudMode?
+     'Starting Cloudflare receipt checks with a safe 3-message preflight; no account is marked working until Cloudflare records the actual email.':'Automatic legacy inbox tests run only if the saved mail accounts are configured.')+
+     ' No retailer pool was assigned.',true);
     refreshRandomChooser();
     scheduleNewBatchAutoTest(batchId);
    }catch(error){randomNotice(String(error.message||error));}
