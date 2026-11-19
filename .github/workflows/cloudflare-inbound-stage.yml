@@ -1,0 +1,60 @@
+name: Cloudflare inbound mail - isolated staging (NO live routing changes)
+on:
+  push:
+    branches:
+      - feature/cloudflare-high-volume-inbound-staging-20261119
+    paths:
+      - '.github/workflows/cloudflare-inbound-stage.yml'
+      - 'infra/cloudflare-inbound/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cloudflare-inbound-stage
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.repository == 'kaleb689/SLABSNGRABSACO'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: infra/cloudflare-inbound
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CI: true
+      WRANGLER_SEND_METRICS: false
+    steps:
+      - name: Checkout isolated staging source
+        uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Wrangler
+        run: npm install --no-save wrangler@4.113.0
+      - name: Verify source syntax and isolated Worker tests
+        run: |
+          node --check src/worker.mjs
+          node --check scripts/provision-staging.mjs
+          npm test
+      - name: Verify GitHub Secrets and Cloudflare token without exposing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]] || [[ ! "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            echo "::error::Missing Cloudflare token or invalid account ID GitHub secret"
+            exit 1
+          fi
+          curl -fSs --retry 2 \
+            --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            | jq -e '.success == true and .result.status == "active"' >/dev/null
+          echo "Cloudflare token is active (value not printed)."
+      - name: Provision isolated R2, Queues, D1 and deploy staging Worker
+        run: npm run deploy:staging
+      - name: Confirm safe staging deployment
+        run: |
+          echo "Staging infrastructure deployed, with no changes to Email Routing or DNS."
+          echo "Do not change the live sng.sarl catch-all until end-to-end validation and rollback testing."
