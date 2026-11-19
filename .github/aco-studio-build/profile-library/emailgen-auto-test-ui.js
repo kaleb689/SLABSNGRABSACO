@@ -268,7 +268,8 @@
    (catchallForMailbox(r.target)||r.status==='live'));
  }
  async function runAutomaticEmailTests({batchId=null,batchKeys=null,all=false,automatic=false,limit=null}={}){
-  if(cloudOneClickEnabled()&&testRowsForSelection({batchId,batchKeys,all}).some(r=>r.deliveryMode==='cloudflare-inbound'))
+  if(typeof cloudOneClickEnabled==='function'&&cloudOneClickEnabled()&&
+     testRowsForSelection({batchId,batchKeys,all}).some(r=>r.deliveryMode==='cloudflare-inbound'))
    return runCloudReceiptTests({batchId,batchKeys,all,automatic,limit});
   if(mailTestState.active||mailTestState.starting||randomGenBusy){
    if(automatic&&batchId)mailTestState.autoPendingBatch=batchId;
