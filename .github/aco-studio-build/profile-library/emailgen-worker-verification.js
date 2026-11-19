@@ -9,6 +9,7 @@ const MAX_BATCH=25;
 const POLL_MS=3000;
 const WAIT_MS=60000;
 const ACCOUNT_ID=/^[a-f0-9]{32}$/i;
+const DATABASE_ID=/^(?:[a-f0-9]{32}|[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12})$/i;
 const EMAIL=/^[a-z0-9][a-z0-9._+-]{0,62}@sng\.sarl$/i;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -40,7 +41,7 @@ async function database(cfg,request=globalThis.fetch){
  const rows=await cfRequest(cfg,'/accounts/'+cfg.accountId+'/d1/database?per_page=100',{},request);
  const selected=Array.isArray(rows)?rows.find(x=>x.name==='sng-inbound-index'):null;
  const id=selected?.uuid||selected?.id;
- if(!ACCOUNT_ID.test(id||''))throw Error('sng-inbound-index was not found in this Cloudflare account. No email marked verified.');
+ if(!DATABASE_ID.test(id||''))throw Error('sng-inbound-index was not found in this Cloudflare account. No email marked verified.');
  return id;
 }
 async function readReceipts(cfg,dbId,tests,after,request=globalThis.fetch){
