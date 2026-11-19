@@ -1,10 +1,11 @@
 # Copy to wrangler.toml and insert the D1 database ID returned by Wrangler.
-# There is intentionally NO addresses routing trigger: deploying it
-# cannot replace the production sng.sarl catch-all automatically.
+# There is intentionally NO addresses routing trigger, public workers.dev
+# subdomain, DNS route or custom domain. Deploying cannot replace the
+# production sng.sarl catch-all automatically.
 name = "sng-inbound-ingest"
 main = "src/worker.mjs"
 compatibility_date = "2026-11-18"
-workers_dev = true
+workers_dev = false
 
 [[r2_buckets]]
 binding = "RAW_MAIL"
