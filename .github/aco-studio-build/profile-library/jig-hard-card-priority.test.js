@@ -13,8 +13,10 @@ test('Hard Cards are first, and regular card ordering is stable',()=>{
  assert.deepEqual(cards.map(c=>c.id),['regular-a','hard','regular-b']);
 });
 test('Jig Studio exposes a persisted, optional Hard Card priority setting',()=>{
- const ui=fs.readFileSync(path.join(__dirname,'..','completed-profiles','profile-workshop-ui.js'),'utf8');
- const service=fs.readFileSync(path.join(__dirname,'..','completed-profiles','profile-workshop-service.js'),'utf8');
+ const overlay=path.join(__dirname,'..','completed-profiles');
+ const root=fs.existsSync(path.join(overlay,'profile-workshop-ui.js'))?overlay:path.join(__dirname,'..');
+ const ui=fs.readFileSync(path.join(root,'profile-workshop-ui.js'),'utf8');
+ const service=fs.readFileSync(path.join(root,'profile-workshop-service.js'),'utf8');
  assert.match(ui,/id="workshopHardCardPriority"/);
  assert.match(ui,/localStorage\.setItem\(hardPrioritySetting/);
  assert.match(ui,/prioritizeHardCards:\$\('workshopHardCardPriority'\)\.checked/);
