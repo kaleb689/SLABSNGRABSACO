@@ -2,7 +2,13 @@
 // Owner-only, read-only Cloudflare D1 email archive index for ACO Studio.
 // No card information, email bodies, Cloudflare tokens, or mailbox passwords
 // are sent to the renderer. Retailer orders must be verified elsewhere.
-const {credentialsFor, database, cfRequest}=require('./emailgen-worker-verification');
+const {database, cfRequest}=require('./emailgen-worker-verification');
+function credentialsFor(event,{sessions,requireOwner,requireCloudflareSession}){
+ requireOwner(event);requireCloudflareSession(event);
+ const cfg=sessions?.get(event.sender.id)?.config;
+ if(!cfg?.token||!/^[a-f0-9]{32}$/i.test(cfg.accountId||''))throw Error('Reconnect the saved Cloudflare owner login.');
+ return cfg;
+}
 const ALIAS=/^[^\s@]{1,64}@sng\.sarl$/i;
 function normalizeAlias(value){
  const alias=String(value||'').trim().toLowerCase();
