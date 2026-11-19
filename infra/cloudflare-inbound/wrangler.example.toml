@@ -1,0 +1,28 @@
+# Copy to wrangler.toml and insert the D1 database ID returned by Wrangler.
+# There is intentionally NO addresses routing trigger: deploying it
+# cannot replace the production sng.sarl catch-all automatically.
+name = "sng-inbound-ingest"
+main = "src/worker.mjs"
+compatibility_date = "2026-11-18"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "RAW_MAIL"
+bucket_name = "sng-inbound-raw"
+
+[[queues.producers]]
+binding = "INBOUND_QUEUE"
+queue = "sng-inbound-events"
+
+[[queues.consumers]]
+queue = "sng-inbound-events"
+max_batch_size = 50
+max_batch_timeout = 5
+max_retries = 10
+max_concurrency = 5
+dead_letter_queue = "sng-inbound-dead-letter"
+
+[[d1_databases]]
+binding = "RECEIPTS"
+database_name = "sng-inbound-index"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
