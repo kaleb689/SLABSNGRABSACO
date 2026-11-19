@@ -27,3 +27,14 @@ dead_letter_queue = "sng-inbound-dead-letter"
 binding = "RECEIPTS"
 database_name = "sng-inbound-index"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# These values are adjustable without changing generated email addresses.
+# Supported hour values: 1, 6, 12, 24, 48, 72, 168.
+# Verification/security-code emails: 24 hours; other mail: 7 days.
+[vars]
+CODE_RETENTION_HOURS = "24"
+OTHER_RETENTION_HOURS = "168"
+
+# Hourly UTC expiry removes both the original R2 MIME and its D1 index.
+[triggers]
+crons = ["0 * * * *"]
