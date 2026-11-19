@@ -77,8 +77,9 @@ test('queue stores idempotent receipt metadata and acknowledges valid events',as
   let acked=0;
   await handler.queue({messages:[{body:queued[0],ack:()=>acked++,retry:()=>assert.fail('unexpected retry')}]},env);
   assert.equal(acked,1);
-  assert.equal(records.length,1);
-  assert.match(records[0].sql,/INSERT OR IGNORE/);
+  assert.equal(records.length,2);
+  assert.match(records[0].sql,/INSERT OR IGNORE INTO inbound_receipts/);
+  assert.match(records[1].sql,/INSERT OR IGNORE INTO inbound_retention/);
 });
 
 test('invalid messages are retried rather than acknowledged',async()=>{
