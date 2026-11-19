@@ -1643,6 +1643,11 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
  }
  async function batchJigPreview(e,p){
   const a=await access(e,p),retailer=C.retailer(p.retailer);
+  // Card assignment is explicit and independent of address-jig rules.
+  const cardAssignmentMode=p.cardAssignmentMode??'none';
+  if(!['none','missing','replace'].includes(cardAssignmentMode))throw Error('Choose how Re-jig should handle existing cards.');
+  if(p.prioritizeHardCards!==undefined&&typeof p.prioritizeHardCards!=='boolean')throw Error('Choose Hard Card priority on or off.');
+  const prioritizeHardCards=p.prioritizeHardCards!==false;
   if(!Array.isArray(p.profileIds)||!p.profileIds.length||p.profileIds.length>MAX_BULK_REJIG_PROFILES||new Set(p.profileIds).size!==p.profileIds.length)throw Error('Select 1-'+MAX_BULK_REJIG_PROFILES+' saved profiles in this retailer and vault.');
   const requestedCounts=hardCounts(p.hardCounts),hasHard=p.distribution?.enabled===true?false:requestedCounts&&HARD_KINDS.some(k=>requestedCounts[k]>0);
   // Optional count applies only within this explicitly reviewed batch.
@@ -1678,7 +1683,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
   if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
-  const phoneOnlyRequest=p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank;
+  const phoneOnlyRequest=cardAssignmentMode==='none'&&p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank;
   const all=await profiles.fieldSnapshot(a.scope,a.id),byId=new Map(all.filter(x=>x.retailer===retailer).map(x=>[x.id,x]));
   const selected=p.profileIds.map(id=>byId.get(id));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
@@ -1979,36 +1984,106 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
     row.appliedRuleIds.push('phone.auto-fill');
    }
   }
-  // Previewing a batch that already occupies the first four preferred
-  // variations is useful: show all rows unchanged instead of pretending it
-  // must consume an unsafe jig. The Apply button stays disabled for no-ops.
-  if(retailer!=='target'&&rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled))
-   throw Error('Every selected profile already has the requested address and no changes would be saved.');
+  // Optional card assignment uses only THIS vault's saved Card Bank. Do not
+  // overwrite existing payment details unless the owner explicitly chooses
+  // Replace. Missing-only mode ignores a profile whose number is present.
+  const cardAssignments=[];let cardTargets=0,cardUnavailable=0;
+  if(cardAssignmentMode!=='none'){
+   if(!cardVault)throw Error('Saved Card Bank is unavailable. No changes made.');
+   const candidates=rows.filter(row=>cardAssignmentMode==='replace'||!C.payment(row.originalData).number);
+   cardTargets=candidates.length;
+   if(candidates.some(row=>row.linked))
+    throw Error('Automatic card assignments cannot overwrite website-linked profiles. Use their linked profile editor; no profiles changed.');
+   if(candidates.length){
+    const bank=cardVault(a.scope),saved=await bank.list(cardKey(a.scope,a.id));
+    const bankCards=(saved.cards||[]).length?await bank.selectedForJig(cardKey(a.scope,a.id),saved.cards.map(c=>c.id)):[];
+    const settings=await profiles.librarySettings(a.scope,a.id);
+    const ordered=prioritizeHardCards?CardPolicy.hardFirst(bankCards,settings):bankCards;
+    const excluded=new Set(candidates.map(row=>row.profileId));
+    const staged=all.filter(row=>!excluded.has(row.id));
+    const reserved=new Set();
+    for(const row of candidates){
+     let picked=null;
+     for(const card of ordered){
+      const n=CardPolicy.normalized(card.number);
+      const month=String(card.month||card.expMonth||'').padStart(2,'0'),year=String(card.year||card.expYear||'');
+      if(!n||reserved.has(n)||!/^(0[1-9]|1[0-2])$/.test(month)||!/^20\d\d$/.test(year))continue;
+      // Historical holds are never treated as available without their
+      // original profile present in this same encrypted vault.
+      if(card.previouslyAssigned&&!all.some(existing=>
+       existing.assetRefs?.cardId===card.id||C.payment(existing.data).number===n))continue;
+      try{CardPolicy.checkAllocation(staged,retailer,[n],settings);}catch{continue;}
+      picked={...card,number:n,month,year};break;
+     }
+     if(!picked){cardUnavailable++;if(cardAssignmentMode==='replace')throw Error('Not enough eligible saved cards for replacing all '+cardTargets+' profiles. No changes made.');continue;}
+     reserved.add(picked.number);
+     const oldNumber=C.payment(row.data).number;
+     if(oldNumber!==picked.number){
+      const updated=structuredClone(row.data);
+      // A different payment card NEVER inherits the previous card CVV.
+      if(Object.prototype.hasOwnProperty.call(updated,'cc_cvv'))updated.cc_cvv='';
+      for(const key of ['cvv','cvc','cid','cvv2'])if(Object.prototype.hasOwnProperty.call(updated,key))updated[key]='';
+      if(updated.card)for(const key of ['cvv','cvc','cid','cvv2'])if(Object.prototype.hasOwnProperty.call(updated.card,key))updated.card[key]='';
+      C.putCard(updated,picked);
+      row.data=C.syncCardholderToProfile(updated);
+      row.cardChange={sourceId:picked.id,number:picked.number,month:picked.month,year:picked.year,
+       oldLast4:oldNumber?oldNumber.slice(-4):'',newLast4:picked.number.slice(-4),
+       hard:CardPolicy.hardCard(picked.number,settings)};
+      row.appliedRuleIds.push(row.cardChange.hard?'card.hard-first':'card.regular');
+      cardAssignments.push({profileId:row.profileId,cardId:picked.id,number:picked.number,month:picked.month,year:picked.year});
+     }
+     staged.push({id:row.profileId,retailer,data:row.data});
+    }
+   }
+  }
+  // A card-only Re-jig is valid even when the address and phone are unchanged.
+  if(retailer!=='target'&&rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled&&!x.cardChange))
+   throw Error('Every selected profile already has the requested address, phone and card; no changes would be saved.');
   const duplicateAddresses=jigAddressConflicts(rows,all);
   const token=uuid();
   // Each new preview invalidates old plans from this owner/vault/retailer.
   for(const [id,plan] of jigPlans)if(now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||
    (plan.sender===e.sender.id&&plan.scope===a.scope&&plan.id===a.id&&plan.retailer===retailer))jigPlans.delete(id);
   jigPlans.set(token,{sender:e.sender.id,scope:a.scope,id:a.id,retailer,rows,duplicateAddresses,at:now(),epoch:ep(e),
-   autoUnitFromAddressBank,sourceMainFromBank,targetMainFromBank,
+   autoUnitFromAddressBank,sourceMainFromBank,targetMainFromBank,cardAssignments,cardAssignmentMode,
    reusedSource:source?{id:source.id,key:Object.values(source.address).map(normalizedAddressPart).join('|')}:null});
   return {token,duplicateAddresses,optionalUnitEligible:optionalUnitEligible.length,optionalUnitBankReassigned:bankReassigned,
    optionalUnitAdded:rows.filter(row=>row.appliedRuleIds.includes('second-line.add')).length,
-   count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)||x.phoneAutoFilled).length,
+   count:rows.length,changed:rows.filter(x=>JSON.stringify(x.before)!==JSON.stringify(x.after)||x.phoneAutoFilled||x.cardChange).length,
+   cardAssignmentMode,cardTargets,cardUnavailable,cardAssigned:cardAssignments.length,
+   hardCardAssigned:rows.filter(x=>x.cardChange?.hard).length,regularCardAssigned:rows.filter(x=>x.cardChange&&!x.cardChange.hard).length,
+   cardCodeRequired:cardAssignments.length,
    phoneAutoFilled:rows.filter(x=>x.phoneAutoFilled).length,phoneGenerated:rows.filter(x=>x.phoneGenerated).length,
    linked:rows.filter(x=>x.linked).length,reused:reuseCount,
    targetAllocation,postalScanned:postalScanned.size,postalCityCandidates:postalAlternativeCount,
    postalCityApplied:rows.filter(x=>x.postalCityApplied).length,postalStreetVerified:false,
-   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,phoneAutoFilled:x.phoneAutoFilled===true,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
+   distribution:distribution.counts,profiles:rows.map(x=>({profileId:x.profileId,email:x.email,label:x.label,before:x.before,after:x.after,linked:x.linked,category:x.category,mainAddress:x.mainAddress,unitBankSourceId:x.unitBankSourceId||null,cardBeforeLast4:x.cardChange?.oldLast4||'',cardAfterLast4:x.cardChange?.newLast4||'',hardCardAssigned:x.cardChange?.hard===true,cardSecurityCodeRequired:!!x.cardChange,phoneAutoFilled:x.phoneAutoFilled===true,appliedRuleIds:x.appliedRuleIds,postalCities:x.postalCities,postalCityApplied:x.postalCityApplied}))};
  }
  async function batchJigCommit(e,p){
   const plan=jigPlans.get(p.token);
   if(!plan||plan.sender!==e.sender.id||now()-plan.at>BULK_REJIG_PREVIEW_LIFETIME_MS||plan.epoch!==ep(e))throw Error('Bulk jig preview expired. Preview the selected profiles again.');
   if(p.confirmed!==true)throw Error('Confirm the reviewed bulk jig before saving.');
-  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled))throw Error('No profile address changes or phone additions to apply.');
+  if(plan.rows.every(x=>JSON.stringify(x.before)===JSON.stringify(x.after)&&!x.phoneAutoFilled&&!x.cardChange))throw Error(plan.cardAssignmentMode==='none'?'No profile address changes or phone additions to apply.':'No profile address, phone or card changes to apply.');
   const a=await access(e,{scope:plan.scope,customerId:plan.id}),latest=await profiles.fieldSnapshot(plan.scope,plan.id);
   const bankChoices=plan.autoUnitFromAddressBank||plan.sourceMainFromBank||plan.targetMainFromBank?await reusableShippingChoices(a,latest):[];
   const latestById=new Map(latest.map(row=>[row.id,row]));
+  if(plan.cardAssignments?.length){
+   const settings=await profiles.librarySettings(a.scope,a.id);
+   const saved=await cardVault(a.scope).selectedForJig(cardKey(a.scope,a.id),plan.cardAssignments.map(x=>x.cardId));
+   const current=new Map(saved.map(card=>[card.id,card]));
+   const replaced=new Set(plan.cardAssignments.map(x=>x.profileId));
+   const staged=latest.filter(row=>!replaced.has(row.id));
+   for(const change of plan.cardAssignments){
+    const card=current.get(change.cardId),after=plan.rows.find(x=>x.profileId===change.profileId);
+    if(!card||CardPolicy.normalized(card.number)!==change.number||
+       String(card.month||card.expMonth||'').padStart(2,'0')!==change.month||
+       String(card.year||card.expYear||'')!==change.year||
+       !after||C.payment(after.data).number!==change.number)
+     throw Error('The saved Card Bank changed after preview. No profiles changed; preview again.');
+    CardPolicy.checkAllocation(staged,plan.retailer,[change.number],settings);
+    staged.push({id:change.profileId,retailer:plan.retailer,data:after.data});
+   }
+  }
   for(const change of plan.rows){
    if(change.unitBankSourceId){
     const fullBankSource=(plan.sourceMainFromBank&&change.category==='random saved Address Bank source')||
@@ -2059,12 +2134,24 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
         (a.scope==='aco'&&row.source==='website-linked-profile'&&row.sourceLinked!==false))
       throw Error('A selected profile changed or became website-linked. Nothing saved; preview again.');
     }
+    // Repeat the card-usage check INSIDE the atomic encrypted vault write.
+    if(plan.cardAssignments?.length){
+     const replaced=new Set(plan.cardAssignments.map(x=>x.profileId));
+     const staged=ctx.rows.filter(row=>!replaced.has(row.id));
+     for(const change of plan.cardAssignments){
+      const data=plan.rows.find(x=>x.profileId===change.profileId)?.data;
+      if(!data||C.payment(data).number!==change.number)throw Error('Card preview changed. No profiles saved.');
+      CardPolicy.checkAllocation(staged,plan.retailer,[change.number],ctx.settings);
+      staged.push({id:change.profileId,retailer:plan.retailer,data});
+     }
+    }
     const conflicts=jigAddressConflicts(plan.rows,ctx.rows);
     if(JSON.stringify(conflicts)!==JSON.stringify(latestDuplicates))
      throw Error('Address usage changed during Apply. Nothing saved; preview again.');
     for(const change of plan.rows){
      const row=current.get(change.profileId);
      row.data=structuredClone(change.data);
+     if(change.cardChange){row.assetRefs||={};row.assetRefs.cardId=change.cardChange.sourceId;}
      row.label=C.values(row.data).label;
      row.group=String(change.group||row.group||row.retailer).slice(0,100);
      row.revision=(row.revision||0)+1;
