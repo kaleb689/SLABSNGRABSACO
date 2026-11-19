@@ -1751,3 +1751,81 @@ test('Login Accounts Shikari/Valor/TXT imports and exports are scoped, preview-o
  assert.equal(foreignSkipped.added,0);assert.equal(foreignSkipped.skippedForeign,1);
  assert.equal((await h.lib.retailerLogins(event,{...h.a,retailer:'target'})).count,0);
 });
+
+
+test('Bulk Walmart Re-jig explicitly fills missing cards with eligible Hard Cards first',async t=>{
+ const h=await library(t);
+ const one=complete('walmart','hard-priority-one@example.test'),two=complete('walmart','hard-priority-two@example.test');
+ for(const data of [one,two]){data.card.number='';data.card.cvv='';}
+ await commit(h,await preview(h,[one,two],h.p,'walmart'));
+ const regular=await h.service.addCard(event,{...h.p,card:{...card,number:'5555555555554444'}});
+ const hard=await h.service.addCard(event,{...h.p,card:{...card,number:'4111111111111111'}});
+ await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+hard.id,hard:true,confirmed:true});
+ const saved=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='walmart');
+ const args={...h.p,retailer:'walmart',profileIds:saved.map(x=>x.id),ruleIds:[],combine:false,billingSameAsShipping:true,
+  cardAssignmentMode:'missing',prioritizeHardCards:true};
+ const plan=await h.lib.batchJigPreview(event,args);
+ assert.equal(plan.changed,2);
+ assert.equal(plan.cardAssigned,2);
+ assert.equal(plan.hardCardAssigned,1);
+ assert.equal(plan.regularCardAssigned,1);
+ assert.equal(plan.profiles[0].cardAfterLast4,'1111');
+ assert.equal(plan.profiles[1].cardAfterLast4,'4444');
+ const applied=await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ assert.equal(applied.updated,2);
+ const latest=(await h.lib.list(event,h.p)).profiles.filter(x=>x.retailer==='walmart');
+ assert.deepEqual(latest.map(x=>LC.payment(x.data).number),['4111111111111111','5555555555554444']);
+ assert.ok(latest.every(x=>LC.payment(x.data).cvv===''));
+ assert.ok(latest.every(x=>LC.payment(x.data).cardholder==='Alex Example'));
+ // An already used Walmart Hard Card cannot be assigned again to Walmart.
+ await assert.rejects(h.lib.batchJigPreview(event,{...args,cardAssignmentMode:'replace',profileIds:[latest[0].id,latest[1].id,latest[0].id]}),/Select 1/);
+});
+
+test('Bulk Re-jig keeps existing payment details in missing-only mode',async t=>{
+ const h=await library(t),existing=complete('walmart','keep-existing@example.test');
+ existing.card.cvv='012';existing.profileSecurityCode='INDEPENDENT-REFERENCE-1';
+ await commit(h,await preview(h,[existing],h.p,'walmart'));
+ const hard=await h.service.addCard(event,{...h.p,card:{...card,number:'4111111111111111'}});
+ await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+hard.id,hard:true,confirmed:true});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'walmart',profileIds:[row.id],ruleIds:['avenue_short'],
+  cardAssignmentMode:'missing',prioritizeHardCards:true,combine:false,billingSameAsShipping:true});
+ assert.equal(plan.cardAssigned,0);
+ await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ const updated=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(LC.payment(updated.data).number,'4242424242424242');
+ assert.equal(LC.payment(updated.data).cvv,'012');
+ assert.equal(updated.data.profileSecurityCode,'INDEPENDENT-REFERENCE-1');
+});
+
+test('Explicit replace-card mode chooses Hard Card first and never copies old CVV',async t=>{
+ const h=await library(t),existing=complete('walmart','replace-card@example.test');
+ existing.card.cvv='007';existing.profileSecurityCode='INDEPENDENT-REFERENCE-2';
+ await commit(h,await preview(h,[existing],h.p,'walmart'));
+ const hard=await h.service.addCard(event,{...h.p,card:{...card,number:'4111111111111111'}});
+ await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+hard.id,hard:true,confirmed:true});
+ const row=(await h.lib.list(event,h.p)).profiles[0];
+ const args={...h.p,retailer:'walmart',profileIds:[row.id],ruleIds:[],cardAssignmentMode:'replace',prioritizeHardCards:true,combine:false,billingSameAsShipping:true};
+ const plan=await h.lib.batchJigPreview(event,args);
+ assert.equal(plan.cardAssigned,1);
+ assert.equal(plan.hardCardAssigned,1);
+ assert.equal(plan.profiles[0].cardBeforeLast4,'4242');
+ assert.equal(plan.profiles[0].cardAfterLast4,'1111');
+ await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
+ const updated=(await h.lib.list(event,h.p)).profiles[0];
+ assert.equal(LC.payment(updated.data).number,'4111111111111111');
+ assert.equal(LC.payment(updated.data).cvv,'');
+ assert.equal(updated.data.profileSecurityCode,'INDEPENDENT-REFERENCE-2');
+ const same=await h.lib.batchJigPreview(event,{...args,cardAssignmentMode:'missing',ruleIds:['avenue_short']});
+ assert.equal(same.cardAssigned,0,'A complete card must never be replaced in missing-only mode');
+});
+
+test('Re-jig UI visibly exposes hard-card priority and card modes in the actual bulk dialog',()=>{
+ const fsSync=require('node:fs');
+ const root=fsSync.existsSync(path.join(__dirname,'..','profile-library-ui.js'))?path.join(__dirname,'..'):path.join(__dirname);
+ const ui=fsSync.readFileSync(path.join(root,'profile-library-ui.js'),'utf8');
+ assert.match(ui,/Prioritize Hard Cards First/);
+ assert.match(ui,/Assign cards during this Jig \/ Re-jig/);
+ assert.match(ui,/cardAssignmentMode:cardModeSelect\.value,prioritizeHardCards:cardPriorityBox\.checked/);
+ assert.match(ui,/cardControls,preview,duplicateLabel,save,review/);
+});
