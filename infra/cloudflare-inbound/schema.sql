@@ -28,6 +28,11 @@ CREATE INDEX IF NOT EXISTS inbound_retention_due ON inbound_retention(expires_ms
 UPDATE inbound_retention
 SET expires_ms = MAX(expires_ms,
   (SELECT r.received_ms FROM inbound_receipts r WHERE r.id=inbound_retention.id) + 2592000000)
-WHERE kind='other' AND EXISTS (
-  SELECT 1 FROM inbound_receipts r WHERE r.id=inbound_retention.id
-);
+WHERE kind='other'
+  AND expires_ms <= (
+    SELECT r.received_ms + 604800000 FROM inbound_receipts r
+    WHERE r.id=inbound_retention.id
+  )
+  AND EXISTS (
+    SELECT 1 FROM inbound_receipts r WHERE r.id=inbound_retention.id
+  );
