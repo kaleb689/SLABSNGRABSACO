@@ -314,7 +314,7 @@
    if(randomGenBusy)return;randomGenBusy=true;create.disabled=true;
    try{
     requireOwner();
-    const count=Number($e('randomAliasCount').value),cloudMode=cloudOneClickEnabled();
+    const count=Number($e('randomAliasCount').value),cloudMode=typeof cloudOneClickEnabled==='function'&&cloudOneClickEnabled();
     const target=cloudMode?cloudFallbackDestination():$e('emailTarget').value.trim().toLowerCase();
     if(!Number.isSafeInteger(count)||count<1||count>10000)throw Error('Choose 1–10,000 random forwarding emails.');
     if(!validEmail(target)||target.endsWith('@'+OWNER_DOMAIN))throw Error(cloudMode?
