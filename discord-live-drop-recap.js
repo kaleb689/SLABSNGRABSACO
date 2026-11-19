@@ -8,6 +8,7 @@ import {buildDiscordSourceRecap} from "./discord-source-recap-report.js";
 import {checkoutIdentityFromDiscord,checkoutProductFromDiscord} from "./discord-checkout-identity.js";
 import {discordVerifiedFullCharge} from "./discord-checkout-tax-inclusive-policy.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID,sourcePriceIsLineTotal} from "./discord-source-price-field-policy.js";
+import {createManualDiscordRecapFlow} from "./discord-manual-drop-recap.js";
 
 export const DROP_RECAP_DELAY_MS=12*60*60*1000;
 export const DROP_RECAP_RETAILERS=Object.freeze({
@@ -138,6 +139,9 @@ export function dropControlRows() {
       {type:2,style:3,label:"📦 Costco",custom_id:"sngdrop:start:costco"},
       {type:2,style:3,label:"⭐ Sam's Club",custom_id:"sngdrop:start:sams"},
       {type:2,style:2,label:"Pending / Posted",custom_id:"sngdrop:status"}
+    ]},
+    {type:1,components:[
+      {type:2,style:1,label:"📊 Create Manual Recap",custom_id:"sngdrop:manual:open"}
     ]}
   ];
 }
@@ -152,11 +156,13 @@ export function buildDropAnnouncement(retailer,id,startMs){
         Math.floor(due/1000)+":F> (12 hours after this announcement).",
       footer:{text:"SNG-DROP-LIVE:"+id},timestamp:stamp(startMs)}]};
 }
-export function buildDropRecapPost(retailer,id,report){
+export function buildDropRecapPost(retailer,id,report,visibility={}){
   if(!report?.readyToPublish||!Number.isSafeInteger(report.totalSpentCents)||
      !Number.isSafeInteger(report.totalUnits))throw Error("Unverified recap totals cannot be published");
-  const spec=DROP_RECAP_RETAILERS[retailer];
+  const spec=DROP_RECAP_RETAILERS[retailer]||
+    (retailer==="all"?{name:"All Retailers",label:"All"}:null);
   if(!spec)throw Error("Unknown recap retailer");
+  const {showPlacedOrders=true,showCancelled=true,showStickRate=true}=visibility;
   const placed=Number(report.ordersPlaced)||0;
   const cancelled=Number(report.deduplicatedCancelledOrders)||0;
   const rate=placed+cancelled>0?Math.round(1000*placed/(placed+cancelled))/10:0;
@@ -173,9 +179,9 @@ export function buildDropRecapPost(retailer,id,report){
       fields:[
         {name:"💚 TOTAL SPENT",value:"**"+currency(report.totalSpentCents)+"**",inline:true},
         {name:"📦 UNITS",value:"**"+report.totalUnits+"**",inline:true},
-        {name:"✅ ORDERS PLACED",value:"**"+placed+"**",inline:true},
-        {name:"❌ CANCELLED",value:"**"+cancelled+"**",inline:true},
-        {name:"📈 STICK RATE",value:"**"+rate.toFixed(1)+"%**",inline:true},
+        ...(showPlacedOrders?[{name:"✅ ORDERS PLACED",value:"**"+placed+"**",inline:true}]:[]),
+        ...(showCancelled?[{name:"❌ CANCELLED",value:"**"+cancelled+"**",inline:true}]:[]),
+        ...(showStickRate?[{name:"📈 STICK RATE",value:"**"+rate.toFixed(1)+"%**",inline:true}]:[]),
         {name:"TOP PRODUCTS",value:top.slice(0,1000)}
       ],
       ...(sourceImage?{thumbnail:{url:sourceImage}}:{}),
@@ -193,6 +199,11 @@ export function createDiscordDropRecapController({
 }){
   if(!dataDir||typeof api!=="function"||!token||!guildId||!ownerId||
      !generalChannelId||!controlChannelId)throw Error("Drop announcement controller requires configured channels");
+  const manualFlow=createManualDiscordRecapFlow({
+    api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
+    getSource,makeReport,parseCheckout:parseDiscordSuccessForRecap,
+    postBuilder:buildDropRecapPost,now
+  });
   const store=path.join(dataDir,"discord-live-drop-recaps.json");
   let queue=Promise.resolve(),timer=null;
   const serialized=task=>{const next=queue.then(task);queue=next.catch(()=>{});return next;};
@@ -377,6 +388,7 @@ export function createDiscordDropRecapController({
     const reply=content=>api(callback,"POST",{type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
     if(user!==String(ownerId)||String(d.channel_id)!==String(controlChannelId))
       return reply("Only the verified server owner can use these private drop controls.");
+    if(id.startsWith("sngdrop:manual:"))return manualFlow.handleInteraction(d);
     if(id==="sngdrop:status")return reply(await statusText());
     const start=id.match(/^sngdrop:start:(target|walmart|pokemoncenter|costco|sams)$/);
     if(start){

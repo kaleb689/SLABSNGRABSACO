@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - discord-live-drop-recap.js
+      - discord-manual-drop-recap.js
+      - tests/discord-manual-drop-recap.test.js
       - discord-bot-avatar.js
       - assets/discord-bot-avatar-sng-20261114.b64
       - tests/discord-bot-avatar.test.js
@@ -15,6 +17,8 @@ on:
   pull_request:
     paths:
       - discord-live-drop-recap.js
+      - discord-manual-drop-recap.js
+      - tests/discord-manual-drop-recap.test.js
       - discord-bot-avatar.js
       - assets/discord-bot-avatar-sng-20261114.b64
       - tests/discord-bot-avatar.test.js
@@ -41,8 +45,9 @@ jobs:
       - name: Check the Discord feature and bot syntax
         run: |
           node --check discord-live-drop-recap.js
+          node --check discord-manual-drop-recap.js
           node --check discord-bot-avatar.js
           node --check discord-community.js
           node --check server-discord-source-recap-review.js
       - name: Verify confirmation, timing, source and duplicate protections
-        run: node --test tests/discord-live-drop-recap.test.js tests/discord-source-recap-tax-shipping.test.js tests/discord-bot-avatar.test.js
+        run: node --test tests/discord-live-drop-recap.test.js tests/discord-manual-drop-recap.test.js tests/discord-source-recap-tax-shipping.test.js tests/discord-bot-avatar.test.js
