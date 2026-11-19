@@ -1150,7 +1150,7 @@
   const streetChanged=['address1','address2'].some(k=>row.before[k]!==row.after[k]);
   const postalChanged=['city','state','zip'].some(k=>row.before[k]!==row.after[k]);
   const phoneChanged=row.before.phone!==row.after.phone||row.phoneAutoFilled===true;
-  const status=streetChanged?'JIGGED':postalChanged?'CITY / POSTAL ONLY':phoneChanged?'PHONE ONLY':'UNCHANGED';
+  const status=streetChanged?'JIGGED':postalChanged?'CITY / POSTAL ONLY':phoneChanged?'PHONE ONLY':row.cardAfterLast4?'CARD ONLY':'UNCHANGED';
   const block=d.createElement('section');
   block.style.cssText='padding:10px 12px;border:1px solid #344a5c;border-radius:9px;margin:8px 0;background:#0d1828;white-space:normal';
   const heading=d.createElement('div');heading.style.cssText='display:flex;gap:12px;align-items:center;flex-wrap:wrap';
@@ -1182,7 +1182,8 @@
    info.style.cssText='display:block;margin-top:5px;color:#ffd28c';
    block.append(info);
   }
-  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id==='phone.auto-fill'?'Automatically completed missing phone fields':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
+  if(row.cardAfterLast4){const cardNotice=d.createElement('small');cardNotice.textContent='CARD ASSIGNMENT · '+(row.cardBeforeLast4?'Previously ending '+row.cardBeforeLast4+' → ':'Missing card → ')+(row.hardCardAssigned?'Hard Card':'Regular card')+' ending '+row.cardAfterLast4+' · Enter the new card’s actual security code before exporting';cardNotice.style.cssText='display:block;margin-top:6px;color:#ffd28c;font-weight:700';block.append(cardNotice);}
+  const rules=(row.appliedRuleIds||[]).map(id=>id==='second-line.add'?'Appended unit to Address Line 1':id==='phone.auto-fill'?'Automatically completed missing phone fields':id==='card.hard-first'?'Assigned eligible Hard Card first':id==='card.regular'?'Assigned eligible Regular card':id.startsWith('hard.')?'Hard '+id.slice(5):(settings.options||[]).find(rule=>rule.id===id)?.label||id);
   if(rules.length){
    const label=d.createElement('small');label.textContent='Applied: '+rules.join(' · ');
    label.style.cssText='display:block;margin-top:5px;color:#8dddd4';block.append(label);
@@ -1310,10 +1311,27 @@
    duplicateLabel.className='check';duplicateLabel.hidden=true;
    const allowDuplicates=d.createElement('input');allowDuplicates.type='checkbox';allowDuplicates.checked=false;
    duplicateLabel.prepend(allowDuplicates);
+   // This is the actual Profiles > Jig/Re-jig dialog (including Re-jig all).
+   // Card assignment is opt-in per run; changing the priority never silently
+   // overwrites an existing card or invents a security code.
+   const cardControls=d.createElement('section');cardControls.style.cssText='border:1px solid #3b7482;padding:12px;border-radius:9px;margin:10px 0;background:#102638';
+   const cardPriorityLabel=text('label','Prioritize Hard Cards First'),cardPriorityBox=d.createElement('input');
+   cardPriorityLabel.className='check';cardPriorityBox.type='checkbox';
+   try{cardPriorityBox.checked=localStorage.getItem('acoJigHardCardPriority')!=='false';}catch{cardPriorityBox.checked=true;}
+   cardPriorityLabel.prepend(cardPriorityBox);
+   const cardModeLabel=text('label','Assign cards during this Jig / Re-jig'),cardModeSelect=d.createElement('select');
+   for(const [value,label] of [
+    ['missing','Fill only profiles missing a card (keep existing cards)'],
+    ['none','Keep all existing cards; do not assign cards'],
+    ['replace','Replace selected profiles’ card assignments (requires confirmation)']
+   ]){const option=d.createElement('option');option.value=value;option.textContent=label;cardModeSelect.append(option);}
+   cardModeSelect.value='missing';cardModeLabel.append(cardModeSelect);
+   const cardHelp=text('small','When enabled, eligible saved Hard Cards are assigned first, then Regular cards. Card handling uses only this vault. Existing cards are preserved unless you explicitly choose Replace. A new card never inherits the old CVV; enter its real code before exporting. Nothing is saved until Apply.');
+   cardControls.append(cardPriorityLabel,cardModeLabel,cardHelp);
    const review=d.createElement('div');let token=null,duplicateCount=0,previewRevision=0,previewTimer=null;
    let changedCount=0;
    allowDuplicates.onchange=()=>{save.disabled=!token||changedCount===0||(duplicateCount>0&&!allowDuplicates.checked);};
-   win.body.append(info,autoPhoneNote,addressPicker,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,preview,duplicateLabel,save,review);
+   win.body.append(info,autoPhoneNote,addressPicker,targetMainLabel,targetMainInfo,rules,distributionLabel,distributionPanel,combine,billing,bankSourceLabel,bankSourceHelp,optionalUnitLabel,unitQuantityLabel,optionalUnitHelp,postalScan,postalApply,postalHelp,reuseLabel,reusePanel,cardControls,preview,duplicateLabel,save,review);
    const invalidatePreview=()=>{previewRevision++;token=null;duplicateCount=0;changedCount=0;allowDuplicates.checked=false;duplicateLabel.hidden=true;save.disabled=true;review.replaceChildren();};
    const enforceMainMode=()=>{
     if(!targetMainToggle.checked)return;
@@ -1328,7 +1346,7 @@
    // recomputes against the currently selected rules. Never apply a stale plan.
    const schedulePreview=()=>{invalidatePreview();if(previewTimer!==null)clearTimeout(previewTimer);
     previewTimer=setTimeout(()=>{previewTimer=null;if(win.valid()&&(!reuseToggle.checked||reuseLoaded))void preview.onclick?.();},400);};
-   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,bankSourceToggle,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount])control.addEventListener('change',()=>{enforceMainMode();schedulePreview();});
+   for(const control of [rules,distributionToggle,distributionPanel,combineBox,billingBox,bankSourceToggle,optionalUnitToggle,unitQuantity,postalScanBox,postalApplyBox,reuseSelect,reuseCount,cardModeSelect,cardPriorityBox])control.addEventListener('change',()=>{if(control===cardPriorityBox)try{localStorage.setItem('acoJigHardCardPriority',String(cardPriorityBox.checked));}catch{}enforceMainMode();schedulePreview();});
    for(const control of [unitQuantity,reuseCount,distributionPanel])control.addEventListener('input',schedulePreview);
    reuseToggle.onchange=async()=>{
     invalidatePreview();if(previewTimer!==null){clearTimeout(previewTimer);previewTimer=null;}reusePanel.hidden=!reuseToggle.checked;
@@ -1372,11 +1390,16 @@
       ...(sourcingAddresses?{sourceAddressIds:[...chosenAddressIds]}:{}),combine:combineBox.checked,
       billingSameAsShipping:billingBox.checked||optionalUnitToggle.checked,optionalUnitCount,
       autoUnitFromAddressBank:optionalUnitToggle.checked,sourceMainFromBank:retailer==='walmart'&&bankSourceToggle.checked,
-      postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse});
+      postalScan:postalScanBox.checked,postalApplyCities:postalScanBox.checked&&postalApplyBox.checked,reuse,
+      cardAssignmentMode:cardModeSelect.value,prioritizeHardCards:cardPriorityBox.checked});
      if(!win.valid()||activeRevision!==previewRevision)return;token=result.token;changedCount=result.changed;
       if(result.targetAllocation)review.append(text('p','Target Main-first allocation: '+result.targetAllocation.mainAddresses+' saved Main addresses · '+result.targetAllocation.originalSlots+' selected profiles allocated to original addresses · '+result.targetAllocation.extraVariations+' allocated to additional enabled variations · max 4 per exact Target address.'));
      if(!result.targetAllocation&&result.distribution&&Object.keys(result.distribution).length)review.append(text('p','Jig distribution: '+Object.entries(result.distribution).map(([style,count])=>style+': '+count).join(' · ')));
      review.append(text('p',result.changed+' of '+result.count+' selected profiles will change'+(result.phoneAutoFilled?' · '+result.phoneAutoFilled+' profile(s) have missing phone fields completed automatically ('+result.phoneGenerated+' sample number(s) generated)':'')+(result.reused?' · '+result.reused+' profiles share the selected exact address':'')+(result.linked?' · '+result.linked+' website-linked profile(s) will sync to the website/app':'')+' · '+result.optionalUnitAdded+' optional inline Address Line 1 unit(s) added ('+result.optionalUnitEligible+' eligible unitless source addresses; '+(result.optionalUnitBankReassigned||0)+' selected profile(s) sourced automatically from Address Bank).'));
+     if(result.cardAssignmentMode!=='none'){
+      const cardText=result.cardAssigned+' card(s) allocated · '+result.hardCardAssigned+' Hard Cards first · '+result.regularCardAssigned+' Regular cards · '+result.cardUnavailable+' without an eligible saved card · '+result.cardCodeRequired+' new cards need their actual CVV before export.';
+      const summary=text('p',cardText);summary.style.cssText='font-weight:700;color:#ffd28c';review.append(summary);
+     }
      if(result.postalScanned)review.append(text('p','ZIP/city directory scanned '+result.postalScanned+' unique address(es), found '+result.postalCityCandidates+' alternate city option(s), applied '+result.postalCityApplied+'. ZIP+4 and USPS street delivery are not verified here.'));
      // Keep the review responsive while making EVERY account inspectable.
      const previewRows=d.createElement('section'),previewNav=d.createElement('nav'),previewLabel=text('small','');
@@ -1404,11 +1427,13 @@
       for(const clash of result.duplicateAddresses.slice(0,100))review.append(text('p',clash.email+' → '+clash.address+' · already used by '+clash.matches.map(x=>x.email+' ('+retailName[x.retailer]+')').join(', ')));
      }
      save.disabled=result.changed===0||(duplicateCount>0&&!allowDuplicates.checked);
-     win.status().textContent=result.changed===0?'These profiles already have the requested addresses and phone fields; there are no edits to apply.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. One Apply action will process the whole selected set.';
+     win.status().textContent=result.changed===0?'No address, phone or card changes are needed for this selection.':duplicateCount?'Duplicate addresses detected. Review them and explicitly allow reuse if required.':'Preview ready. Review every address and any new card endings before Apply.';
     }catch(error){if(win.valid()&&activeRevision===previewRevision)win.status().textContent=error.message;}finally{if(win.valid()&&activeRevision===previewRevision)preview.disabled=false;}
    };
    save.onclick=async()=>{
-    if(!token||!confirm('Apply the reviewed jig to all '+chosen.length+' '+retailName[retailer]+' profiles in this one vault, including all preview pages?'))return;
+    if(!token)return;
+    if(cardModeSelect.value==='replace'&&!confirm('REPLACE CARD ASSIGNMENTS? All selected profiles may receive new saved cards. Any previous card CVV will be cleared and must be entered again for the new card. Continue?'))return;
+    if(!confirm('Apply the reviewed jig to all '+chosen.length+' '+retailName[retailer]+' profiles in this one vault, including all preview pages?'))return;
     save.disabled=true;preview.disabled=true;
     try{
      const result=await api.batchJigCommit({token,confirmed:true,allowDuplicateAddresses:duplicateCount>0&&allowDuplicates.checked});
