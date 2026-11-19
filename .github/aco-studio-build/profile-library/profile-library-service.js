@@ -1683,7 +1683,7 @@ function createLibrary({authorize,guard,profiles,cardVault,addressBanks,chooseSa
   if(reuse&&(!Number.isSafeInteger(reuseCount)||reuseCount<2||reuseCount>p.profileIds.length))throw Error('Choose between 2 and the selected profile count for address reuse.');
   if(!Array.isArray(p.ruleIds)||p.ruleIds.length>300||p.ruleIds.some(id=>typeof id!=='string'||/^prefix_three/.test(id)||!supportedRule(id)))
    throw Error('Choose supported jig rules for the remaining profiles, or explicitly reuse one saved address for the entire selection.');
-  const phoneOnlyRequest=p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank;
+  const phoneOnlyRequest=cardAssignmentMode==='none'&&p.profileIds.length>reuseCount&&!p.ruleIds.length&&!hasHard&&!optionalUnitCount&&!targetMainFromBank;
   const all=await profiles.fieldSnapshot(a.scope,a.id),byId=new Map(all.filter(x=>x.retailer===retailer).map(x=>[x.id,x]));
   const selected=p.profileIds.map(id=>byId.get(id));
   if(selected.some(x=>!x))throw Error('Every selected profile must still belong to this vault and retailer.');
