@@ -82,6 +82,8 @@ test('Verification codes expire at 24h; other emails and order updates default t
  assert.equal(shipping.kind,'other');assert.equal(shipping.expiresMs,at+720*HOUR);
  const orderCode=retentionFor(new Headers({subject:'Order verification update and receipt'}),{},at);
  assert.equal(orderCode.kind,'other');assert.equal(orderCode.expiresMs,at+720*HOUR);
+ const actualCode=retentionFor(new Headers({subject:'Your order verification code is 987654'}),{},at);
+ assert.equal(actualCode.kind,'verification');assert.equal(actualCode.expiresMs,at+24*HOUR);
 });
 test('Supported settings can shorten verification retention without changing unrelated mail',()=>{
  const at=1700000000000,env={CODE_RETENTION_HOURS:'6',OTHER_RETENTION_HOURS:'336'};
