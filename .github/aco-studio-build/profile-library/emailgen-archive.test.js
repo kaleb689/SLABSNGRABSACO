@@ -16,7 +16,7 @@ test('lists owner D1 receipts with bounded request and no email bodies',async()=
  assert.equal(result.messages[0].alias,'example@sng.sarl');
  assert.equal(result.messages[0].sizeBytes,7217);
  assert.ok(!('body' in result.messages[0]));
- assert.equal(JSON.parse(calls[1].init.body).params.at(-1),50);
+ assert.equal(JSON.parse(calls[1].init.body).params.at(-1),100);
 });
 test('filters by exact validated alias using SQL parameters',async()=>{
  const {request,calls}=mock();
@@ -30,5 +30,5 @@ test('limits excessive input and redacts arbitrary D1 columns',async()=>{
  const {request,calls}=mock([{results:[{id:'not-a-uuid',alias:'example@sng.sarl',token:'DO-NOT-LEAK'}]}]);
  const result=await listArchive(config,{limit:999},request);
  assert.equal(result.messages.length,0);
- assert.equal(JSON.parse(calls[1].init.body).params[0],50);
+ assert.equal(JSON.parse(calls[1].init.body).params[0],100);
 });
