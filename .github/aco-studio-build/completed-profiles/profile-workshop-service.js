@@ -318,7 +318,10 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
  async function selected(scope,id,p,choices,callback){
   const aIDs=choices.address?ids(p.addressIds,'addresses'):[],cIDs=choices.card?ids(p.cardIds,'saved cards'):[];
   const run=async(addresses,cards)=>callback({addresses,cards,hash:Fields.hash({addresses,cards})});
-  const withCards=addresses=>choices.card?cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,async cards=>run(addresses,CardPolicy.hardFirst(cards,await profiles.librarySettings(scope,id)))):run(addresses,[]);
+  const withCards=addresses=>choices.card?cardVault(scope).withSelectedForJig(cardKey(scope,id),cIDs,async cards=>{
+   const ordered=p.prioritizeHardCards===false?cards:CardPolicy.hardFirst(cards,await profiles.librarySettings(scope,id));
+   return run(addresses,ordered);
+  }):run(addresses,[]);
   return choices.address?addressBanks.withWorkshopAddresses(scope,id,aIDs,withCards):withCards([]);
  }
  async function source(e,p,scope,id){
@@ -341,6 +344,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   return {parsed,indices:p.indices,matched,mapping:p.mapping||Core.autoMap(parsed.records)};
  }
  async function preview(e,p){expired();const {scope,id}=await access(e,p),generation=epoch(e),choices=Fields.selection(p.choices);
+  if(p.prioritizeHardCards!==undefined&&typeof p.prioritizeHardCards!=='boolean')throw Error('Choose Hard Card priority on or off.');
   if(typeof p.contextKey!=='string'||p.contextKey.length>32768)throw Error('Profile selection context is missing.');
   const src=await source(e,p,scope,id);Fields.validateRows(src.parsed.records,src.indices);
   let result,resourcesHash;
@@ -396,7 +400,7 @@ function createWorkshop({authorize,guard,profiles,addressBanks,cardVault,chooseS
   guard(e,scope);if(generation!==epoch(e))throw Error('Vault closed during preview.');
   const canSave=src.matched.every(Boolean)&&new Set(src.matched.map(x=>x?.id)).size===src.indices.length;
   while([...plans.values()].filter(x=>x.sender===e.sender.id).length>=6){const [key]=[...plans].find(([,v])=>v.sender===e.sender.id);plans.delete(key);}
-  const token=uuid(),plan={jigged:choices.address&&p.addressOptions?.applyStyles===true,token,sender:e.sender.id,scope,id,choices,src,result,text,resourcesHash,contextKey:p.contextKey,addressIds:choices.address?[...p.addressIds]:[],cardIds:choices.card?[...p.cardIds]:[],unusedOnly:p.unusedOnly!==false,created:now(),canSave,saved:false,applied:false,busy:false};plans.set(token,plan);
+  const token=uuid(),plan={jigged:choices.address&&p.addressOptions?.applyStyles===true,token,sender:e.sender.id,scope,id,choices,src,result,text,resourcesHash,contextKey:p.contextKey,addressIds:choices.address?[...p.addressIds]:[],cardIds:choices.card?[...p.cardIds]:[],prioritizeHardCards:p.prioritizeHardCards!==false,unusedOnly:p.unusedOnly!==false,created:now(),canSave,saved:false,applied:false,busy:false};plans.set(token,plan);
   return {token,contextKey:p.contextKey,scope,customerId:id,choices,canSave,selected:src.indices.length,changed:result.stats.changed,preview:result.summary.slice(0,60)};
  }
  async function get(e,p){expired();if(!p||Object.keys(p).some(k=>!['token','contextKey','confirmed'].includes(k)))throw Error('Confirmation cannot replace the rows, fields or vault.');
