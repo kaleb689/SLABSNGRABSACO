@@ -71,19 +71,25 @@ async function ingest(h,subject){
  assert.equal(acknowledged,1);assert.equal(retried,0);
  return h.sent.at(-1);
 }
-test('Verification email expires in 24h by default; other messages retain for 7d',()=>{
+test('Verification codes expire at 24h; other emails and order updates default to 30d',()=>{
  const at=1700000000000;
- assert.deepEqual(retentionSettings({}),{codeHours:24,otherHours:168});
+ assert.deepEqual(retentionSettings({}),{codeHours:24,otherHours:720});
  const a=retentionFor(new Headers({subject:'Your Target verification code'}),{},at);
  const b=retentionFor(new Headers({subject:'Order receipt'}),{},at);
  assert.equal(a.kind,'verification');assert.equal(a.expiresMs,at+24*HOUR);
- assert.equal(b.kind,'other');assert.equal(b.expiresMs,at+168*HOUR);
+ assert.equal(b.kind,'other');assert.equal(b.expiresMs,at+720*HOUR);
+ const shipping=retentionFor(new Headers({subject:'Your shipped Target order tracking update'}),{},at);
+ assert.equal(shipping.kind,'other');assert.equal(shipping.expiresMs,at+720*HOUR);
+ const orderCode=retentionFor(new Headers({subject:'Order verification update and receipt'}),{},at);
+ assert.equal(orderCode.kind,'other');assert.equal(orderCode.expiresMs,at+720*HOUR);
 });
 test('Supported settings can shorten verification retention without changing unrelated mail',()=>{
- const at=1700000000000,env={CODE_RETENTION_HOURS:'6',OTHER_RETENTION_HOURS:'72'};
+ const at=1700000000000,env={CODE_RETENTION_HOURS:'6',OTHER_RETENTION_HOURS:'336'};
  assert.equal(retentionFor(new Headers({subject:'Use this sign-in code'}),env,at).expiresMs,at+6*HOUR);
- assert.equal(retentionFor(new Headers({subject:'Weekly report'}),env,at).expiresMs,at+72*HOUR);
- assert.deepEqual(retentionSettings({CODE_RETENTION_HOURS:'0',OTHER_RETENTION_HOURS:'999'}),{codeHours:24,otherHours:168});
+ assert.equal(retentionFor(new Headers({subject:'Weekly report'}),env,at).expiresMs,at+336*HOUR);
+ assert.equal(retentionFor(new Headers({subject:'Shipping notification'}),{OTHER_RETENTION_HOURS:'2160'},at).expiresMs,at+2160*HOUR);
+ assert.deepEqual(retentionSettings({CODE_RETENTION_HOURS:'0',OTHER_RETENTION_HOURS:'999'}),{codeHours:24,otherHours:720});
+ assert.equal(retentionSettings({OTHER_RETENTION_HOURS:'168'}).otherHours,720,'Regular emails cannot be reduced to 7 days');
 });
 test('An owner can list received mail, fetch the original MIME, and TTL removes contents and index',async()=>{
  const h=harness(),item=await ingest(h,'Your verification code');
