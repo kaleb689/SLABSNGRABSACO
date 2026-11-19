@@ -138,6 +138,9 @@ export function dropControlRows() {
       {type:2,style:3,label:"📦 Costco",custom_id:"sngdrop:start:costco"},
       {type:2,style:3,label:"⭐ Sam's Club",custom_id:"sngdrop:start:sams"},
       {type:2,style:2,label:"Pending / Posted",custom_id:"sngdrop:status"}
+    ]},
+    {type:1,components:[
+      {type:2,style:1,label:"📊 Create Manual Recap",custom_id:"sngdrop:manual:open"}
     ]}
   ];
 }
@@ -152,11 +155,13 @@ export function buildDropAnnouncement(retailer,id,startMs){
         Math.floor(due/1000)+":F> (12 hours after this announcement).",
       footer:{text:"SNG-DROP-LIVE:"+id},timestamp:stamp(startMs)}]};
 }
-export function buildDropRecapPost(retailer,id,report){
+export function buildDropRecapPost(retailer,id,report,visibility={}){
   if(!report?.readyToPublish||!Number.isSafeInteger(report.totalSpentCents)||
      !Number.isSafeInteger(report.totalUnits))throw Error("Unverified recap totals cannot be published");
-  const spec=DROP_RECAP_RETAILERS[retailer];
+  const spec=DROP_RECAP_RETAILERS[retailer]||
+    (retailer==="all"?{name:"All Retailers",label:"All"}:null);
   if(!spec)throw Error("Unknown recap retailer");
+  const {showPlacedOrders=true,showCancelled=true,showStickRate=true}=visibility;
   const placed=Number(report.ordersPlaced)||0;
   const cancelled=Number(report.deduplicatedCancelledOrders)||0;
   const rate=placed+cancelled>0?Math.round(1000*placed/(placed+cancelled))/10:0;
@@ -173,9 +178,9 @@ export function buildDropRecapPost(retailer,id,report){
       fields:[
         {name:"💚 TOTAL SPENT",value:"**"+currency(report.totalSpentCents)+"**",inline:true},
         {name:"📦 UNITS",value:"**"+report.totalUnits+"**",inline:true},
-        {name:"✅ ORDERS PLACED",value:"**"+placed+"**",inline:true},
-        {name:"❌ CANCELLED",value:"**"+cancelled+"**",inline:true},
-        {name:"📈 STICK RATE",value:"**"+rate.toFixed(1)+"%**",inline:true},
+        ...(showPlacedOrders?[{name:"✅ ORDERS PLACED",value:"**"+placed+"**",inline:true}]:[]),
+        ...(showCancelled?[{name:"❌ CANCELLED",value:"**"+cancelled+"**",inline:true}]:[]),
+        ...(showStickRate?[{name:"📈 STICK RATE",value:"**"+rate.toFixed(1)+"%**",inline:true}]:[]),
         {name:"TOP PRODUCTS",value:top.slice(0,1000)}
       ],
       ...(sourceImage?{thumbnail:{url:sourceImage}}:{}),
