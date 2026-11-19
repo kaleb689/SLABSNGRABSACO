@@ -185,7 +185,13 @@ jobs:
           grep -Fq 'supersededLive' "$APP/Contents/Resources/app/profile-vault.js"
           grep -Fq 'newest imported row automatically REPLACES' "$APP/Contents/Resources/app/profile-library-ui.js"
           # Prove the installed Electron bundle exposes the new Email Gen interface.
-          grep -Fq 'Generate Only — Save Emails' "$APP/Contents/Resources/app/index.html"
+          grep -Fq 'Generate & Auto-Verify' "$APP/Contents/Resources/app/index.html"
+          grep -Fq 'id="randomCloudReceiptMode"' "$APP/Contents/Resources/app/index.html"
+          grep -Fq 'id="randomCloudCheckStatus"' "$APP/Contents/Resources/app/index.html"
+          grep -Fq 'runCloudReceiptTests' "$APP/Contents/Resources/app/app.js"
+          grep -Fq 'email:worker:verify' "$APP/Contents/Resources/app/emailgen-worker-verification.js"
+          grep -Fq 'email:worker:status' "$APP/Contents/Resources/app/preload.js"
+          test -f "$APP/Contents/Resources/app/emailgen-worker-verification.js"
           grep -Fq 'id="randomAliasActivate"' "$APP/Contents/Resources/app/index.html"
           grep -Fq 'No retailer pool is required' "$APP/Contents/Resources/app/index.html"
           # Catch-all must be present in the shipped app; no false activation from unverified drafts.
