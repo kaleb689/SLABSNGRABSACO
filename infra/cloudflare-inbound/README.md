@@ -11,7 +11,7 @@ This is the **isolated staging** Cloudflare Email Worker. No production `sng.sar
 
 ## Automatic deletion and configurable retention
 
-Default: **verification/security-code email = 24 hours**; other messages (receipts, notifications) = **7 days**.
+Default: **verification/security-code email = 24 hours**; all other messages, including **orders, shipping and tracking updates, = 30 days** with a hard **14-day minimum**.
 
 Supported values for the two Worker variables:
 
