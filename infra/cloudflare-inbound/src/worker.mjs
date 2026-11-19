@@ -18,6 +18,7 @@ const OPERATIONAL_SUBJECT = /\b(order|purchase|invoice|receipt|shipment|shipping
 const CLEANUP_PAGE_SIZE = 100;
 const CLEANUP_PAGE_LIMIT = 10;
 const CODE_SUBJECT = /(?:verif(?:y|ication)|one[ -]?time|\botp\b|(?:sign[ -]?in|log[ -]?in|security|auth(?:entication|orization)?|access|confirm(?:ation)?)\s+(?:code|pin|token)|(?:code|pin|token)\s+(?:for\s+)?(?:sign[ -]?in|log[ -]?in|security|auth(?:entication)?|access|confirm(?:ation)?))/i;
+const DEFINITE_CODE_SUBJECT = /\b(?:otp|one[ -]?time(?:\s+(?:password|code))?|(?:verification|verify|security|login|log[ -]?in|sign[ -]?in|authentication)\s+(?:code|pin|token)|(?:code|pin|token)\s+(?:for\s+)?(?:verification|login|log[ -]?in|sign[ -]?in|security|authentication))\b/i;
 const TEST_MARKER = /ACO Studio forwarding test [0-9a-f]{24}/i;
 const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
@@ -58,7 +59,8 @@ function retentionFor(headers, env, now = Date.now()) {
   const subject = String(headers?.get?.('subject') || '').slice(0,512);
   // An order confirmation/shipping notice must not expire in a day merely
   // because its subject also contains the word "verification".
-  const isCode = !!markerOf(headers) || (CODE_SUBJECT.test(subject) && !OPERATIONAL_SUBJECT.test(subject));
+  const isCode = !!markerOf(headers) || DEFINITE_CODE_SUBJECT.test(subject) ||
+    (CODE_SUBJECT.test(subject) && !OPERATIONAL_SUBJECT.test(subject));
   const settings = retentionSettings(env);
   const hours = isCode ? settings.codeHours : settings.otherHours;
   return {kind:isCode?'verification':'other', expiresMs:now + hours * HOUR_MS};
