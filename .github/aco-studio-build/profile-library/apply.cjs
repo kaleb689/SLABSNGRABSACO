@@ -499,7 +499,7 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  for(const entry of ['emailgen-forwarding-test.js','emailgen-mail-test-store.js','emailgen-worker-verification.js','emailgen-archive.js'])
   if(!pkg.build.files.includes(entry))pkg.build.files.push(entry);
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
- for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js','emailgen-auto-test.test.js','emailgen-worker-verification.test.js'])
+ for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js','emailgen-auto-test.test.js','emailgen-worker-verification.test.js','emailgen-archive.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
 
