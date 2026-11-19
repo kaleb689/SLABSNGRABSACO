@@ -21,3 +21,13 @@ CREATE TABLE IF NOT EXISTS inbound_retention (
   expires_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS inbound_retention_due ON inbound_retention(expires_ms);
+
+-- Preserve previously received regular mail when upgrading from the old
+-- 7-day default to the new 30-day default. This does not touch code mail,
+-- change existing alias strings, or restore previously deleted R2 objects.
+UPDATE inbound_retention
+SET expires_ms = MAX(expires_ms,
+  (SELECT r.received_ms FROM inbound_receipts r WHERE r.id=inbound_retention.id) + 2592000000)
+WHERE kind='other' AND EXISTS (
+  SELECT 1 FROM inbound_receipts r WHERE r.id=inbound_retention.id
+);
