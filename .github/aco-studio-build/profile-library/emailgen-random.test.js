@@ -14,7 +14,9 @@ test('Quantity-only random Email Gen offers all five Personal unused retailer po
  assert.match(html,/No retailer pool is required/);
  assert.match(html,/id="randomAliasActivate"/);
  assert.match(html,/id="randomAliasForwardStatus"/);
- assert.match(html,/id="randomAliasCreate">Generate Only/);
+ assert.match(html,/id="randomAliasCreate">Generate & Auto-Verify/);
+ assert.match(html,/id="randomCloudReceiptMode"/);
+ assert.match(app,/runCloudReceiptTests\(/);
  assert.match(html,/Cloudflare standard Email Routing supports up to 200 individual rules per domain/);
 });
 test('Random local parts use secure name combinations, stay within 10 characters, and still reject duplicates',()=>{
