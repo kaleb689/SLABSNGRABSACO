@@ -1,19 +1,24 @@
 <section class="panel section" id="randomEmailGenSection">
- <h2>2. Email Gen — Quick Start</h2>
- <p class="sectionHelp"><strong>Generate here; watch testing, save mail accounts, export and manage batches on the right.</strong> No retailer pool is required.</p>
- <ol class="sectionHelp">
+ <h2>2. Email Gen — One-Click Generation</h2>
+ <p class="sectionHelp"><strong>Create unique @sng.sarl aliases in one click. Cloudflare receiving and verification are automatic once routing is tested and activated.</strong> Your bank, account passwords, and existing retailer pools remain unchanged until a confirmed action.</p>
+ <div style="border:1px solid #457886;padding:12px;border-radius:10px;background:#123242;margin:9px 0">
+  <label class="check" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="randomCloudReceiptMode"><strong>Use Cloudflare receiver and verify from actual stored receipts (recommended)</strong></label>
+  <p id="randomOneClickStatus" class="tiny" aria-live="polite" style="margin:6px 0;color:#f4dc9d">Not connected to live routing yet. No unverified alias will be marked delivered.</p>
+  <button type="button" class="btn secondary slim" id="randomCloudCheckStatus">Check Cloudflare receiver connection</button>
+ </div>
+ <details class="fieldStack"><summary>Legacy Gmail/IMAP forwarding instructions (only if using Legacy mode)</summary><ol class="sectionHelp">
   <li><strong>Choose your inbox.</strong> Enter the Gmail (or other) address where you want messages delivered in the forwarding destination field above. Complete Cloudflare's one-time verification if requested.</li>
   <li><strong>Generate emails.</strong> Choose a quantity below and click Generate Only. Your new addresses are safely saved, without any retailer assignment or live forwarding rule.</li>
   <li><strong>Set up forwarding.</strong> For large batches, use one verified Cloudflare catch-all destination instead of making an individual rule for every email.</li>
   <li><strong>Automatic verification.</strong> Your newly generated batch appears in the large Email Bank on the right. If a saved sending/receiving account pair matches the destination, testing starts automatically, with live passed/failed counts.</li>
- </ol>
+ </ol></details>
  <p class="sectionHelp">You can stop after Step 2 and export saved addresses. Adding them to Target, Walmart, Pokémon Center, Costco or Sam's Club is entirely optional.</p>
- <label>Step 2 — Number of emails to generate (1–10,000; based on available bank space)<input type="number" id="randomAliasCount" min="1" max="10000" value="10" step="1" inputmode="numeric" required></label>
- <p class="sectionHelp">Email Gen saves addresses locally first. Forwarding and retailer assignment are separate actions. Cloudflare standard Email Routing supports up to 200 individual rules per domain; a catch-all rule can cover additional addresses without creating one rule per email. Failed and unverified emails stay saved, not marked working.</p>
- <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasCreate">Generate Only — Save Emails</button><button type="button" class="btn secondary" id="randomAliasExport">Export Email Gen CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikari">Export Shikari profile template CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikariTxt">Export Shikari TXT (for .txt-only file pickers)</button></div>
+ <label>How many emails? (1–10,000; based on available bank space)<input type="number" id="randomAliasCount" min="1" max="10000" value="10" step="1" inputmode="numeric" required></label>
+ <p class="sectionHelp">Generate saves the new addresses in your encrypted Email Bank first. When Cloudflare mode is selected, testing proceeds only if the receipt database and a saved sender are available; a real three-message preflight must pass before wider testing. Cloudflare currently runs in staging until Email Routing is separately migrated. No batch is declared verified merely because it was generated. Forwarding and retailer assignment remain separate actions. Cloudflare standard Email Routing supports up to 200 individual rules per domain; a catch-all rule can cover additional addresses without creating one rule per email. Failed and unverified emails stay saved, not marked working.</p>
+ <div class="buttons" style="margin-top:10px"><button type="button" class="btn primary" id="randomAliasCreate">Generate & Auto-Verify</button><button type="button" class="btn secondary" id="randomAliasExport">Export Email Gen CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikari">Export Shikari profile template CSV</button><button type="button" class="btn secondary" id="randomAliasExportShikariTxt">Export Shikari TXT (for .txt-only file pickers)</button></div>
  <small><strong>Choose the correct file:</strong> <code>Export Email Gen CSV</code> contains <code>profile_name,email,password</code> with <code>aco gen 1</code>, <code>aco gen 2</code> and the requested import-only password <code>Freeshit1!</code>. The <strong>Shikari Profile CSV/TXT</strong> exports match your existing Shikari file's <strong>24 exact columns beginning with <code>index,profile_name,first_name,last_name,email</code></strong>, with sequential names and original emails. The original Shikari profile format has <strong>no password column</strong>, so it will not import that preset password. Address, name, phone, and payment fields are left blank unless you complete real Target profiles first. The <code>.txt</code> choice is for Shikari file pickers that don't select <code>.csv</code>; it is still comma-delimited. Both files are plaintext; protect them. Neither creates a real retailer account or mailbox password.</small>
  <section class="panel section" id="randomAliasForwardingArea">
-  <h3>Step 3 — Forward unlimited-style aliases with Catch-all</h3>
+  <h3>Advanced — Existing Gmail catch-all forwarding</h3>
   <p class="sectionHelp"><strong>Recommended when you have hundreds of generated emails.</strong> Cloudflare only allows 200 individual forwarding rules per domain. A catch-all rule receives mail to addresses with no matching individual rule and forwards it to one verified inbox, without creating hundreds of extra rules.</p>
   <ol class="sectionHelp">
    <li>Open <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener noreferrer">Cloudflare Dashboard</a> and select your <strong>sng.sarl</strong> domain.</li>
