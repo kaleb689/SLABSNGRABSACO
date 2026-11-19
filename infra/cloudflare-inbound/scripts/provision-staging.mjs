@@ -36,12 +36,22 @@ function ensureBucket() {
   } else process.stdout.write('R2 bucket already exists\n');
 }
 function ensureLifecycle() {
-  // Emergency backstop for R2 objects orphaned before D1/Queue indexing.
-  // Only this Worker-owned bucket/prefix is affected. Never replace other rules.
+  // The backstop must never delete regular mail before its 14-90 day
+  // expiration. Add the 91-day rule BEFORE removing the old 8-day rule.
+  // Only the two named rules for this project's incoming/ prefix are touched.
+  const oldName='sng-inbound-eight-day-safety';
+  const safeName='sng-inbound-ninetyone-day-safety';
   const rules=cli(['r2','bucket','lifecycle','list',names.bucket],true);
-  if (!rules.includes('sng-inbound-eight-day-safety')) {
+  if(!rules.includes(safeName)){
     cli(['r2','bucket','lifecycle','add',names.bucket,
-      'sng-inbound-eight-day-safety','incoming/','--expire-days','8','--force']);
+      safeName,'incoming/','--expire-days','91','--force']);
+  }
+  const updated=cli(['r2','bucket','lifecycle','list',names.bucket],true);
+  if(!updated.includes(safeName))throw Error('91-day R2 safety rule is not active');
+  if(updated.includes(oldName)){
+    cli(['r2','bucket','lifecycle','remove',names.bucket,'--name',oldName]);
+    const check=cli(['r2','bucket','lifecycle','list',names.bucket],true);
+    if(check.includes(oldName))throw Error('Unsafe 8-day R2 rule still exists; refusing to continue');
   }
 }
 function ensureQueue(name) {
