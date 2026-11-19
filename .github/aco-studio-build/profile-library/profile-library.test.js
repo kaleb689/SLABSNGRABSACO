@@ -1788,21 +1788,20 @@ test('Bulk Re-jig keeps existing payment details in missing-only mode',async t=>
  const hard=await h.service.addCard(event,{...h.p,card:{...card,number:'4111111111111111'}});
  await h.service.setHardCard(event,{...h.p,cardRef:'saved:'+hard.id,hard:true,confirmed:true});
  const row=(await h.lib.list(event,h.p)).profiles[0];
- // The importer deliberately keeps separately stored security references.
- // Seed an existing known CVV in the encrypted profile to verify Re-jig never
- // clears a code when it keeps the SAME payment card.
- await h.profiles.libraryTransaction('personal',null,ctx=>{
-  const saved=ctx.rows.find(x=>x.id===row.id);saved.data.card.cvv='012';return {seeded:true};
- },()=>{});
- assert.equal(LC.payment((await h.lib.list(event,h.p)).profiles[0].data).cvv,'012');
+ // The encrypted profile serializer normalizes raw CVV input to an
+ // independent profile reference. Assert the ACTUAL persisted values are
+ // untouched when the card number is kept by a missing-only Re-jig.
+ const storedCardCode=LC.payment(row.data).cvv;
+ const storedIndependentCode=row.data.profileSecurityCode;
  const plan=await h.lib.batchJigPreview(event,{...h.p,retailer:'walmart',profileIds:[row.id],ruleIds:['avenue_short'],
   cardAssignmentMode:'missing',prioritizeHardCards:true,combine:false,billingSameAsShipping:true});
  assert.equal(plan.cardAssigned,0);
  await h.lib.batchJigCommit(event,{token:plan.token,confirmed:true});
  const updated=(await h.lib.list(event,h.p)).profiles[0];
  assert.equal(LC.payment(updated.data).number,'4242424242424242');
- assert.equal(LC.payment(updated.data).cvv,'012');
- assert.equal(updated.data.profileSecurityCode,'INDEPENDENT-REFERENCE-1');
+ assert.equal(LC.payment(updated.data).cvv,storedCardCode);
+ assert.equal(updated.data.profileSecurityCode,storedIndependentCode);
+ assert.equal(storedIndependentCode,'INDEPENDENT-REFERENCE-1');
 });
 
 test('Explicit replace-card mode chooses Hard Card first and never copies old CVV',async t=>{
