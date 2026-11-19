@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pinned Wrangler
-        run: npm install --no-save wrangler@4.113.0
+        run: npm install --no-save wrangler@4.165.0
       - name: Verify source syntax and isolated Worker tests
         run: |
           node --check src/worker.mjs
