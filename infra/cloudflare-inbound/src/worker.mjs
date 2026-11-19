@@ -6,11 +6,15 @@
  */
 const MAX_MESSAGE_SIZE = 25 * 1024 * 1024;
 // Store generated aliases indefinitely, but expire the received MIME messages.
-// Verification mail defaults to 24h; other mail defaults to 7 days.
-// Operators may select 1, 6, 12, 24, 48, 72, or 168 hours through Worker vars.
+// Codes expire after 24h by default. All other new email is retained for
+// at least 14 days, with 30 days as the default for orders and shipping.
+// Both settings can change without changing any generated email addresses.
 const HOUR_MS = 60 * 60 * 1000;
-const RETENTION_OPTIONS = new Set([1, 6, 12, 24, 48, 72, 168]);
-const LEGACY_MAX_AGE = 168 * HOUR_MS;
+const CODE_OPTIONS = new Set([1, 6, 12, 24, 48, 72, 168]);
+const OTHER_OPTIONS = new Set([336, 504, 720, 1080, 1440, 2160]);
+const LEGACY_MAX_AGE = 720 * HOUR_MS;
+const MAX_RETENTION_AGE = 2160 * HOUR_MS;
+const OPERATIONAL_SUBJECT = /\b(order|purchase|invoice|receipt|shipment|shipping|shipped|tracking|delivery|delivered|out for delivery|backorder|preorder|pre-order|cancelled|canceled|refund|return|payment|fulfill(?:ed|ment)?)\b/i;
 const CLEANUP_PAGE_SIZE = 100;
 const CLEANUP_PAGE_LIMIT = 10;
 const CODE_SUBJECT = /(?:verif(?:y|ication)|one[ -]?time|\botp\b|(?:sign[ -]?in|log[ -]?in|security|auth(?:entication|orization)?|access|confirm(?:ation)?)\s+(?:code|pin|token)|(?:code|pin|token)\s+(?:for\s+)?(?:sign[ -]?in|log[ -]?in|security|auth(?:entication)?|access|confirm(?:ation)?))/i;
@@ -42,17 +46,19 @@ function tokenEqual(a, b) {
   for (let i = 0; i < n; i++) diff |= (actual.charCodeAt(i) || 0) ^ (expected.charCodeAt(i) || 0);
   return diff === 0;
 }
-function retentionHours(value, fallback) {
+function retentionHours(value, fallback, allowed) {
   const number = Number(value);
-  return Number.isInteger(number) && RETENTION_OPTIONS.has(number) ? number : fallback;
+  return Number.isInteger(number) && allowed.has(number) ? number : fallback;
 }
 function retentionSettings(env) {
-  return {codeHours:retentionHours(env.CODE_RETENTION_HOURS, 24),
-    otherHours:retentionHours(env.OTHER_RETENTION_HOURS, 168)};
+  return {codeHours:retentionHours(env.CODE_RETENTION_HOURS, 24, CODE_OPTIONS),
+    otherHours:retentionHours(env.OTHER_RETENTION_HOURS, 720, OTHER_OPTIONS)};
 }
 function retentionFor(headers, env, now = Date.now()) {
   const subject = String(headers?.get?.('subject') || '').slice(0,512);
-  const isCode = CODE_SUBJECT.test(subject) || !!markerOf(headers);
+  // An order confirmation/shipping notice must not expire in a day merely
+  // because its subject also contains the word "verification".
+  const isCode = !!markerOf(headers) || (CODE_SUBJECT.test(subject) && !OPERATIONAL_SUBJECT.test(subject));
   const settings = retentionSettings(env);
   const hours = isCode ? settings.codeHours : settings.otherHours;
   return {kind:isCode?'verification':'other', expiresMs:now + hours * HOUR_MS};
@@ -107,9 +113,10 @@ async function queue(batch, env) {
              event.sizeBytes, event.key).run();
       // Idempotent: if the queue retries after one successful write, this
       // inserts the missing expiration policy without rewriting the receipt.
+      const isCodeEvent = event.kind==='verification';
       const validExpires = Number.isSafeInteger(event.expiresMs) &&
-        event.expiresMs >= event.receivedMs + HOUR_MS &&
-        event.expiresMs <= event.receivedMs + LEGACY_MAX_AGE;
+        event.expiresMs >= event.receivedMs + (isCodeEvent ? HOUR_MS : 336*HOUR_MS) &&
+        event.expiresMs <= event.receivedMs + (isCodeEvent ? 168*HOUR_MS : MAX_RETENTION_AGE);
       const policy = validExpires && ['verification','other'].includes(event.kind)
         ? {kind:event.kind, expiresMs:event.expiresMs}
         : {kind:'other',expiresMs:event.receivedMs+LEGACY_MAX_AGE};
@@ -156,7 +163,7 @@ async function expireBatch(env, now = Date.now()) {
 }
 async function scheduled(_controller,env) {
   // UTC hourly cleanup removes both raw R2 messages and their D1 index.
-  // The separate 8-day R2 lifecycle policy covers orphans never indexed.
+  // A separate 91-day R2 lifecycle policy covers orphaned MIME not indexed.
   return expireBatch(env);
 }
 async function fetchHandler(request, env) {
@@ -170,7 +177,7 @@ async function fetchHandler(request, env) {
   const url = new URL(request.url);
   if (!['GET','DELETE'].includes(request.method)) return reply({error:'Method not allowed'}, 405);
   if (url.pathname === '/v1/retention' && request.method === 'GET') {
-    return reply({...retentionSettings(env),cleanup:'hourly',maxHours:168,
+    return reply({...retentionSettings(env),cleanup:'hourly',minOtherHours:336,maxOtherHours:2160,
       note:'Generated addresses are not deleted; only delivered messages expire.'});
   }
   // Owner-only mailbox APIs expose metadata or the original .eml on demand.
