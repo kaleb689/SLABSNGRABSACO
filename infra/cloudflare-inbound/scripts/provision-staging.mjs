@@ -35,6 +35,15 @@ function ensureBucket() {
     cli(['r2','bucket','create',names.bucket]);
   } else process.stdout.write('R2 bucket already exists\n');
 }
+function ensureLifecycle() {
+  // Emergency backstop for R2 objects orphaned before D1/Queue indexing.
+  // Only this Worker-owned bucket/prefix is affected. Never replace other rules.
+  const rules=cli(['r2','bucket','lifecycle','list',names.bucket],true);
+  if (!rules.includes('sng-inbound-eight-day-safety')) {
+    cli(['r2','bucket','lifecycle','add',names.bucket,
+      'sng-inbound-eight-day-safety','incoming/','--expire-days','8','--force']);
+  }
+}
 function ensureQueue(name) {
   const list=cli(['queues','list'],true);
   const match=new RegExp('(^|[^a-z0-9-])'+name+'($|[^a-z0-9-])','i');
@@ -59,6 +68,7 @@ function ensureDatabase() {
   return id;
 }
 ensureBucket();
+ensureLifecycle();
 ensureQueue(names.events);
 ensureQueue(names.dead);
 const databaseId=ensureDatabase();
