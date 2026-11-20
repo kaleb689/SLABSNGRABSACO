@@ -569,6 +569,39 @@ export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
   return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
 }
 
+// Every linked website account must be evaluated; old/duplicate rows cannot
+// shadow a new paid account. This never grants access from an admin "active"
+// flag, Discord role or profile count without a paid entitlement.
+export async function evaluateDiscordPaidSkuAccess({
+  discordUserId,ownerId,accounts,getPaidAllowance
+}={}){
+  if(isGuildOwnerSkuTester(discordUserId,ownerId))
+    return {allowed:true,reason:"owner_test"};
+  const matching=(Array.isArray(accounts)?accounts:[]).filter(item=>
+    String(item?.discordUserId||"")===String(discordUserId||"") &&
+    /^\d{17,22}$/.test(String(discordUserId||"")));
+  if(!matching.length)return {allowed:false,reason:"discord_not_linked"};
+  const eligible=matching.filter(item=>item?.id && !item.disabled);
+  if(!eligible.length)return {allowed:false,reason:"account_disabled"};
+  if(typeof getPaidAllowance!=="function")
+    return {allowed:false,reason:"membership_lookup_unavailable"};
+  let failures=0;
+  for(const account of eligible){
+    try{
+      const count=Number(await getPaidAllowance(account.id));
+      if(Number.isFinite(count)&&count>0)
+        return {allowed:true,reason:"active_paid",accountId:account.id};
+    }catch(error){
+      failures++;
+      console.warn("Discord SKU entitlement lookup unavailable",{
+        errorType:String(error?.code||error?.name||"lookup_error").slice(0,70)
+      });
+    }
+  }
+  return {allowed:false,reason:failures===eligible.length?
+    "membership_lookup_unavailable":"no_paid_entitlement"};
+}
+
 /*
  * A single 1 or 2 applies to every SKU in a customer's selection, across
  * all drop channels. Mixed legacy records are not valid new submissions.
@@ -3421,13 +3454,24 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     });
   }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
+  async function skuAccessState(userId) {
+    return evaluateDiscordPaidSkuAccess({
+      discordUserId:userId,ownerId,accounts:await getAccounts(),
+      getPaidAllowance:getPaidSkuAllowance||getAllowance
+    });
+  }
   async function hasPaidSkuAccess(userId) {
-    // Verified guild ownership is the single testing bypass, not admin/staff roles.
-    if (isGuildOwnerSkuTester(userId, ownerId)) return true;
-    const account = (await getAccounts()).find(item =>
-      String(item.discordUserId || "") === String(userId) && !item.disabled);
-    if (!account) return false;
-    return Number(await (getPaidSkuAllowance || getAllowance)(account.id)) > 0;
+    return (await skuAccessState(userId)).allowed;
+  }
+  async function skuAccessMessageFor(userId){
+    const access=await skuAccessState(userId);
+    if(access.reason==="discord_not_linked")
+      return "Your Discord account is not linked to an active website account. Open https://slabsngrabsaco.com and link this same Discord account in My Profile, then retry your SKU selection.";
+    if(access.reason==="account_disabled")
+      return "Your linked website account is disabled. Please contact SLABSNGRABSACO support to review your account before selecting SKUs.";
+    if(access.reason==="membership_lookup_unavailable")
+      return "Your membership could not be verified right now. Please retry shortly; your account and SKU selections have not been changed.";
+    return skuAccessMessage+" — Your Discord is linked, but the website currently reports zero eligible paid profiles. If an admin just activated you, ask support to verify the paid membership is applied to your linked account.";
   }
   const skuDraftKey = (userId, channelId, sourceId) => userId + ":" + channelId + ":" + sourceId;
   async function mutateSkuDraft(userId, channelId, sourceId, transform) {
@@ -4628,7 +4672,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       // test mode) can change their own saved SKU selections.
       if (d.type === 3 && d.data?.custom_id === "targetpick:open") {
         if (d.channel_id !== targetSkuListChannelId) return await reply("Open Select Target SKUs in #target-skus.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         const master = await withTargetMasterQueue(loadTargetMaster);
         const draft = await targetPickerDraft(userId, master);
@@ -4639,7 +4683,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         if (d.channel_id !== targetSkuListChannelId ||
             (Number(d.message?.flags || 0) & 64) !== 64)
           return await reply("Open the private Target SKU picker using Select Target SKUs.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const action = d.data.custom_id.split(":")[1];
         if (action === "search" || action === "paste") {
           return await api(callback, "POST", { type: 9, data: {
@@ -4704,7 +4748,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       if (d.type === 5 && /^targetpick:(search|paste):submit$/.test(d.data?.custom_id || "")) {
         if (d.channel_id !== targetSkuListChannelId) return await reply("Open the Target picker in #target-skus.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
           const master = await withTargetMasterQueue(loadTargetMaster);
@@ -4911,7 +4955,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       if (d.type === 3 && /^sku:(?:open|page|choose):\d{17,22}(?::\d{1,3})?$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const [, action, sourceId, pageString] = d.data.custom_id.split(":");
         if (action === "open") await api(callback, "POST", { type: 5, data: { flags: 64 } });
         let source;
@@ -4940,7 +4984,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       if (d.type === 3 && /^sku:(?:bulk|review|adjust|individual|confirm):/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const [, action, sourceId, arg, extra] = d.data.custom_id.split(":");
         if (!/^\d{17,22}$/.test(sourceId)) return await reply("Invalid drop post.");
         const source = await api("/channels/" + d.channel_id + "/messages/" + sourceId);
@@ -5006,7 +5050,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       if (d.type === 3 && /^sku:skip:\d{17,22}$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This option is only available in a drop channel.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
           await skipDrop(userId, d.member?.user?.global_name || d.member?.user?.username || userId,
@@ -5042,7 +5086,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         return await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", skuSelectionView(selections[userId]?.items || [], "", 0, ownerSkuGroup));
       }
       if (d.type === 3 && /^sku:manage:(?:0|15)$/.test(d.data?.custom_id || "")) {
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const selections = await readSkuFile(skuSelectionsFile);
         const token = d.data.values?.[0];
         const record = selections[userId];
@@ -5066,7 +5110,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         } });
       }
       if (d.type === 3 && /^sku:global:[12]$/.test(d.data?.custom_id || "")) {
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const quantity = Number(d.data.custom_id.split(":")[2]);
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {
@@ -5079,7 +5123,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         }
       }
       if (d.type === 3 && /^sku:change:[a-f0-9]{16}$/.test(d.data?.custom_id || "")) {
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const quantity = Number(d.data.values?.[0]);
         if (quantity !== 0) return await reply("Individual SKU quantities are not allowed. Choose Qty 1 or 2 for ALL selected SKUs.");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
@@ -5094,7 +5138,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       }
       if (d.type === 3 && /^sku:(?:pick|qty):\d{17,22}:(?:\d{1,3}|all)$/.test(d.data?.custom_id || "")) {
         if (!dropChannelIds.has(d.channel_id)) return await reply("This SKU selector belongs in a drop channel.");
-        if (!await hasPaidSkuAccess(userId)) return await reply(skuAccessMessage);
+        if (!await hasPaidSkuAccess(userId)) return await reply(await skuAccessMessageFor(userId));
         const [, action, sourceId, target] = d.data.custom_id.split(":");
         await api(callback, "POST", { type: 5, data: { flags: 64 } });
         try {

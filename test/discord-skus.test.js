@@ -178,8 +178,9 @@ test("only the verified Discord guild owner can bypass paid-profile gating for S
   assert.equal(isGuildOwnerSkuTester(owner, "0"), false);
   const { readFileSync } = await import("node:fs");
   const code = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
-  assert.match(code, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true;/);
-  assert.match(code, /return Number\(await \(getPaidSkuAllowance \|\| getAllowance\)\(account.id\)\) > 0;/);
+  assert.match(code, /if\(isGuildOwnerSkuTester\(discordUserId,ownerId\)\)/);
+  assert.match(code, /getPaidAllowance:getPaidSkuAllowance\|\|getAllowance/);
+  assert.match(code, /if\(Number.isFinite\(count\)\&\&count>0\)/);
   assert.match(code, /ownerId = guild.owner_id;/,
     "owner ID comes from Discord itself, not a role label or user-provided input");
 });
@@ -232,8 +233,8 @@ test("new drop channels provision idempotently with staff posting and paid-only 
   assert.match(source, /permission_overwrites: overwrites/);
   assert.match(source, /dropChannelIds\.add\(channel\.id\)/);
   assert.match(source, /retailerDropsReady = retailerChannels\.length === 5/);
-  assert.match(source, /if \(!await hasPaidSkuAccess\(userId\)\) return await reply\(skuAccessMessage\)/);
-  assert.match(source, /if \(isGuildOwnerSkuTester\(userId, ownerId\)\) return true/);
+  assert.match(source, /if \(!await hasPaidSkuAccess\(userId\)\) return await reply\(await skuAccessMessageFor\(userId\)\)/);
+  assert.match(source, /if\(isGuildOwnerSkuTester\(discordUserId,ownerId\)\)/);
 });
 
 
