@@ -116,7 +116,8 @@ export function manualRecapPreviewPayload(session,postBuilder){
     " (Eastern)\nThe buttons below determine which metrics members will see.";
   if(!session.ready){
     return {content:head+"\n\n⚠️ **Recap is blocked until source verification succeeds.**"+
-      "\n"+(r?.blockedReasons||["Discord Success unavailable"]).slice(0,8).join(", ").slice(0,600),
+      "\n"+(r?.blockedReasons||["Discord Success unavailable"]).slice(0,8).join(", ").slice(0,600)+
+      pricingDiagnostics(r),
       embeds:[],components:[{type:1,components:[
         {type:2,style:2,label:"Close",custom_id:"sngdrop:manual:cancel:"+session.id}
       ]}],allowed_mentions:{parse:[]}};
@@ -128,6 +129,22 @@ export function manualRecapPreviewPayload(session,postBuilder){
 function safeError(error){
   return String(error?.message||"Unexpected recap error")
     .replace(/<@!?[0-9]+>|@everyone|@here/g,"").slice(0,350);
+}
+function pricingDiagnostics(report){
+  const r=report||{};
+  const unpriced=Number(r.ruleUnpricedOrders)||0;
+  if(!unpriced)return "";
+  const entries=Array.isArray(r.missingPriceProducts)?r.missingPriceProducts:[];
+  const products=entries.slice(0,8).map(x=>{
+    const name=String(x?.name||"").slice(0,95)
+      .replace(/[@<>]/g,"").replace(/\s+/g," ").trim();
+    return name?"• "+name+" — "+(Number(x.affectedUnits)||0)+" units / "+
+      (Number(x.affectedOrders)||0)+" orders":"";
+  }).filter(Boolean);
+  return "\n**Price verification needed:** "+unpriced+" orders"+
+    (r.missingProductListOrders?" ("+r.missingProductListOrders+" missing complete item lists)":"")+
+    (products.length?"\n"+products.join("\n"):"")+
+    "\nOnly original Discord Success prices count. No products or totals were guessed.";
 }
 export function createManualDiscordRecapFlow({
   api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
@@ -189,6 +206,7 @@ export function createManualDiscordRecapFlow({
       session.status="preview";
       return patch(d,{content:"⚠️ Source verification changed. **Nothing was posted.**\n"+
         (report.blockedReasons||["incomplete source"]).slice(0,8).join(", ").slice(0,600)+
+        pricingDiagnostics(report)+
         "\nOpen Create Manual Recap again to retry.",
         embeds:[],components:[],allowed_mentions:{parse:[]}});
     }

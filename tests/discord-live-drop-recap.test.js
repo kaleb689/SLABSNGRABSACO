@@ -168,6 +168,31 @@ test("source-only parser extracts quantities and line totals without order PII i
   assert.equal(parseDiscordSuccessForRecap({...data,webhook_id:null}),null);
 });
 
+test("recap parser reads explicitly labeled prices and quantities from original embed description",()=>{
+  const message=responseBody([{name:"Site",value:"Target"},{name:"Order ID",value:"TGT001234"}]);
+  message.embeds[0].description="[Pokemon 30th Celebration Tin](https://www.target.com/p/tin)\nQty: 2\nPrice: **$49.98**";
+  const parsed=parseDiscordSuccessForRecap(message);
+  assert.equal(parsed.items.length,1);
+  assert.equal(parsed.items[0].quantity,2);
+  assert.equal(parsed.items[0].price,24.99);
+  assert.equal(parsed.orderNumber,"TGT001234");
+});
+test("recap parser preserves exact line vs unit pricing and currency thousands separators",()=>{
+  const msg=responseBody([{name:"Site",value:"Target"},{name:"Order ID",value:"TGT001235"},
+    {name:"Quantity",value:"2"},{name:"Line Total",value:"$1,299.98"}]);
+  msg.embeds[0].description="[Pokemon Special Item](https://www.target.com/p/special)";
+  assert.equal(parseDiscordSuccessForRecap(msg).items[0].price,649.99);
+  msg.embeds[0].fields.pop();
+  msg.embeds[0].fields.push({name:"Unit Price",value:"$24.99"});
+  assert.equal(parseDiscordSuccessForRecap(msg).items[0].price,24.99);
+});
+test("conflicting source prices remain unknown, never inferred",()=>{
+  const msg=responseBody([{name:"Site",value:"Target"},{name:"Order ID",value:"TGT001236"},
+    {name:"Quantity",value:"1"},{name:"Price",value:"$19.99"},{name:"Price",value:"$29.99"}]);
+  msg.embeds[0].description="[Pokemon Special Item](https://www.target.com/p/special)";
+  assert.equal(parseDiscordSuccessForRecap(msg).items[0].price,null);
+});
+
 test("unverified spend cannot be published in public recap",()=>{
   assert.throws(()=>buildDropRecapPost("target","test",
     {...verified,readyToPublish:false}),/Unverified/);

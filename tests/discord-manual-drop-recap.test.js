@@ -71,7 +71,9 @@ async function harness(t,{ready=true,failPublish=false}={}){
   const makeReport=(messages,options)=>{
     reports.push({messages,options});
     return ready?{...REPORT}:{...REPORT,readyToPublish:false,
-      totalSpentCents:null,blockedReasons:["missing_source_unit_prices_for_rule_total"]};
+      totalSpentCents:null,ruleUnpricedOrders:2,missingProductListOrders:1,
+      missingPriceProducts:[{name:"Pokemon Celebration Tin",affectedUnits:3,affectedOrders:2}],
+      blockedReasons:["missing_source_unit_prices_for_rule_total"]};
   };
   const args={api,token:"dummy",ownerId:OWNER,guildId:GUILD,
     controlChannelId:CHANNEL,generalChannelId:GENERAL,dataDir:dir,
@@ -176,6 +178,16 @@ test("unverified Success data blocks manual publication, and no guessing",async 
   assert.match(preview.content,/blocked until source verification/);
   assert.match(preview.content,/missing_source_unit_prices/);
   assert.equal(preview.components[0].components[0].label,"Close");
+  assert.equal(h.posts().length,0);
+});
+test("owner-only blocked recap names missing-priced products without posting or guessing",async t=>{
+  const h=await harness(t,{ready:false});
+  const preview=await h.start("target");
+  assert.match(preview.content,/Price verification needed:.*2 orders/);
+  assert.match(preview.content,/Pokemon Celebration Tin/);
+  assert.match(preview.content,/1 missing complete item lists/);
+  assert.match(preview.content,/No products or totals were guessed/);
+  assert.equal(preview.allowed_mentions.parse.length,0);
   assert.equal(h.posts().length,0);
 });
 test("invalid and future periods get private errors; nothing is public",async t=>{
