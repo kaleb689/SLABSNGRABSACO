@@ -5698,19 +5698,37 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     try {
       const gateway = await api("/gateway/bot");
       socket = new WebSocket(`${gateway.url}?v=10&encoding=json`);
+      const activeSocket=socket;
+      let awaitingHeartbeatAck=false;
       socket.addEventListener("message", event => {
+        if(socket!==activeSocket)return;
         try {
           const packet = JSON.parse(event.data);
           if (packet.s !== null) sequence = packet.s;
           if (packet.op === 10) {
             clearInterval(heartbeat);
-            heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
+            awaitingHeartbeatAck=false;
+            heartbeat = setInterval(() => {
+              if(socket!==activeSocket||activeSocket.readyState!==1)return;
+              if(awaitingHeartbeatAck){
+                console.warn("Discord gateway heartbeat ACK overdue; reconnecting stalled socket");
+                activeSocket.close(4000,"Heartbeat acknowledgement overdue");
+                return;
+              }
+              awaitingHeartbeatAck=true;
+              activeSocket.send(JSON.stringify({op:1,d:sequence}));
+            },packet.d.heartbeat_interval);
             heartbeat.unref?.();
             socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | 4096 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
-          if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
-          if (packet.op === 7 || packet.op === 9) socket.close();
+          if(packet.op===11)awaitingHeartbeatAck=false;
+          if (packet.op === 1 && socket.readyState === 1){
+            awaitingHeartbeatAck=true;
+            activeSocket.send(JSON.stringify({op:1,d:sequence}));
+          }
+          if (packet.op === 7 || packet.op === 9) activeSocket.close();
           if (packet.t === "READY") {
+            console.info("Discord gateway READY; owner controls can receive button clicks");
             reconnectDelay = 1000;
             discordCommunityStatus.gatewayReady = true;
             discordCommunityStatus.messageContentReady = contentIntentEnabled;
@@ -5746,6 +5764,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
       socket.addEventListener("close", event => {
+        if(socket!==activeSocket)return;
+        socket=null;
+        console.warn("Discord gateway closed; reconnecting",{
+          code:event.code,clean:event.wasClean
+        });
         discordCommunityStatus.gatewayReady = false;
         discordCommunityStatus.messageContentReady = false;
         if (event.code === 4014 && contentIntentEnabled) {
