@@ -2431,7 +2431,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           const old = await api(`/channels/${channelId}/messages/${previous.messageId}`);
           if (old.content !== content ||
             (old.embeds?.[0]?.description || "") !== (extras.embeds?.[0]?.description || "") ||
-            (key==="server-roles" &&
+            (["server-roles","owner-drop-controls"].includes(key) &&
               JSON.stringify((old.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id))!==
               JSON.stringify((extras.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id)))) {
             await api(`/channels/${channelId}/messages/${previous.messageId}`, "PATCH", payload);
