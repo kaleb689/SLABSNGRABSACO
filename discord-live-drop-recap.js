@@ -88,8 +88,8 @@ export function parseDiscordSuccessForRecap(message,channelId=SLABSNGRABSTC_SUCC
     }
     const qty=quantity(rawQuantity);
     if(!qty){malformedProduct=true;continue;}
-    const unitField=findField(embed,/^(unit price|price per item|price each|each)$/);
-    const lineField=findField(embed,/^(price|line total|extended price)$/);
+    const unitField=findField(embed,/^(unit price|unit cost|price per item|price each|each|item unit price|product unit price)$/);
+    const lineField=findField(embed,/^(price|product price|item price|line price|line total|item total|product total|extended price)$/);
     let cents=amount(unitField??lineField);
     // "Price", "Line Total", and "Extended Price" are item-line values.
     // Only divide an exact, integral line price; never infer a remainder.
