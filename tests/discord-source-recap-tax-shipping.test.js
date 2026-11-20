@@ -117,6 +117,28 @@ test("missing source order IDs block preview without crashing",()=>{
   assert.ok(report.blockedReasons.includes("green_or_orange_missing_order_id"));
 });
 
+test("recap uses only original Discord-hosted product images from Success",()=>{
+  const m=webhook({id:"1511111111111111190",order:"TGT00990",price:24.99});
+  m.sampleProduct="Pokemon Original Discord Image";
+  const withImage={...m,sampleImage:"https://cdn.discordapp.com/attachments/123/456/real.png"};
+  const result=buildDiscordSourceRecap([withImage],{
+    channelId:SLABSNGRABSTC_SUCCESS_CHANNEL_ID,from:FROM,toExclusive:TO,
+    asOf:LATER,retailer:"Target",historyComplete:true,
+    parseCheckout:msg=>({...parseCheckout(msg),items:[{
+      name:msg.sampleProduct,quantity:1,price:24.99,imageUrl:msg.sampleImage
+    }]})
+  });
+  assert.equal(result.readyToPublish,true);
+  assert.equal(result.topProducts[0].imageUrl,withImage.sampleImage);
+  const substituted=buildDiscordSourceRecap([{...withImage,sampleImage:"https://example.com/random-stock.png"}],{
+    channelId:SLABSNGRABSTC_SUCCESS_CHANNEL_ID,from:FROM,toExclusive:TO,
+    asOf:LATER,retailer:"Target",historyComplete:true,
+    parseCheckout:msg=>({...parseCheckout(msg),items:[{
+      name:msg.sampleProduct,quantity:1,price:24.99,imageUrl:msg.sampleImage
+    }]})
+  });
+  assert.equal(substituted.topProducts[0].imageUrl,null);
+});
 test("discord paid-order charge conflicting with owner rule blocks publication",()=>{
   const m=webhook({id:"1511111111111111109",order:"TGT00117",
     price:24.99,paid:38.99});

@@ -47,7 +47,7 @@ const validItems=items=>(Array.isArray(items)?items:[]).flatMap(item=>{
   return [{key,name,qty,unitCents:amountCents(item?.price),
     imageUrl:(()=>{
       try{const u=new URL(String(item?.imageUrl||""));
-        return u.protocol==="https:"&&u.hostname==="target.scene7.com"?u.toString():null;
+        return u.protocol==="https:"&&["target.scene7.com","cdn.discordapp.com","media.discordapp.net"].includes(u.hostname.toLowerCase())?u.toString():null;
       }catch{return null;}
     })()}];
 });
