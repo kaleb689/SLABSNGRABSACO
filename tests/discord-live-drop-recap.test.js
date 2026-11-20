@@ -34,7 +34,7 @@ function sourceFields(order="TGT123456"){
     {name:"Quantity",value:"2"},
     {name:"Price",value:"$49.98"}];
 }
-async function harness(t,{complete=true,graphic=false,failGraphic=false}={}){
+async function harness(t,{complete=true,graphic=false,failGraphic=false,checkGraphic=null}={}){
   const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),"sng-drop-recap-"));
   t.after(()=>fs.rm(dataDir,{recursive:true,force:true}));
   let time=startAt,n=1611111111111111000n;
@@ -53,6 +53,7 @@ async function harness(t,{complete=true,graphic=false,failGraphic=false}={}){
   const controller=createDiscordDropRecapController({
     dataDir,api,token:"dummy-test-token",guildId:GUILD,
     ownerId:OWNER,generalChannelId:GENERAL,controlChannelId:CONTROL,
+    ...(checkGraphic?{checkGraphic}:{}),
     ...(graphic?{
       prepareGraphic:async()=>{if(failGraphic)throw Error("Approved image unavailable");return Buffer.from("verified-png");},
       sendGraphic:async({payload,graphic:bytes})=>{
@@ -82,6 +83,20 @@ test("drop buttons cover five retailers and show private status without public a
   assert.equal(DROP_RECAP_DELAY_MS,12*60*60*1000);
 });
 
+test("owner-only graphic status checks exact approved template without public posting",async t=>{
+  const h=await harness(t,{checkGraphic:async()=>true});
+  const d={type:3,id:"1611111111111111320",token:"graphic-status",
+    application_id:"1611111111111111321",channel_id:CONTROL,
+    member:{user:{id:OWNER}},data:{custom_id:"sngdrop:graphic:status"}};
+  await h.controller.handleInteraction(d);
+  assert.match(h.requests.at(-1).payload.data.content,/approved.*verified/i);
+  assert.equal(h.requests.at(-1).payload.data.flags,64);
+  assert.equal(publicPosts(h).length,0);
+  const missing=await harness(t,{checkGraphic:async()=>{throw Error("missing asset");}});
+  await missing.controller.handleInteraction(d);
+  assert.match(missing.requests.at(-1).payload.data.content,/not available to the bot/i);
+  assert.equal(publicPosts(missing).length,0);
+});
 test("public live announcement goes to @everyone only after owner confirmation",async t=>{
   const h=await harness(t);
   const data={member:{user:{id:OWNER}},channel_id:CONTROL,type:3,
