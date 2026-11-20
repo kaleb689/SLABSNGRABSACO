@@ -9,6 +9,8 @@ import {checkoutPaidAmount} from "./checkout-price-policy.js";
 import {ownerRecapExpectedChargeCents} from "./discord-checkout-tax-inclusive-policy.js";
 import {communityProductKey,communityProductName} from "./community-product-identity.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID,retailerFromTrustedSourceImage} from "./discord-source-price-field-policy.js";
+import {INITIAL_TARGET_SKUS} from "./target-sku-master.js";
+import {VERIFIED_TARGET_RETAIL_20261112,VERIFIED_TARGET_RETAIL_20261115} from "./target-sku-fixed-retail.js";
 
 const millis=v=>typeof v==="number"?v:Date.parse(String(v||""));
 const amountCents=v=>{
@@ -39,12 +41,38 @@ const canonicalRetailer=(message,parsed,channelId)=>{
   const embed=embeds[0],url=embed?.thumbnail?.url||embed?.image?.url;
   return retailerName(retailerFromTrustedSourceImage({channelId,retailerLabel:raw,imageUrl:url}));
 };
+// Owner's exact TCIN retail references were previously checked against
+// official Target product pages. They are NOT proof of the amount paid in a
+// specific checkout, and can never outrank an explicit checkout price/total.
+// Only use a one-to-one exact product-key match (or exact matching TCIN).
+const targetPriceBySku=new Map(Object.entries({
+  ...VERIFIED_TARGET_RETAIL_20261112,...VERIFIED_TARGET_RETAIL_20261115
+}).map(([sku,price])=>[sku,amountCents(price)]));
+const targetSkuByProductKey=new Map();
+for(const item of INITIAL_TARGET_SKUS){
+  if(!targetPriceBySku.has(item.sku))continue;
+  const key=communityProductKey(item.name,item.sku);
+  const earlier=targetSkuByProductKey.get(key);
+  if(earlier===undefined)targetSkuByProductKey.set(key,item.sku);
+  else if(earlier!==item.sku)targetSkuByProductKey.set(key,null);
+}
+export function verifiedTargetReferencePriceCents({retailer,key,sku}={}){
+  if(retailer!=="Target")return null;
+  const explicit=String(sku||"").trim();
+  const known=targetSkuByProductKey.get(String(key||""));
+  if(explicit){
+    // Never substitute a price for a TCIN contradicting its product name.
+    if(known!==explicit)return null;
+    return targetPriceBySku.get(explicit)??null;
+  }
+  return known?targetPriceBySku.get(known)??null:null;
+}
 const validItems=items=>(Array.isArray(items)?items:[]).flatMap(item=>{
   const name=safeName(String(item?.name||"")),qty=Number(item?.quantity);
   if(!name||!Number.isSafeInteger(qty)||qty<1||qty>999)return [];
   const key=communityProductKey(name,item?.sku);
   if(!key)return [];
-  return [{key,name,qty,unitCents:amountCents(item?.price),
+  return [{key,name,qty,sku:String(item?.sku||"").trim(),unitCents:amountCents(item?.price),
     imageUrl:(()=>{
       try{const u=new URL(String(item?.imageUrl||""));
         return u.protocol==="https:"&&["target.scene7.com","cdn.discordapp.com","media.discordapp.net"].includes(u.hostname.toLowerCase())?u.toString():null;
@@ -160,6 +188,7 @@ export function buildDiscordSourceRecap(messages,{
   let ruleTotalCents=0,ruleSubtotalCents=0,ruleTaxCents=0,ruleShippingCents=0;
   let ruleCalculatedOrders=0,ruleUnpricedOrders=0,ruleExplicitPaidConflicts=0;
   let sourcePaidFallbackOrders=0,missingVerifiedChargeOrders=0,sourcePaidFallbackCents=0;
+  let targetReferencePricedOrders=0,targetReferencePricedUnits=0;
   const missingPriceProducts=new Map();
   let missingProductLists=0;
   let shippedOrdersUnder35=0,freeShippingOrders35Plus=0;
@@ -167,9 +196,19 @@ export function buildDiscordSourceRecap(messages,{
     [key,prices.size===1?[...prices][0]:null]));
   for(const record of valid){
     let subtotalCents=0,complete=record.items.length>0;
+    let usedTargetReference=false,referenceUnits=0;
     for(const item of record.items){
-      const cost=item.unitCents!==null ? item.unitCents :
-        perProductPriceCatalog.get(item.key) ?? null;
+      const fromDiscord=item.unitCents!==null?item.unitCents:
+        (perProductPriceCatalog.get(item.key)??null);
+      const verifiedRetail=fromDiscord===null?
+        verifiedTargetReferencePriceCents({
+          retailer:selected||"All",key:item.key,sku:item.sku
+        }):null;
+      const cost=fromDiscord??verifiedRetail;
+      if(verifiedRetail!==null){
+        usedTargetReference=true;
+        referenceUnits+=item.qty;
+      }
       if(cost===null){
         complete=false;
         const existing=missingPriceProducts.get(item.key)||{name:item.name,affectedOrders:0,affectedUnits:0};
@@ -179,6 +218,17 @@ export function buildDiscordSourceRecap(messages,{
       } else subtotalCents+=cost*item.qty;
     }
     if(!record.items.length)missingProductLists++;
+    if(complete&&usedTargetReference){
+      targetReferencePricedOrders++;
+      targetReferencePricedUnits+=referenceUnits;
+      // If a source-paid total exists it is stronger than reference MSRP.
+      // Never assert that MSRP is the actual payment for that checkout.
+      if(record.paidCents!==null){
+        sourcePaidFallbackOrders++;
+        sourcePaidFallbackCents+=record.paidCents;
+        continue;
+      }
+    }
     if(!complete){
       ruleUnpricedOrders++;
       // Explicit totals from the SAME original Discord checkout are stronger
@@ -233,12 +283,14 @@ export function buildDiscordSourceRecap(messages,{
     confirmedCheckouts,
     reviewHoldCheckouts,
     totalUnits:unitMissing?null:units,
-    // Displayable spend uses the owner-confirmed tax/shipping rules only when
-    // EVERY retained checkout has a unique known unit price.
+    // Displayable spend uses exact source checkout prices/totals first;
+    // exact owner-verified official Target TCIN retail only as labeled fallback.
     totalSpentCents:finalSpendCents,
-    totalSpentBasis:!chargeComplete?null:sourcePaidFallbackOrders?
-      "source_verified_paid_totals_plus_rule_calculated_orders":
-      "rule_calculated_7pct_tax_shipping_under_35",
+    totalSpentBasis:!chargeComplete?null:targetReferencePricedOrders?
+      "owner_verified_target_reference_retail_plus_7pct_tax_shipping":
+      sourcePaidFallbackOrders?
+        "source_verified_paid_totals_plus_rule_calculated_orders":
+        "rule_calculated_7pct_tax_shipping_under_35",
     salesTaxRatePercent:7,
     shippingThresholdCents:3500,
     shippingFeeUnderThresholdCents:599,
@@ -247,6 +299,8 @@ export function buildDiscordSourceRecap(messages,{
     sourcePaidFallbackOrders,
     missingVerifiedChargeOrders,
     sourcePaidFallbackCents,
+    targetReferencePricedOrders,
+    targetReferencePricedUnits,
     missingProductListOrders:missingProductLists,
     // Product names have passed safeName's PII checks and are only exposed
     // to the owner-only private preview, never to public posts on failure.
