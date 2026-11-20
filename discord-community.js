@@ -1350,20 +1350,23 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         dropRecapController=createDiscordDropRecapController({
           dataDir,api,token,guildId:controlGuildId,ownerId:controlOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
-          sendGraphic:async({channelId,retailer,report,visibility,payload})=>{
+          prepareGraphic:async({retailer,report,visibility})=>{
             const template=await approvedTemplate({
               filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
               channelIds:[controls.id,general.id],api
             });
-            const image=await renderRecapGraphic({template,report,retailer,visibility});
+            return renderRecapGraphic({template,report,retailer,visibility});
+          },
+          sendGraphic:async({channelId,graphic,payload})=>{
+            if(!Buffer.isBuffer(graphic)||graphic.length<10000||graphic.length>8*1024*1024)
+              throw Error("Approved recap image is missing or too large.");
             const filename="SLABSNGRABSACO-Drop-Recap.png";
             const form=new FormData();
-            form.append("files[0]",new Blob([image],{type:"image/png"}),filename);
-            const embeds=(payload.embeds||[]).map(embed=>{
-              const updated={...embed,image:{url:"attachment://"+filename}};
-              delete updated.thumbnail;
-              return updated;
-            });
+            form.append("files[0]",new Blob([graphic],{type:"image/png"}),filename);
+            const embeds=(payload.embeds||[]).map(e=>({
+              title:e.title,color:e.color,footer:e.footer,timestamp:e.timestamp,
+              image:{url:"attachment://"+filename}
+            }));
             form.append("payload_json",JSON.stringify({...payload,embeds,
               attachments:[{id:0,filename}]}));
             const response=await fetch(API+"/channels/"+channelId+"/messages",{
@@ -1375,6 +1378,25 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
             if(!/^[0-9]{17,22}$/.test(String(posted?.id||"")))
               throw Error("Discord did not confirm a recap message ID.");
             return posted;
+          },
+          previewGraphic:async({interaction,graphic,payload})=>{
+            if(!Buffer.isBuffer(graphic)||graphic.length<10000||graphic.length>8*1024*1024)
+              throw Error("Private recap preview image missing or too large.");
+            const filename="SLABSNGRABSACO-Drop-Recap-Preview.png";
+            const form=new FormData();
+            form.append("files[0]",new Blob([graphic],{type:"image/png"}),filename);
+            form.append("payload_json",JSON.stringify({...payload,
+              embeds:[{title:"PRIVATE RECAP GRAPHIC PREVIEW",color:0x2cbaed,
+                image:{url:"attachment://"+filename}}],
+              attachments:[{id:0,filename}],allowed_mentions:{parse:[]}}));
+            const route="/webhooks/"+String(interaction.application_id)+"/"+
+              String(interaction.token)+"/messages/@original";
+            const response=await fetch(API+route,{
+              method:"PATCH",headers:{Authorization:headers.Authorization},
+              body:form,signal:AbortSignal.timeout(45000)
+            });
+            if(!response.ok)throw Error("Private graphic preview delivery HTTP "+response.status);
+            return response.json();
           },
           onDropNotification:async({notification,eventKey,messageId})=>{
             if(typeof onGlobalDropNotification!=="function")
