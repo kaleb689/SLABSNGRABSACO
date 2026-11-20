@@ -48,7 +48,7 @@ function form(retailer="target"){
     ]}
   };
 }
-async function harness(t,{ready=true,failPublish=false}={}){
+async function harness(t,{ready=true,failPublish=false,graphic=false,failGraphic=false}={}){
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),"sng-manual-recap-"));
   t.after(()=>fs.rm(dir,{recursive:true,force:true}));
   const calls=[],reports=[],scans=[];
@@ -78,6 +78,15 @@ async function harness(t,{ready=true,failPublish=false}={}){
   const args={api,token:"dummy",ownerId:OWNER,guildId:GUILD,
     controlChannelId:CHANNEL,generalChannelId:GENERAL,dataDir:dir,
     getSource,makeReport,parseCheckout:()=>null,postBuilder:buildDropRecapPost,
+    ...(graphic?{
+      prepareGraphic:async()=>{if(failGraphic)throw Error("Missing approved PNG");return Buffer.from("verified-preview-buffer");},
+      previewGraphic:async({payload})=>{calls.push({url:"/webhooks/"+OWNER+"/messages/@original",method:"PATCH",payload:{...payload,embeds:[{title:"PRIVATE RECAP GRAPHIC PREVIEW"}]}});return {ok:true};},
+      sendGraphic:async({payload,graphic:bytes})=>{
+        assert.ok(Buffer.isBuffer(bytes));
+        calls.push({url:"/channels/"+GENERAL+"/messages",method:"POST",payload});
+        return {id:String(1651111111111111000n+BigInt(posted++))};
+      }
+    }:{}),
     now:()=>CLOCK};
   const flow=createManualDiscordRecapFlow(args);
   const posts=()=>calls.filter(c=>c.url==="/channels/"+GENERAL+"/messages");
@@ -165,6 +174,29 @@ test("Placed Orders, Cancelled, and Stick Rate can be hidden independently",asyn
   assert.doesNotMatch(sent.embeds[0].fields.map(f=>f.name).join(" "),/ORDERS PLACED|CANCELLED|STICK RATE/);
   assert.equal(h.scans.length,2,"review and publication both verify source independently");
   assert.match(h.lastPatch().content,/posted to #general/);
+});
+test("approved image is privately previewed, updated on toggles, and attached on confirmation",async t=>{
+  const h=await harness(t,{graphic:true});
+  const initial=await h.start("target");
+  assert.equal(initial.embeds[0].title,"PRIVATE RECAP GRAPHIC PREVIEW");
+  assert.equal(h.posts().length,0);
+  const id=initial.components[0].components[0].custom_id.split(":").at(-1);
+  await h.flow.handleInteraction(interaction("sngdrop:manual:toggle:stick:"+id));
+  const updated=h.lastPatch();
+  assert.equal(updated.embeds[0].title,"PRIVATE RECAP GRAPHIC PREVIEW");
+  assert.equal(h.posts().length,0);
+  await h.flow.handleInteraction(interaction("sngdrop:manual:publish:"+id));
+  assert.equal(h.posts().length,1);
+  assert.equal(h.scans.length,2);
+  assert.equal(h.posts()[0].payload.allowed_mentions.parse.length,0);
+  assert.doesNotMatch(h.posts()[0].payload.embeds[0].fields.map(f=>f.name).join(" "),/STICK RATE/);
+});
+test("missing approved image fails closed before manual publish",async t=>{
+  const h=await harness(t,{graphic:true,failGraphic:true});
+  const response=await h.start("target");
+  assert.match(response.content,/blocked until source verification/);
+  assert.match(response.content,/approved_recap_graphic_unavailable/);
+  assert.equal(h.posts().length,0);
 });
 test("all-retailer manual preview is supported",async t=>{
   const h=await harness(t);

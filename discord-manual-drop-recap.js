@@ -149,7 +149,7 @@ function pricingDiagnostics(report){
 }
 export function createManualDiscordRecapFlow({
   api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
-  getSource,makeReport,parseCheckout,postBuilder,now=()=>Date.now()
+  getSource,makeReport,parseCheckout,postBuilder,sendGraphic=null,prepareGraphic=null,previewGraphic=null,now=()=>Date.now()
 }){
   if(!api||!token||!ownerId||!guildId||!controlChannelId||!generalChannelId||
     !dataDir||!getSource||!makeReport||!parseCheckout||!postBuilder)
@@ -211,6 +211,17 @@ export function createManualDiscordRecapFlow({
         "\nOpen Create Manual Recap again to retry.",
         embeds:[],components:[],allowed_mentions:{parse:[]}});
     }
+    // Render and validate the owner-approved graphic BEFORE journaling a publish.
+    // A missing image is a private validation block, never an ambiguous Discord post.
+    let graphic=null;
+    if(prepareGraphic){
+      try{graphic=await prepareGraphic({retailer:session.retailer,report,visibility:session.visibility});}
+      catch(error){
+        session.status="preview";
+        return patch(d,{content:"⚠️ Approved recap graphic is unavailable. **Nothing was posted.** "+
+          safeError(error),embeds:[],components:[],allowed_mentions:{parse:[]}});
+      }
+    }
     const publishResult=await serialized(async()=>{
       const data=await readJournal();
       const existing=data.posts.find(p=>p.retailer===session.retailer&&
@@ -242,7 +253,8 @@ export function createManualDiscordRecapFlow({
     payload.allowed_mentions={parse:[]};
     let posted;
     try{
-      posted=await api("/channels/"+generalChannelId+"/messages","POST",payload);
+      posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:session.retailer,report,visibility:session.visibility,graphic,payload}):
+        await api("/channels/"+generalChannelId+"/messages","POST",payload);
     }catch(error){
       await serialized(async()=>{
         const data=await readJournal();
@@ -311,6 +323,15 @@ export function createManualDiscordRecapFlow({
         visibility:{showPlacedOrders:true,showCancelled:true,showStickRate:true},
         expiresAt:now()+DRAFT_LIFETIME_MS,status:"preview"};
       previews.set(session.id,session);
+      if(session.ready&&prepareGraphic&&previewGraphic){
+        try{
+          const graphic=await prepareGraphic({retailer:session.retailer,report,visibility:session.visibility});
+          return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(session,postBuilder)});
+        }catch(error){
+          session.ready=false;
+          session.report={...report,blockedReasons:[...(report.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
+        }
+      }
       return patch(d,manualRecapPreviewPayload(session,postBuilder));
     }
     const toggle=id.match(/^sngdrop:manual:toggle:(placed|cancels|stick):([a-f0-9-]{36})$/);
@@ -319,6 +340,17 @@ export function createManualDiscordRecapFlow({
       if(!s)return acknowledge(d,4,replyData("This preview expired. Open Create Manual Recap again."));
       const key=visibilityKeys[toggle[1]];
       s.visibility[key]=!s.visibility[key];
+      if(prepareGraphic&&previewGraphic){
+        await acknowledge(d,6);
+        try{
+          const graphic=await prepareGraphic({retailer:s.retailer,report:s.report,visibility:s.visibility});
+          return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(s,postBuilder)});
+        }catch(error){
+          s.ready=false;
+          s.report={...s.report,blockedReasons:[...(s.report?.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
+          return patch(d,manualRecapPreviewPayload(s,postBuilder));
+        }
+      }
       return acknowledge(d,7,manualRecapPreviewPayload(s,postBuilder));
     }
     const cancel=id.match(/^sngdrop:manual:cancel:([a-f0-9-]{36})$/);
