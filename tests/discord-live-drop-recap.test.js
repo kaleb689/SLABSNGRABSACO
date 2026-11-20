@@ -170,7 +170,7 @@ test("source-only parser extracts quantities and line totals without order PII i
 
 test("recap parser reads explicitly labeled prices and quantities from original embed description",()=>{
   const message=responseBody([{name:"Site",value:"Target"},{name:"Order ID",value:"TGT001234"}]);
-  message.embeds[0].description="[Pokemon 30th Celebration Tin](https://www.target.com/p/tin)\\nQty: 2\\nPrice: **$49.98**";
+  message.embeds[0].description="[Pokemon 30th Celebration Tin](https://www.target.com/p/tin)\nQty: 2\nPrice: **$49.98**";
   const parsed=parseDiscordSuccessForRecap(message);
   assert.equal(parsed.items.length,1);
   assert.equal(parsed.items[0].quantity,2);
