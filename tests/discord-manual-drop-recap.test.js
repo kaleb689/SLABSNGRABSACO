@@ -217,6 +217,21 @@ test("unverified Success data blocks manual publication, and no guessing",async 
   assert.equal(buttons.at(-1).label,"Cancel");
   assert.equal(h.posts().length,0);
 });
+test("blocked private recap visibly explains why Post is disabled and offers Recheck Totals",async t=>{
+  const h=await harness(t,{ready:false});
+  const preview=await h.start("target");
+  const buttons=preview.components.flatMap(row=>row.components);
+  const post=buttons.find(x=>x.label?.includes("Post to #general"));
+  assert.equal(post?.disabled,true);
+  assert.match(post?.label||"",/Verification Required/);
+  const recheck=buttons.find(x=>x.label==="Recheck Totals");
+  assert.ok(recheck);
+  assert.equal(h.posts().length,0);
+  await h.flow.handleInteraction(interaction(recheck.custom_id));
+  assert.equal(h.reports.length,2);
+  assert.equal(h.posts().length,0);
+  assert.equal(h.lastPatch().components.flatMap(row=>row.components).some(x=>x.label==="Recheck Totals"),true);
+});
 test("blocked recap lets owner hide each metric, but never enables public posting",async t=>{
   const h=await harness(t,{ready:false});
   const preview=await h.start("target");
