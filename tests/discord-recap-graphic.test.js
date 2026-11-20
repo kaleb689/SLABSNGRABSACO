@@ -33,3 +33,15 @@ test("untrusted template hosts are never downloaded",async()=>{
   }),/Exact owner-approved/);
   assert.equal(fetched,false);
 });
+test("renamed Discord PNG gets checksum checked, never trusted by its filename",async()=>{
+  let downloads=0;
+  const api=async()=>[{attachments:[{
+    filename:"image.png",size:2352049,
+    url:"https://cdn.discordapp.com/attachments/1234/5678/image.png"
+  }]}];
+  await assert.rejects(approvedTemplate({
+    api,channelIds:["111111111111111111"],
+    request:async()=>{downloads++;return {ok:true,arrayBuffer:async()=>Buffer.alloc(2352049)};}
+  }),/Exact owner-approved/);
+  assert.equal(downloads,1);
+});
