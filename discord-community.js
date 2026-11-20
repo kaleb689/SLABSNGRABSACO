@@ -1510,6 +1510,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         dropControlSourceGuildId=controlGuildId;
         dropControlChannelId=String(controls.id);
         dropRecapController.start();
+        // Owner buttons must receive gateway events before remaining provisioning work.
+        void connect().catch(error=>console.error("Discord early gateway:",error.message));
       }
       discordCommunityStatus.dropControls={
         ready:true,controlGuildId,
@@ -5690,11 +5692,12 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       await api(`/webhooks/${appId}/${d.token}/messages/@original`, "PATCH", { content: `I replied to you in <#${askChannelId}>: https://discord.com/channels/${guildId}/${askChannelId}/${posted.id}` });
     } catch (error) { console.error("Discord interaction:", error.message); }
   }
-  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true;
+  let socket, sequence = null, heartbeat, reconnectDelay = 1000, closed = false, contentIntentEnabled = true, gatewayConnecting=false;
   async function connect() {
     // A maintenance retry may call setup() again after the gateway is already
     // connecting or live. Never open a duplicate Discord websocket.
-    if (closed || (socket && (socket.readyState === 0 || socket.readyState === 1))) return;
+    if (closed || gatewayConnecting || (socket && (socket.readyState === 0 || socket.readyState === 1))) return;
+    gatewayConnecting=true;
     try {
       const gateway = await api("/gateway/bot");
       socket = new WebSocket(`${gateway.url}?v=10&encoding=json`);
@@ -5785,7 +5788,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     } catch (error) {
       console.error("Discord gateway startup:", error.message);
       setTimeout(connect, 30000).unref?.();
-    }
+    } finally { gatewayConnecting=false; }
   }
   async function sendOwnerRenewalPreview() {
     if (!ownerId) return false;
