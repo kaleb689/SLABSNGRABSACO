@@ -98,6 +98,25 @@ test("unknown unique product prices block total spend, never guess",()=>{
   assert.ok(report.blockedReasons.includes("missing_source_unit_prices_for_rule_total"));
 });
 
+test("blocked recap lists only safe missing-price products and counts",()=>{
+  const m=webhook({id:"1511111111111111120",order:"TGT00119",price:null,
+    product:"Pokemon Unseen Product"});
+  const report=recap([m]);
+  assert.equal(report.ruleUnpricedOrders,1);
+  assert.equal(report.missingProductListOrders,0);
+  assert.deepEqual(report.missingPriceProducts,[{
+    name:"Pokemon Unseen Product",affectedOrders:1,affectedUnits:1
+  }]);
+  assert.equal(report.readyToPublish,false);
+});
+test("missing source order IDs block preview without crashing",()=>{
+  const noId=webhook({id:"1511111111111111121",order:null,price:24.99});
+  const report=recap([noId]);
+  assert.equal(report.greenWithoutOrderId,1);
+  assert.equal(report.readyToPublish,false);
+  assert.ok(report.blockedReasons.includes("green_or_orange_missing_order_id"));
+});
+
 test("discord paid-order charge conflicting with owner rule blocks publication",()=>{
   const m=webhook({id:"1511111111111111109",order:"TGT00117",
     price:24.99,paid:38.99});
