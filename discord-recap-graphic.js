@@ -50,9 +50,9 @@ function overlay(report,retailer,visibility={}){
     svg+=patch(1313,28,300,56,.98);
     svg+=text(label(retailer)+" DROP",1320,76,retailer==="pokemoncenter"?28:37);
   }
-  svg+=patch(1316,90,264,38,1)+text(date.toUpperCase(),1320,120,30);
-  svg+=patch(96,205,459,93,1)+text(prices(report.totalSpentCents),100,282,73,"#05eb29");
-  svg+=patch(755,197,180,69,1)+text("+"+report.totalUnits,759,253,66,"#00d9ff");
+  svg+=text(date.toUpperCase(),1320,120,30);
+  svg+=text(prices(report.totalSpentCents),100,282,73,"#05eb29");
+  svg+=text("+"+report.totalUnits,759,253,66,"#00d9ff");
   for(const item of [
     {visible:visibility.showPlacedOrders!==false,x:65,width:252,text:String(placed),textX:142},
     {visible:visibility.showCancelled!==false,x:342,width:253,text:String(cancelled),textX:417},
@@ -61,7 +61,7 @@ function overlay(report,retailer,visibility={}){
     if(!item.visible){
       svg+=patch(item.x+2,344,item.width-4,102,1);
     }else{
-      svg+=patch(item.textX-3,350,item.width-104,49,1);
+      // This area was erased by the blurred source layer.
       svg+=text(item.text,item.textX,392,43);
     }
   }
@@ -69,7 +69,7 @@ function overlay(report,retailer,visibility={}){
   for(let i=0;i<4;i++){
     const y=521+i*67;
     // Row-only translucent patches protect the outer frame and title.
-    svg+=patch(88,y,1468,66,1);
+    // Row-specific source blur removes historic product text.
     if(i>0)svg+=`<line x1="92" x2="1545" y1="${y-1}" y2="${y-1}" stroke="#6da3b8" stroke-width="2" stroke-opacity=".8"/>`;
     const product=products[i];
     if(!product)continue;
@@ -99,7 +99,23 @@ export async function renderRecapGraphic({template,report,retailer,visibility={}
      !Number.isFinite(Date.parse(report.periodStart)))
     throw Error("Incomplete or unverified Discord recap cannot be rendered.");
   const sharp=sharpModule||(await import("sharp")).default;
-  const layers=[{input:overlay(report,retailer,visibility),left:0,top:0}];
+  // Blur ONLY the previous dynamic text/image areas from this same approved
+  // file. This preserves its original graffiti background, translucent
+  // panels, borders, artwork and titles without ghosted historic values.
+  const zones=[
+    [1316,90,264,38,18,.56],[96,205,459,93,18,.56],
+    [755,197,180,69,18,.56],
+    [139,350,148,49,18,.56],[414,350,142,49,18,.56],
+    [692,350,156,49,18,.56],
+    ...Array.from({length:4},(_,i)=>[88,521+i*67,1468,66,25,.65])
+  ];
+  const layers=[];
+  for(const [left,top,width,height,radius,brightness] of zones){
+    const input=await sharp(template).extract({left,top,width,height})
+      .blur(radius).modulate({brightness}).png().toBuffer();
+    layers.push({input,left,top});
+  }
+  layers.push({input:overlay(report,retailer,visibility),left:0,top:0});
   for(const [i,p] of (report.topProducts||[]).slice(0,4).entries()){
     const input=await sourceImage(p.imageUrl,request,sharp);
     if(input)layers.push({input,left:162,top:525+i*65});
