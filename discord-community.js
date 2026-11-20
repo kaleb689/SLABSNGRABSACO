@@ -579,7 +579,7 @@ export async function evaluateDiscordPaidSkuAccess({
     return {allowed:true,reason:"owner_test"};
   const matching=(Array.isArray(accounts)?accounts:[]).filter(item=>
     String(item?.discordUserId||"")===String(discordUserId||"") &&
-    /^\\d{17,22}$/.test(String(discordUserId||"")));
+    /^\d{17,22}$/.test(String(discordUserId||"")));
   if(!matching.length)return {allowed:false,reason:"discord_not_linked"};
   const eligible=matching.filter(item=>item?.id && !item.disabled);
   if(!eligible.length)return {allowed:false,reason:"account_disabled"};
