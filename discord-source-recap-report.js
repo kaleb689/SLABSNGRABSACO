@@ -154,6 +154,7 @@ export function buildDiscordSourceRecap(messages,{
   // price across the original green/orange checkout webhooks.
   let ruleTotalCents=0,ruleSubtotalCents=0,ruleTaxCents=0,ruleShippingCents=0;
   let ruleCalculatedOrders=0,ruleUnpricedOrders=0,ruleExplicitPaidConflicts=0;
+  let sourcePaidFallbackOrders=0,missingVerifiedChargeOrders=0,sourcePaidFallbackCents=0;
   const missingPriceProducts=new Map();
   let missingProductLists=0;
   let shippedOrdersUnder35=0,freeShippingOrders35Plus=0;
@@ -173,9 +174,23 @@ export function buildDiscordSourceRecap(messages,{
       } else subtotalCents+=cost*item.qty;
     }
     if(!record.items.length)missingProductLists++;
-    if(!complete){ruleUnpricedOrders++;continue;}
+    if(!complete){
+      ruleUnpricedOrders++;
+      // Explicit totals from the SAME original Discord checkout are stronger
+      // evidence than an absent item price. Do not invent a product price.
+      if(record.paidCents!==null){
+        sourcePaidFallbackOrders++;sourcePaidFallbackCents+=record.paidCents;
+      }else missingVerifiedChargeOrders++;
+      continue;
+    }
     const expected=ownerRecapExpectedChargeCents(subtotalCents);
-    if(!expected){ruleUnpricedOrders++;continue;}
+    if(!expected){
+      ruleUnpricedOrders++;
+      if(record.paidCents!==null){
+        sourcePaidFallbackOrders++;sourcePaidFallbackCents+=record.paidCents;
+      }else missingVerifiedChargeOrders++;
+      continue;
+    }
     ruleCalculatedOrders++;
     ruleSubtotalCents+=expected.subtotalCents;
     ruleTaxCents+=expected.taxCents;
@@ -188,7 +203,9 @@ export function buildDiscordSourceRecap(messages,{
     if(record.paidCents!==null && record.paidCents!==expected.totalCents)
       ruleExplicitPaidConflicts++;
   }
-  const ruleComplete=valid.length>0&&ruleUnpricedOrders===0&&unitMissing===0;
+  const itemListsComplete=valid.length>0&&unitMissing===0;
+  const chargeComplete=itemListsComplete&&missingVerifiedChargeOrders===0;
+  const finalSpendCents=chargeComplete?ruleTotalCents+sourcePaidFallbackCents:null;
   let inferredSubtotalCents=0,inferredCoverage=0,unpricedUnits=0;
   const products=[...productMap.entries()].map(([key,p])=>{
     const prices=[...(catalog.get(key)||[])];
@@ -198,7 +215,7 @@ export function buildDiscordSourceRecap(messages,{
     return {name:p.name,quantity:p.units,imageUrl:p.imageUrl,
       observedUnitPriceCents:unitPriceCents};
   }).sort((a,b)=>b.quantity-a.quantity||a.name.localeCompare(b.name));
-  const ready=Boolean(historyComplete&&valid.length&&ruleComplete&&
+  const ready=Boolean(historyComplete&&valid.length&&chargeComplete&&
     !ruleExplicitPaidConflicts&&!greenWithoutId&&!unknownRetailer);
   return {
     source:"SLABSNGRABSTC #success",
@@ -211,13 +228,18 @@ export function buildDiscordSourceRecap(messages,{
     totalUnits:unitMissing?null:units,
     // Displayable spend uses the owner-confirmed tax/shipping rules only when
     // EVERY retained checkout has a unique known unit price.
-    totalSpentCents:ruleComplete?ruleTotalCents:null,
-    totalSpentBasis:ruleComplete?"rule_calculated_7pct_tax_shipping_under_35":null,
+    totalSpentCents:finalSpendCents,
+    totalSpentBasis:!chargeComplete?null:sourcePaidFallbackOrders?
+      "source_verified_paid_totals_plus_rule_calculated_orders":
+      "rule_calculated_7pct_tax_shipping_under_35",
     salesTaxRatePercent:7,
     shippingThresholdCents:3500,
     shippingFeeUnderThresholdCents:599,
     ruleCalculatedOrders,
     ruleUnpricedOrders,
+    sourcePaidFallbackOrders,
+    missingVerifiedChargeOrders,
+    sourcePaidFallbackCents,
     missingProductListOrders:missingProductLists,
     // Product names have passed safeName's PII checks and are only exposed
     // to the owner-only private preview, never to public posts on failure.
@@ -227,7 +249,7 @@ export function buildDiscordSourceRecap(messages,{
     ruleSubtotalCents,
     ruleTaxCents,
     ruleShippingCents,
-    ruleTotalCents:ruleComplete?ruleTotalCents:null,
+    ruleTotalCents:ruleCalculatedOrders?ruleTotalCents:null,
     shippingChargedOrders:shippedOrdersUnder35,
     freeShippingOrders:freeShippingOrders35Plus,
     ruleExplicitPaidConflicts,
@@ -247,7 +269,7 @@ export function buildDiscordSourceRecap(messages,{
     readyToPublish:ready,
     blockedReasons:[
       ...(!historyComplete?["incomplete_discord_history"]:[]),
-      ...(!ruleComplete?["missing_source_unit_prices_for_rule_total"]:[]),
+      ...(!chargeComplete?["missing_source_verified_order_total_or_unit_prices"]:[]),
       ...(ruleExplicitPaidConflicts?["explicit_paid_amount_disagrees_with_tax_shipping_rule"]:[]),
       ...(unitMissing?["missing_item_quantities"]:[]),
       ...(greenWithoutId?["green_or_orange_missing_order_id"]:[]),
