@@ -426,18 +426,37 @@ export function createDiscordDropRecapController({
     const reply=content=>api(callback,"POST",{type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
     if(user!==String(ownerId)||String(d.channel_id)!==String(controlChannelId))
       return reply("Only the verified server owner can use these private drop controls.");
-    if(id==="sngdrop:graphic:status"){
-      if(typeof checkGraphic!=="function")return reply("⚠️ Approved graphic check has not been configured.");
-      try{
-        await checkGraphic();
-        return reply("✅ Exact approved SLABSNGRABSACO recap PNG verified and available to the bot. No public message was posted.");
-      }catch(error){
-        console.error("Drop recap graphic check:",String(error?.message||error).slice(0,180));
-        return reply("⚠️ Approved recap PNG is not available to the bot. Upload the unchanged file SLABSNGRABSACO_Target_Drop_Recap_Final.png to this private channel before posting graphics.");
+    // Discord requires an initial interaction response within ~3 seconds.
+    // Source/asset checks can involve Discord pagination or disk I/O; defer
+    // privately BEFORE starting them, then PATCH the original response.
+    const deferredReply=async task=>{
+      await api(callback,"POST",{type:5,data:{flags:64}});
+      let content;
+      try{content=await task();}
+      catch(error){
+        console.error("Owner Drop Controls check:",String(error?.message||error).slice(0,180));
+        content="⚠️ The check could not complete. No recap was posted. Try again.";
       }
+      return api("/webhooks/"+String(d.application_id)+"/"+String(d.token)+
+        "/messages/@original","PATCH",{
+          content,embeds:[],components:[],allowed_mentions:{parse:[]}
+        });
+    };
+    if(id==="sngdrop:graphic:status"){
+      return deferredReply(async()=>{
+        if(typeof checkGraphic!=="function")
+          return "⚠️ Approved graphic check has not been configured.";
+        try{
+          await checkGraphic();
+          return "✅ Exact approved SLABSNGRABSACO recap PNG verified and available to the bot. No public message was posted.";
+        }catch(error){
+          console.error("Drop recap graphic check:",String(error?.message||error).slice(0,180));
+          return "⚠️ Approved recap PNG is not available to the bot. Upload the unchanged file SLABSNGRABSACO_Target_Drop_Recap_Final.png to this private channel before posting graphics.";
+        }
+      });
     }
     if(id.startsWith("sngdrop:manual:"))return manualFlow.handleInteraction(d);
-    if(id==="sngdrop:status")return reply(await statusText());
+    if(id==="sngdrop:status")return deferredReply(()=>statusText());
     const start=id.match(/^sngdrop:start:(target|walmart|pokemoncenter|costco|sams)$/);
     if(start){
       const spec=DROP_RECAP_RETAILERS[start[1]];

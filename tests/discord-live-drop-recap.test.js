@@ -89,13 +89,47 @@ test("owner-only graphic status checks exact approved template without public po
     application_id:"1611111111111111321",channel_id:CONTROL,
     member:{user:{id:OWNER}},data:{custom_id:"sngdrop:graphic:status"}};
   await h.controller.handleInteraction(d);
-  assert.match(h.requests.at(-1).payload.data.content,/approved.*verified/i);
-  assert.equal(h.requests.at(-1).payload.data.flags,64);
+  assert.equal(h.requests[0].payload.type,5,"the interaction must be acknowledged immediately");
+  assert.equal(h.requests[0].payload.data.flags,64);
+  assert.match(h.requests.at(-1).payload.content,/approved.*verified/i);
+  assert.match(h.requests.at(-1).url,/webhooks\/.*\/messages\/@original/);
   assert.equal(publicPosts(h).length,0);
   const missing=await harness(t,{checkGraphic:async()=>{throw Error("missing asset");}});
   await missing.controller.handleInteraction(d);
-  assert.match(missing.requests.at(-1).payload.data.content,/not available to the bot/i);
+  assert.equal(missing.requests[0].payload.type,5);
+  assert.match(missing.requests.at(-1).payload.content,/not available to the bot/i);
   assert.equal(publicPosts(missing).length,0);
+});
+test("slow Graphic Status lookup gets immediate deferred acknowledgement",async t=>{
+  let release,lookupStarted=false;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const h=await harness(t,{checkGraphic:async()=>{lookupStarted=true;await pending;}});
+  const d={type:3,id:"1611111111111111320",token:"slow-graphic",
+    application_id:"1611111111111111321",channel_id:CONTROL,
+    member:{user:{id:OWNER}},data:{custom_id:"sngdrop:graphic:status"}};
+  const work=h.controller.handleInteraction(d);
+  // The initial acknowledgement must already have happened while the
+  // asynchronous image lookup is still waiting.
+  for(let i=0;i<10&&!lookupStarted;i++)await Promise.resolve();
+  assert.equal(lookupStarted,true);
+  assert.equal(h.requests[0].payload.type,5);
+  assert.equal(h.requests[0].payload.data.flags,64);
+  assert.equal(h.requests.filter(x=>x.method==="PATCH").length,0);
+  release();
+  await work;
+  assert.match(h.requests.at(-1).payload.content,/verified/i);
+  assert.equal(publicPosts(h).length,0);
+});
+test("Pending / Posted responds privately before reading slow state",async t=>{
+  const h=await harness(t);
+  const d={type:3,id:"1611111111111111320",token:"status",
+    application_id:"1611111111111111321",channel_id:CONTROL,
+    member:{user:{id:OWNER}},data:{custom_id:"sngdrop:status"}};
+  await h.controller.handleInteraction(d);
+  assert.equal(h.requests[0].payload.type,5);
+  assert.equal(h.requests[0].payload.data.flags,64);
+  assert.match(h.requests.at(-1).payload.content,/No drops started/);
+  assert.equal(publicPosts(h).length,0);
 });
 test("public live announcement goes to @everyone only after owner confirmation",async t=>{
   const h=await harness(t);
