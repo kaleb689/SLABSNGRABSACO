@@ -21,7 +21,7 @@ export const DROP_RECAP_RETAILERS=Object.freeze({
 const currency=cents=>"$"+(cents/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const safeText=v=>String(v||"").replace(/@everyone|@here|<@!?[0-9]+>/g,"").slice(0,160);
 const stamp=ms=>new Date(ms).toISOString();
-const fieldLabel=v=>String(v||"").replace(/[*_`\\u200b]/g,"").replace(/:\\s*$/,"").replace(/\\s+/g," ").trim().toLowerCase();
+const fieldLabel=v=>String(v||"").replace(/[*_`\u200b]/g,"").replace(/:\s*$/,"").replace(/\s+/g," ").trim().toLowerCase();
 // Original Discord success webhooks may put labeled values either in
 // embed.fields or as "Label: value" / alternating lines in an embed description.
 // Read ONLY an explicitly labeled value in this same product embed.
@@ -29,10 +29,10 @@ function findField(embed,pattern){
   const matches=[];
   for(const f of Array.isArray(embed?.fields)?embed.fields:[])
     if(pattern.test(fieldLabel(f?.name)))matches.push(String(f?.value??"").trim());
-  const lines=String(embed?.description||"").split(/\\r?\\n/).map(line=>
-    line.replace(/^[>•\\-\\s]+/,"").replace(/\\*\\*/g,"").trim()).filter(Boolean);
+  const lines=String(embed?.description||"").split(/\r?\n/).map(line=>
+    line.replace(/^[>•\-\s]+/,"").replace(/\*\*/g,"").trim()).filter(Boolean);
   for(let i=0;i<lines.length;i++){
-    const inline=lines[i].match(/^([^:\\n]{2,55}):\\s*(.+)$/);
+    const inline=lines[i].match(/^([^:\n]{2,55}):\s*(.+)$/);
     if(inline&&pattern.test(fieldLabel(inline[1]))){
       matches.push(inline[2]);continue;
     }
@@ -44,14 +44,14 @@ function findField(embed,pattern){
   return distinct.length===1?distinct[0]:undefined;
 }
 function amount(value) {
-  const raw=String(value??"").replace(/[\\*\\x60|]/g,"").replace(/\\s+/g," ").trim();
-  const match=raw.match(/^(?:USD\\s*)?\\$?\\s*((?:\\d{1,8}|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d{1,2})?)(?:\\s*USD)?$/i);
+  const raw=String(value??"").replace(/[\*\x60|]/g,"").replace(/\s+/g," ").trim();
+  const match=raw.match(/^(?:USD\s*)?\$?\s*((?:\d{1,8}|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?)(?:\s*USD)?$/i);
   if(!match)return null;
   const cents=Math.round(Number(match[1].replace(/,/g,""))*100);
   return Number.isSafeInteger(cents)&&cents>0&&cents<100000000?cents:null;
 }
 function quantity(value) {
-  const raw=String(value??"").replace(/[\\*\\x60|\\s]/g,"");
+  const raw=String(value??"").replace(/[\*\x60|\s]/g,"");
   const n=Number(raw);
   return Number.isSafeInteger(n)&&n>0&&n<=999?n:null;
 }
