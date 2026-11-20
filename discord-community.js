@@ -9,6 +9,7 @@ import { isRetailerSkuPost, dropSkuFingerprint, decideSkuAlert, skuAlertPayload 
 import { hasRespondedToSkuDrop, unselectedSkuRecipientIds, canRepeatSkuReminder, skuReminderOwnerPanel, skuReminderDirectMessage } from "./sku-reminders.js";
 import { parseMonitorDropProducts, parseSkuStockDropProducts, formattedDropPayloads, isFormattedDropPost } from "./drop-monitor-format.js";
 import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
+import {approvedTemplate,renderRecapGraphic} from "./discord-recap-graphic.js";
 import {applyApprovedDiscordBotAvatar} from "./discord-bot-avatar.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
@@ -1349,6 +1350,32 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         dropRecapController=createDiscordDropRecapController({
           dataDir,api,token,guildId:controlGuildId,ownerId:controlOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
+          sendGraphic:async({channelId,retailer,report,visibility,payload})=>{
+            const template=await approvedTemplate({
+              filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
+              channelIds:[controls.id,general.id],api
+            });
+            const image=await renderRecapGraphic({template,report,retailer,visibility});
+            const filename="SLABSNGRABSACO-Drop-Recap.png";
+            const form=new FormData();
+            form.append("files[0]",new Blob([image],{type:"image/png"}),filename);
+            const embeds=(payload.embeds||[]).map(embed=>{
+              const updated={...embed,image:{url:"attachment://"+filename}};
+              delete updated.thumbnail;
+              return updated;
+            });
+            form.append("payload_json",JSON.stringify({...payload,embeds,
+              attachments:[{id:0,filename}]}));
+            const response=await fetch(API+"/channels/"+channelId+"/messages",{
+              method:"POST",headers:{Authorization:headers.Authorization},
+              body:form,signal:AbortSignal.timeout(45000)
+            });
+            if(!response.ok)throw Error("Approved Discord recap image delivery HTTP "+response.status);
+            const posted=await response.json();
+            if(!/^[0-9]{17,22}$/.test(String(posted?.id||"")))
+              throw Error("Discord did not confirm a recap message ID.");
+            return posted;
+          },
           onDropNotification:async({notification,eventKey,messageId})=>{
             if(typeof onGlobalDropNotification!=="function")
               throw Error("Global app drop broadcaster is not configured");
