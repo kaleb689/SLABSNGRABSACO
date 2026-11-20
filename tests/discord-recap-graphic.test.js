@@ -52,7 +52,7 @@ test("recap graphic replaces dynamic surfaces without blur or empty hidden-stat 
   assert.doesNotMatch(code,/\.blur\(/);
   assert.doesNotMatch(code,/Array\.from\(\{length:4\}.*extract/);
   assert.match(code,/if\(metrics\.length\)/);
-  assert.match(code,/graphic-only cyan\/navy/);
-  assert.match(code,/original.*product rows|historic product rows/);
+  assert.doesNotMatch(code,/LEGACY_SHA256|graphic-only cyan\/navy/);
+  assert.match(code,/existing top-products panel/);
   assert.match(code,/layers=\[\{input:overlay\(report,retailer,visibility\),left:0,top:0\}\]/);
 });
