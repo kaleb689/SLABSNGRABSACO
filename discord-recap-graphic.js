@@ -50,18 +50,18 @@ function overlay(report,retailer,visibility={}){
     svg+=patch(1313,28,300,56,.98);
     svg+=text(label(retailer)+" DROP",1320,76,retailer==="pokemoncenter"?28:37);
   }
-  svg+=patch(1316,90,264,38,.98)+text(date.toUpperCase(),1320,120,30);
-  svg+=patch(96,205,459,93,.87)+text(prices(report.totalSpentCents),100,282,73,"#05eb29");
-  svg+=patch(755,197,180,69,.87)+text("+"+report.totalUnits,759,253,66,"#00d9ff");
+  svg+=patch(1316,90,264,38,1)+text(date.toUpperCase(),1320,120,30);
+  svg+=patch(96,205,459,93,1)+text(prices(report.totalSpentCents),100,282,73,"#05eb29");
+  svg+=patch(755,197,180,69,1)+text("+"+report.totalUnits,759,253,66,"#00d9ff");
   for(const item of [
     {visible:visibility.showPlacedOrders!==false,x:65,width:252,text:String(placed),textX:142},
     {visible:visibility.showCancelled!==false,x:342,width:253,text:String(cancelled),textX:417},
     {visible:visibility.showStickRate!==false,x:619,width:254,text:rate.toFixed(1)+"%",textX:695}
   ]){
     if(!item.visible){
-      svg+=patch(item.x+2,344,item.width-4,102,.97);
+      svg+=patch(item.x+2,344,item.width-4,102,1);
     }else{
-      svg+=patch(item.textX-3,350,item.width-104,49,.89);
+      svg+=patch(item.textX-3,350,item.width-104,49,1);
       svg+=text(item.text,item.textX,392,43);
     }
   }
@@ -69,7 +69,7 @@ function overlay(report,retailer,visibility={}){
   for(let i=0;i<4;i++){
     const y=521+i*67;
     // Row-only translucent patches protect the outer frame and title.
-    svg+=patch(88,y,1468,66,.89);
+    svg+=patch(88,y,1468,66,1);
     if(i>0)svg+=`<line x1="92" x2="1545" y1="${y-1}" y2="${y-1}" stroke="#6da3b8" stroke-width="2" stroke-opacity=".8"/>`;
     const product=products[i];
     if(!product)continue;
