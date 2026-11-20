@@ -118,7 +118,10 @@ export function manualRecapPreviewPayload(session,postBuilder){
   const head="**PRIVATE PREVIEW — NO DISCORD POST SENT**\n"+
     "**"+RETAILERS[session.retailer].label+"** · "+
     fmt(Date.parse(session.from))+" → "+fmt(Date.parse(session.toExclusive))+
-    " (Eastern)\nChoose which metrics members will see. Green ✓ means shown; gray ✕ means hidden.";
+    " (Eastern)\nChoose which metrics members will see. Green ✓ means shown; gray ✕ means hidden."+
+    (Number.isSafeInteger(r?.reviewHoldCheckouts)?
+      "\nIncluded as checkouts: "+(Number(r.confirmedCheckouts)||0)+" green confirmed + "+
+        r.reviewHoldCheckouts+" orange Review Hold (red cancellations excluded).":"");
   if(!session.ready){
     return {content:head+"\n\n⚠️ **Recap is blocked until source verification succeeds.**"+
       "\n"+(r?.blockedReasons||["Discord Success unavailable"]).slice(0,8).join(", ").slice(0,600)+
