@@ -10,15 +10,15 @@ const pwa = read("../public/pwa.js");
 
 test("approved customer app stylesheet loads after premium controls", () => {
   const premium = page.indexOf('href="/sng-premium-controls.css?v=2"');
-  const uniform = page.indexOf('href="/app-ui-uniform.css?v=20261010"');
+  const uniform = page.indexOf('href="/app-ui-uniform.css?v=20261119-nav2"');
   assert.ok(premium !== -1, "Premium controls stylesheet retained");
   assert.ok(uniform > premium, "Approved final overrides must load last");
   assert.match(page, /src="\/app-dashboard\.js\?v=\d{8}-[a-z0-9-]+"/);
 });
 
-test("six navigation tiles have real spacing and readable labels", () => {
+test("five compact tabs and equal Home/Messages tabs have readable labels", () => {
   assert.match(dashboard, /const navLabels = \['success', 'tracking', 'profile', 'products', 'history', 'home', 'messages'\]/);
-  assert.match(style, /\.sng-app-nav \{\s*grid-template-columns:repeat\(6,minmax\(0,1fr\)\);\s*gap:/);
+  assert.match(style, /grid-template-columns:repeat\(10,minmax\(0,1fr\)\)!important/);
   assert.match(style, /\.sng-app-nav > button span \{[^}]*font-size:clamp\(9px/);
   assert.match(style, /@media\(max-width:360px\)/);
 });
