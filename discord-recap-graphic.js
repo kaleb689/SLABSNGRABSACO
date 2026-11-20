@@ -2,6 +2,7 @@
 // Never substitute a generic photo or display historic values from the source raster.
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 
 export const APPROVED_NAME="SLABSNGRABSACO_Target_Drop_Recap_Final.png";
 export const APPROVED_SHA256="71ad40b06e3b5b53f42ef9c680a5f4396191be7f79127aeb86ce2b7998ebdef4";
@@ -12,8 +13,8 @@ const validImage=bytes=>Buffer.isBuffer(bytes)&&bytes.length>10000&&bytes.length
 const escape=value=>String(value??"").replace(/[&<>"'\u0000-\u001f]/g," ").replace(/@everyone|@here|<@!?\d+>/gi,"").slice(0,110);
 const prices=cents=>"$"+(cents/100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const label=retailer=>({all:"ALL RETAILERS",target:"TARGET",walmart:"WALMART",pokemoncenter:"POKÉMON CENTER",costco:"COSTCO",sams:"SAM'S CLUB"})[retailer];
-export async function approvedTemplate({filePath="",channelIds=[],api=null,request=fetch}={}){
-  for(const candidate of [new URL("./assets/Neon Target Drop Recap Template.png",import.meta.url),filePath].filter(Boolean))try{const b=await fs.readFile(candidate);if(validImage(b))return b;}catch(e){if(e.code!=="ENOENT")throw e;}
+export async function approvedTemplate({filePath="",channelIds=[],api=null,request=fetch,cachePath=""}={}){
+  for(const candidate of [new URL("./assets/Neon Target Drop Recap Template.png",import.meta.url),cachePath,filePath].filter(Boolean))try{const b=await fs.readFile(candidate);if(validImage(b))return b;}catch(e){if(e.code!=="ENOENT")throw e;}
   for(const id of channelIds){
     if(!api||!/^[0-9]{17,22}$/.test(String(id)))continue;
     let before="";
@@ -29,10 +30,17 @@ export async function approvedTemplate({filePath="",channelIds=[],api=null,reque
         // Discord can rename an uploaded attachment. Exact image hash—not
         // its display filename—is the acceptance requirement.
         for(const a of attachments){
-          const resp=await request(a.url,{signal:AbortSignal.timeout(15000)});
-          if(!resp.ok)continue;
-          const b=Buffer.from(await resp.arrayBuffer());
-          if(validImage(b))return b;
+          try {
+            const resp=await request(a.url,{signal:AbortSignal.timeout(10000)});
+            if(!resp.ok){console.warn("Recap asset download HTTP",resp.status);continue;}
+            const b=Buffer.from(await resp.arrayBuffer());
+            if(validImage(b)){
+              if(cachePath)try{await fs.mkdir(path.dirname(cachePath),{recursive:true});await fs.writeFile(cachePath,b,{mode:0o600});}catch(e){console.warn("Recap asset cache:",e.code||e.name);}
+              console.info("Clean recap template checksum verified");
+              return b;
+            }
+            console.info("Recap asset checksum mismatch",{bytes:b.length,sha256:fingerprint(b)});
+          }catch(e){console.warn("Recap asset download failed",e.name);}
         }
       }
       if(messages.length<100)break;
@@ -103,7 +111,7 @@ async function sourceImage(url,request,sharp){
     if(!resp.ok||!/^image\//i.test(resp.headers.get("content-type")||""))return null;
     const b=Buffer.from(await resp.arrayBuffer());
     if(b.length>4*1024*1024)return null;
-    return sharp(b).resize(56,56,{fit:"contain",background:"#ffffff"}).png().toBuffer();
+    return await sharp(b).resize(56,56,{fit:"contain",background:"#ffffff"}).png().toBuffer();
   }catch{return null;}
 }
 export async function renderRecapGraphic({template,report,retailer,visibility={},request=fetch,sharpModule=null}){
@@ -119,5 +127,5 @@ export async function renderRecapGraphic({template,report,retailer,visibility={}
     const input=await sourceImage(p.imageUrl,request,sharp);
     if(input)layers.push({input,left:162,top:555+i*69});
   }
-  return sharp(template).composite(layers).png().toBuffer();
+  return sharp(template).composite(layers).png({compressionLevel:9,palette:true,quality:100}).toBuffer();
 }
