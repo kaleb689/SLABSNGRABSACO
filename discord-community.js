@@ -34,6 +34,14 @@ import {
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
+export function discordApiRequestPolicy(route,method="GET"){
+  const parts=String(route).split("?")[0].split("/");
+  const initialCallback=method==="POST"&&parts.length===5&&
+    parts[1]==="interactions"&&parts[4]==="callback"&&
+    /^[0-9]{17,22}$/.test(parts[2]);
+  return {interactionCallback:initialCallback,
+    attempts:initialCallback?1:6,timeoutMs:initialCallback?2200:15000};
+}
 export function discordRateLimitDelayMs({ retryAfter, headerRetryAfter, resetAfter, attempt = 0 } = {}) {
   const candidates = [retryAfter, headerRetryAfter, resetAfter]
     .filter(value => value !== null && value !== undefined && String(value).trim() !== "")
@@ -1081,11 +1089,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     // Unlike ordinary messages, these must never wait through a 429 retry
     // backoff or a 15-second network timeout. Fail promptly and report why.
     const routeParts=String(route).split("?")[0].split("/");
-    const interactionCallback=method==="POST"&&routeParts.length===5&&
-      routeParts[1]==="interactions"&&routeParts[4]==="callback"&&
-      /^[0-9]{17,22}$/.test(routeParts[2]);
-    const attempts=interactionCallback?1:6;
-    const timeoutMs=interactionCallback?2200:15000;
+    const {interactionCallback,attempts,timeoutMs}=discordApiRequestPolicy(route,method);
     const safeRoute=routeParts[1]==="interactions"?
       "/interactions/[id]/[token]/callback":
       routeParts[1]==="webhooks"?
@@ -4698,6 +4702,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function interaction(payload) {
     const d = payload?.d || {};
     if (payload?.t !== "INTERACTION_CREATE" || !d.id) return interactionImpl(payload);
+    const dropAction=String(d.data?.custom_id||"");
+    if(dropAction.startsWith("sngdrop:")){
+      let ageMs=null;
+      try{
+        const snowflake=BigInt(String(d.id));
+        ageMs=Date.now()-Number((snowflake>>22n)+1420070400000n);
+      }catch{}
+      console.info("Discord owner control interaction received",{
+        action:dropAction.split(":").slice(0,3).join(":"),
+        type:d.type,ageMs,connected:discordCommunityStatus.gatewayReady
+      });
+    }
     return skuAuditContext.run({
       interactionId: String(d.id),
       discordUserId: String(d.member?.user?.id || d.user?.id || ""),
