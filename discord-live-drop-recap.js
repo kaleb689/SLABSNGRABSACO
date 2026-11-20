@@ -368,7 +368,9 @@ export function createDiscordDropRecapController({
         await save(data);
         let posted;
         try{
-          const payload=buildDropRecapPost(record.retailer,record.id,report);\n          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},graphic,payload}):\n            await api("/channels/"+generalChannelId+"/messages","POST",payload);
+          const payload=buildDropRecapPost(record.retailer,record.id,report);
+          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},graphic,payload}):
+            await api("/channels/"+generalChannelId+"/messages","POST",payload);
         }catch(error){
           record.status="publishing_error";
           record.error="Discord recap delivery could not be confirmed; inspect #general.";
