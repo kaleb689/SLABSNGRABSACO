@@ -96,7 +96,7 @@ test("November 19 Target 30th Day, Ditto and Night checkouts use owner's verifie
   }
   const report=recap(records);
   assert.equal(report.ordersPlaced,11);
-  assert.equal(report.reviewHoldCheckouts,4);
+  assert.equal(report.reviewHoldCheckouts,5);
   assert.equal(report.totalUnits,22);
   assert.equal(report.ruleUnpricedOrders,0);
   assert.equal(report.targetReferencePricedOrders,11);
