@@ -177,9 +177,36 @@ test("unverified Success data blocks manual publication, and no guessing",async 
   const preview=await h.start();
   assert.match(preview.content,/blocked until source verification/);
   assert.match(preview.content,/missing_source_unit_prices/);
-  assert.equal(preview.components[0].components[0].label,"Close");
+  const buttons=preview.components.flatMap(row=>row.components);
+  assert.deepEqual(buttons.slice(0,3).map(x=>x.label),[
+    "✓ Placed Orders","✓ Cancelled","✓ Stick Rate"
+  ]);
+  assert.equal(buttons.some(x=>x.custom_id.startsWith("sngdrop:manual:publish:")),false);
+  assert.equal(buttons.at(-1).label,"Cancel");
   assert.equal(h.posts().length,0);
 });
+test("blocked recap lets owner hide each metric, but never enables public posting",async t=>{
+  const h=await harness(t,{ready:false});
+  const preview=await h.start("target");
+  const id=preview.components[0].components[0].custom_id.split(":").at(-1);
+  for(const [key,label] of [["placed","Placed Orders"],["cancels","Cancelled"],["stick","Stick Rate"]]){
+    await h.flow.handleInteraction(interaction("sngdrop:manual:toggle:"+key+":"+id));
+    const reply=h.lastReply().data;
+    assert.match(reply.content,/Recap is blocked until source verification/);
+    assert.equal(reply.components[0].components.some(c=>c.label==="✕ "+label),true);
+    assert.equal(reply.components.flatMap(r=>r.components).some(c=>c.custom_id.startsWith("sngdrop:manual:publish:")),false);
+    assert.equal(reply.allowed_mentions.parse.length,0);
+  }
+  const last=h.lastReply().data;
+  assert.deepEqual(last.components[0].components.map(x=>x.label),[
+    "✕ Placed Orders","✕ Cancelled","✕ Stick Rate"
+  ]);
+  assert.equal(h.posts().length,0);
+  await h.flow.handleInteraction(interaction("sngdrop:manual:publish:"+id));
+  assert.equal(h.posts().length,0);
+  assert.match(h.lastReply().data.content,/preview is unavailable/);
+});
+
 test("owner-only blocked recap names missing-priced products without posting or guessing",async t=>{
   const h=await harness(t,{ready:false});
   const preview=await h.start("target");
