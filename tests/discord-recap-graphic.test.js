@@ -45,3 +45,14 @@ test("renamed Discord PNG gets checksum checked, never trusted by its filename",
   }),/Exact owner-approved/);
   assert.equal(downloads,1);
 });
+
+test("recap graphic replaces dynamic surfaces without blur or empty hidden-stat tiles",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const code=readFileSync(new URL("../discord-recap-graphic.js",import.meta.url),"utf8");
+  assert.doesNotMatch(code,/\.blur\(/);
+  assert.doesNotMatch(code,/Array\.from\(\{length:4\}.*extract/);
+  assert.match(code,/if\(metrics\.length\)/);
+  assert.match(code,/graphic-only cyan\/navy/);
+  assert.match(code,/original.*product rows|historic product rows/);
+  assert.match(code,/layers=\[\{input:overlay\(report,retailer,visibility\),left:0,top:0\}\]/);
+});
