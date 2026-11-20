@@ -1350,6 +1350,13 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         dropRecapController=createDiscordDropRecapController({
           dataDir,api,token,guildId:controlGuildId,ownerId:controlOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
+          checkGraphic:async()=>{
+            const approved=await approvedTemplate({
+              filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
+              channelIds:[controls.id,general.id],api
+            });
+            return approved.length>10000;
+          },
           prepareGraphic:async({retailer,report,visibility})=>{
             const template=await approvedTemplate({
               filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
