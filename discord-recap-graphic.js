@@ -76,8 +76,8 @@ function overlay(report,retailer,visibility={}){
   ].filter(x=>x.enabled);
   // A single continuous surface replaces all original stat tiles. Omitted
   // metrics do not leave ghost icons, labels, or unused rectangular cards.
-  svg+='<rect x="63" y="339" width="814" height="112" rx="16" fill="url(#metric)" stroke="#36b5e6" stroke-opacity=".4" stroke-width="2"/>';
   if(metrics.length){
+    svg+='<rect x="63" y="339" width="814" height="112" rx="16" fill="url(#metric)" stroke="#36b5e6" stroke-opacity=".4" stroke-width="2"/>';
     const gap=14,width=(784-gap*(metrics.length-1))/metrics.length;
     metrics.forEach((m,i)=>{
       const x=79+i*(width+gap);
@@ -85,6 +85,16 @@ function overlay(report,retailer,visibility={}){
       svg+=txt(m.value,x+10,389,48,m.color,900);
       svg+=txt(m.label,x+10,425,22,"#f0f8fd",800);
     });
+  }else{
+    // When all three metrics are hidden, render a graphic-only cyan/navy
+    // continuation—not empty cards, leftover numbers, labels or black tiles.
+    svg+='<rect x="63" y="339" width="814" height="112" rx="11" fill="url(#clean)"/>';
+    for(let i=0;i<9;i++){
+      const x=78+i*90,mid=42+(i%3)*5;
+      svg+='<polygon points="'+x+',343 '+(x+56)+',343 '+(x+6)+',446 '+(x-42)+',446" fill="#0a3855" fill-opacity=".36"/>';
+      svg+='<line x1="'+(x+mid/2)+'" y1="343" x2="'+(x-8)+'" y2="443" stroke="#11a2d2" stroke-opacity=".25" stroke-width="2"/>';
+    }
+    svg+='<line x1="63" y1="340" x2="877" y2="340" stroke="#32bef1" stroke-opacity=".3" stroke-width="2"/>';
   }
   // A single complete glass surface hides all historic product rows without
   // pixel blur. No old text, products or quantities can ghost through.
