@@ -137,14 +137,14 @@ function pricingDiagnostics(report){
   const entries=Array.isArray(r.missingPriceProducts)?r.missingPriceProducts:[];
   const products=entries.slice(0,8).map(x=>{
     const name=String(x?.name||"").slice(0,95)
-      .replace(/[@<>]/g,"").replace(/\\s+/g," ").trim();
+      .replace(/[@<>]/g,"").replace(/\s+/g," ").trim();
     return name?"• "+name+" — "+(Number(x.affectedUnits)||0)+" units / "+
       (Number(x.affectedOrders)||0)+" orders":"";
   }).filter(Boolean);
-  return "\\n**Price verification needed:** "+unpriced+" orders"+
+  return "\n**Price verification needed:** "+unpriced+" orders"+
     (r.missingProductListOrders?" ("+r.missingProductListOrders+" missing complete item lists)":"")+
-    (products.length?"\\n"+products.join("\\n"):"")+
-    "\\nOnly original Discord Success prices count. No products or totals were guessed.";
+    (products.length?"\n"+products.join("\n"):"")+
+    "\nOnly original Discord Success prices count. No products or totals were guessed.";
 }
 export function createManualDiscordRecapFlow({
   api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
