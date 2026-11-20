@@ -107,9 +107,9 @@ export function buildDiscordSourceRecap(messages,{
     else red++;
     const identity=checkoutIdentityFromDiscord(msg);
     const number=String(identity?.orderNumber||checkout?.orderNumber||"").trim().replace(/^#/,"").toLowerCase();
+    const at=millis(msg.timestamp);
     if(!number){if(status==="cancelled")redWithoutId++;else if(at>=start&&at<end)greenWithoutId++;continue;}
     const id=retailerValue+":"+number;
-    const at=millis(msg.timestamp);
     const items=validItems(checkout?.items);
     const old=grouped.get(id)||{placedAt:null,status:"unverified",items:[],paidCents:null};
     if(status!=="cancelled"){
@@ -154,6 +154,8 @@ export function buildDiscordSourceRecap(messages,{
   // price across the original green/orange checkout webhooks.
   let ruleTotalCents=0,ruleSubtotalCents=0,ruleTaxCents=0,ruleShippingCents=0;
   let ruleCalculatedOrders=0,ruleUnpricedOrders=0,ruleExplicitPaidConflicts=0;
+  const missingPriceProducts=new Map();
+  let missingProductLists=0;
   let shippedOrdersUnder35=0,freeShippingOrders35Plus=0;
   const perProductPriceCatalog=new Map([...catalog].map(([key,prices])=>
     [key,prices.size===1?[...prices][0]:null]));
@@ -162,9 +164,15 @@ export function buildDiscordSourceRecap(messages,{
     for(const item of record.items){
       const cost=item.unitCents!==null ? item.unitCents :
         perProductPriceCatalog.get(item.key) ?? null;
-      if(cost===null){complete=false;break;}
-      subtotalCents+=cost*item.qty;
+      if(cost===null){
+        complete=false;
+        const existing=missingPriceProducts.get(item.key)||{name:item.name,affectedOrders:0,affectedUnits:0};
+        existing.affectedOrders++;
+        existing.affectedUnits+=item.qty;
+        missingPriceProducts.set(item.key,existing);
+      } else subtotalCents+=cost*item.qty;
     }
+    if(!record.items.length)missingProductLists++;
     if(!complete){ruleUnpricedOrders++;continue;}
     const expected=ownerRecapExpectedChargeCents(subtotalCents);
     if(!expected){ruleUnpricedOrders++;continue;}
@@ -210,6 +218,12 @@ export function buildDiscordSourceRecap(messages,{
     shippingFeeUnderThresholdCents:599,
     ruleCalculatedOrders,
     ruleUnpricedOrders,
+    missingProductListOrders:missingProductLists,
+    // Product names have passed safeName's PII checks and are only exposed
+    // to the owner-only private preview, never to public posts on failure.
+    missingPriceProducts:[...missingPriceProducts.values()]
+      .sort((a,b)=>b.affectedOrders-a.affectedOrders||a.name.localeCompare(b.name))
+      .slice(0,12),
     ruleSubtotalCents,
     ruleTaxCents,
     ruleShippingCents,
