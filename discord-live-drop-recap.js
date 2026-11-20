@@ -196,7 +196,7 @@ const fileStatus=record=>record.status==="posted"?"recap posted":
   record.status==="publishing"?"recap publication pending":record.status;
 export function createDiscordDropRecapController({
   dataDir,api,token,guildId,ownerId,generalChannelId,controlChannelId,
-  onDropNotification=async()=>{},sendGraphic=null,getSource=fetchDirectSourceMessages,
+  onDropNotification=async()=>{},sendGraphic=null,prepareGraphic=null,previewGraphic=null,getSource=fetchDirectSourceMessages,
   makeReport=buildDiscordSourceRecap,now=()=>Date.now()
 }){
   if(!dataDir||typeof api!=="function"||!token||!guildId||!ownerId||
@@ -204,7 +204,7 @@ export function createDiscordDropRecapController({
   const manualFlow=createManualDiscordRecapFlow({
     api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
     getSource,makeReport,parseCheckout:parseDiscordSuccessForRecap,
-    postBuilder:buildDropRecapPost,sendGraphic,now
+    postBuilder:buildDropRecapPost,sendGraphic,prepareGraphic,previewGraphic,now
   });
   const store=path.join(dataDir,"discord-live-drop-recaps.json");
   let queue=Promise.resolve(),timer=null;
@@ -350,11 +350,25 @@ export function createDiscordDropRecapController({
           }
           continue;
         }
+        // A graphic rendering failure must be a private retryable block,
+        // not an unconfirmed public message or an old-number screenshot.
+        let graphic=null;
+        if(prepareGraphic){
+          try{graphic=await prepareGraphic({retailer:record.retailer,report,visibility:{}});}
+          catch(error){
+            record.status="blocked";
+            record.retryAt=stamp(time+15*60000);
+            record.blockedReasons=["approved_recap_graphic_unavailable"];
+            await save(data);
+            console.error("Approved recap graphic unavailable:",error?.message||"unknown");
+            continue;
+          }
+        }
         record.status="publishing";record.blockedReasons=[];
         await save(data);
         let posted;
         try{
-          const payload=buildDropRecapPost(record.retailer,record.id,report);\n          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},payload}):\n            await api("/channels/"+generalChannelId+"/messages","POST",payload);
+          const payload=buildDropRecapPost(record.retailer,record.id,report);\n          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},graphic,payload}):\n            await api("/channels/"+generalChannelId+"/messages","POST",payload);
         }catch(error){
           record.status="publishing_error";
           record.error="Discord recap delivery could not be confirmed; inspect #general.";
