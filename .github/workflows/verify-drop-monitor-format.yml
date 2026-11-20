@@ -11,6 +11,7 @@ on:
       - 'target-master-picker.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
+      - 'test/discord-member-role-reconciliation.test.mjs'
       - 'test/discord-paid-sku-eligibility.test.mjs'
       - 'test/discord-sku-changes.test.mjs'
       - 'test/discord-sku-dedup.test.mjs'
@@ -30,6 +31,7 @@ on:
       - 'target-master-picker.js'
       - 'test/drop-monitor-format.test.js'
       - 'test/discord-skus.test.js'
+      - 'test/discord-member-role-reconciliation.test.mjs'
       - 'test/discord-paid-sku-eligibility.test.mjs'
       - 'test/discord-sku-changes.test.mjs'
       - 'test/discord-sku-dedup.test.mjs'
@@ -57,5 +59,5 @@ jobs:
       - run: node --check discord-community.js
       - run: node --check target-sku-master.js
       - run: node --check target-master-picker.js
-      - run: node --test test/stock-only-drop-format.test.mjs test/drop-monitor-format.test.js test/discord-skus.test.js test/discord-paid-sku-eligibility.test.mjs test/discord-sku-changes.test.mjs test/discord-sku-dedup.test.mjs test/target-sku-master.test.mjs test/target-master-picker.test.mjs test/discord-owner-retailer-copy.test.mjs test/drop-sku-alerts.test.mjs
+      - run: node --test test/stock-only-drop-format.test.mjs test/drop-monitor-format.test.js test/discord-skus.test.js test/discord-paid-sku-eligibility.test.mjs test/discord-member-role-reconciliation.test.mjs test/discord-sku-changes.test.mjs test/discord-sku-dedup.test.mjs test/target-sku-master.test.mjs test/target-master-picker.test.mjs test/discord-owner-retailer-copy.test.mjs test/drop-sku-alerts.test.mjs
       - run: node verify-discord-controls.mjs

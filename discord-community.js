@@ -602,6 +602,41 @@ export async function evaluateDiscordPaidSkuAccess({
     "membership_lookup_unavailable":"no_paid_entitlement"};
 }
 
+// A duplicate or stale website row must not undo an active membership tier role.
+export async function collectDiscordRoleEntitlements(accounts,{getAllowance,getOgStatus}={}){
+  if(typeof getAllowance!=="function")throw Error("Discord allowance provider unavailable");
+  const grouped=new Map();
+  for(const account of Array.isArray(accounts)?accounts:[]){
+    const discordId=String(account?.discordUserId||"");
+    if(!account?.discordLinkedAt||!/^[0-9]{17,22}$/.test(discordId)||!account?.id)continue;
+    if(!grouped.has(discordId))grouped.set(discordId,[]);
+    grouped.get(discordId).push(account);
+  }
+  const results=[];
+  for(const [discordUserId,records] of grouped){
+    let maximum=0,ogMember=false,failures=0;
+    for(const record of records){
+      if(record.disabled)continue;
+      try{
+        const value=Number(await getAllowance(record.id));
+        if(!Number.isFinite(value)||value<0)throw Error("Invalid allowance");
+        maximum=Math.max(maximum,value);
+        if(typeof getOgStatus==="function"&&await getOgStatus(record.id))ogMember=true;
+      }catch(error){
+        failures++;
+        console.warn("Discord tier sync entitlement lookup failed",{
+          reason:String(error?.code||error?.name||"lookup_error").slice(0,70)
+        });
+      }
+    }
+    const enabled=records.filter(record=>!record.disabled).length;
+    // Do not remove a legitimate role on a transient full entitlement outage.
+    if(enabled>0&&failures===enabled)continue;
+    results.push({discordUserId,allowance:maximum,ogMember});
+  }
+  return results;
+}
+
 /*
  * A single 1 or 2 applies to every SKU in a customer's selection, across
  * all drop channels. Mixed legacy records are not valid new submissions.
@@ -2331,11 +2366,11 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     syncing = true;
     try {
       await removeOldRoles();
-      const accounts = await getAccounts();
-      for (const account of accounts) {
-        if (!account.discordLinkedAt || !/^\d{17,22}$/.test(String(account.discordUserId || ""))) continue;
-        try { await syncMember(account.discordUserId, account.disabled ? 0 : await getAllowance(account.id), !account.disabled && await getOgStatus(account.id)); }
-        catch (error) { console.error("Discord tier sync:", error.message); }
+      const accounts=await getAccounts();
+      const targets=await collectDiscordRoleEntitlements(accounts,{getAllowance,getOgStatus});
+      for(const target of targets){
+        try{await syncMember(target.discordUserId,target.allowance,target.ogMember);}
+        catch(error){console.error("Discord tier sync:",error.message);}
       }
       discordCommunityStatus.lastRoleSyncAt = new Date().toISOString();
     } finally { syncing = false; }
