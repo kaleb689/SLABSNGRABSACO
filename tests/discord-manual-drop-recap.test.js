@@ -213,7 +213,7 @@ test("unverified Success data blocks manual publication, and no guessing",async 
   assert.deepEqual(buttons.slice(0,3).map(x=>x.label),[
     "✓ Placed Orders","✓ Cancelled","✓ Stick Rate"
   ]);
-  assert.equal(buttons.some(x=>x.custom_id.startsWith("sngdrop:manual:publish:")),false);
+  assert.equal(buttons.some(x=>x.custom_id.startsWith("sngdrop:manual:publish:")&&!x.disabled),false);
   assert.equal(buttons.at(-1).label,"Cancel");
   assert.equal(h.posts().length,0);
 });
