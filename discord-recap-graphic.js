@@ -35,32 +35,50 @@ export async function approvedTemplate({filePath="",channelIds=[],api=null,reque
   throw Error("Exact owner-approved recap PNG not found. No graphic was posted.");
 }
 function overlay(report,retailer,visibility={}){
-  const placed=Number(report.ordersPlaced)||0,cancelled=Number(report.deduplicatedCancelledOrders)||0;
+  const placed=Number(report.ordersPlaced)||0;
+  const cancelled=Number(report.deduplicatedCancelledOrders)||0;
   const rate=placed>0?Math.round(1000*Math.max(0,placed-cancelled)/placed)/10:0;
-  const date=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",year:"numeric"}).format(new Date(report.periodStart));
-  const mask=(x,y,w,h,o=1)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#071827" fill-opacity="${o}"/>`;
-  const text=(value,x,y,size,color="#fff")=>`<text x="${x}" y="${y}" font-size="${size}" font-family="Arial,DejaVu Sans,sans-serif" font-weight="900" fill="${color}" stroke="#071524" stroke-width="2" paint-order="stroke">${escape(value)}</text>`;
+  const date=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",
+    month:"short",day:"numeric",year:"numeric"}).format(new Date(report.periodStart));
+  // Preserve the owner's approved artwork and translucent metric frames.
+  // Only cover the previous values, headings that must change, and old
+  // product rows. Never overlay an opaque replacement dashboard.
+  const patch=(x,y,w,h,opacity=.92)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#061b2b" fill-opacity="${opacity}"/>`;
+  const text=(value,x,y,size,color="#fff")=>`<text x="${x}" y="${y}" font-size="${size}" font-family="Arial,DejaVu Sans,sans-serif" font-weight="900" fill="${color}" stroke="#041726" stroke-width="2.5" paint-order="stroke">${escape(value)}</text>`;
   let svg='<svg xmlns="http://www.w3.org/2000/svg" width="1672" height="941" viewBox="0 0 1672 941">';
-  svg+=mask(1234,25,410,114)+`<rect x="1239" y="28" width="399" height="107" rx="10" fill="none" stroke="#08def5" stroke-width="6"/>`;
-  svg+=text(label(retailer)+" DROP",1265,76,retailer==="pokemoncenter"?35:47)+text(date.toUpperCase(),1290,124,31);
-  svg+=mask(93,207,472,91)+text(prices(report.totalSpentCents),97,283,78,"#09ef27");
-  svg+=mask(736,191,197,90)+text("+"+report.totalUnits,744,253,70,"#00d9ff");
-  for(const [visible,x,w,value] of [
-    [visibility.showPlacedOrders!==false,64,254,String(placed)],
-    [visibility.showCancelled!==false,341,255,String(cancelled)],
-    [visibility.showStickRate!==false,619,251,rate.toFixed(1)+"%"]
-  ]){
-    if(!visible)svg+=mask(x,341,w,108);
-    else svg+=mask(x+68,347,w-84,53)+text(value,x+78,390,45);
+  if(retailer!=="target"){
+    svg+=patch(1313,28,300,56,.98);
+    svg+=text(label(retailer)+" DROP",1320,76,retailer==="pokemoncenter"?28:37);
   }
-  svg+=mask(93,513,1460,286);
-  for(const [i,p] of (report.topProducts||[]).slice(0,4).entries()){
-    const y=548+i*65;
-    if(i)svg+=`<line x1="97" y1="${y-32}" x2="1540" y2="${y-32}" stroke="#b8cfe7" stroke-opacity=".65" stroke-width="2"/>`;
-    svg+=`<rect x="94" y="${y-20}" width="45" height="47" rx="10" fill="#113b59" stroke="#39bce6" stroke-width="2"/>`;
-    const name=escape(p.name||"Product not identified");
-    svg+=text(i+1,106,y+13,28)+text(name.length>94?name.slice(0,91)+"…":name,232,y+2,name.length>68?24:name.length>45?28:34);
-    svg+=text("Qty: "+Math.max(0,Number(p.quantity)||0),232,y+29,25);
+  svg+=patch(1316,90,264,38,.98)+text(date.toUpperCase(),1320,120,30);
+  svg+=patch(96,205,459,93,.87)+text(prices(report.totalSpentCents),100,282,73,"#05eb29");
+  svg+=patch(755,197,180,69,.87)+text("+"+report.totalUnits,759,253,66,"#00d9ff");
+  for(const item of [
+    {visible:visibility.showPlacedOrders!==false,x:65,width:252,text:String(placed),textX:142},
+    {visible:visibility.showCancelled!==false,x:342,width:253,text:String(cancelled),textX:417},
+    {visible:visibility.showStickRate!==false,x:619,width:254,text:rate.toFixed(1)+"%",textX:695}
+  ]){
+    if(!item.visible){
+      svg+=patch(item.x+2,344,item.width-4,102,.97);
+    }else{
+      svg+=patch(item.textX-3,350,item.width-104,49,.89);
+      svg+=text(item.text,item.textX,392,43);
+    }
+  }
+  const products=(report.topProducts||[]).slice(0,4);
+  for(let i=0;i<4;i++){
+    const y=521+i*67;
+    // Row-only translucent patches protect the outer frame and title.
+    svg+=patch(88,y,1468,66,.89);
+    if(i>0)svg+=`<line x1="92" x2="1545" y1="${y-1}" y2="${y-1}" stroke="#6da3b8" stroke-width="2" stroke-opacity=".8"/>`;
+    const product=products[i];
+    if(!product)continue;
+    const name=escape(product.name||"Product not identified");
+    svg+=`<rect x="94" y="${y+5}" width="48" height="49" rx="9" fill="#06304a" stroke="#17b3eb" stroke-width="2"/>`;
+    svg+=text(i+1,108,y+40,30);
+    svg+=text(name.length>86?name.slice(0,83)+"…":name,236,y+29,
+      name.length>70?24:name.length>48?27:31);
+    svg+=text("Qty: "+Math.max(0,Number(product.quantity)||0),236,y+56,24);
   }
   return Buffer.from(svg+"</svg>");
 }
