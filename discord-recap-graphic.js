@@ -20,12 +20,20 @@ export async function approvedTemplate({filePath="",channelIds=[],api=null,reque
     for(let page=0;page<8;page++){
       const messages=await api("/channels/"+id+"/messages?limit=100"+(before?"&before="+before:""));
       if(!Array.isArray(messages))throw Error("Approved recap image search failed.");
-      for(const msg of messages)for(const a of msg.attachments||[]){
-        if(a.filename!==APPROVED_NAME||!safeUrl(a.url)||Number(a.size)>12*1024*1024)continue;
-        const resp=await request(a.url,{signal:AbortSignal.timeout(15000)});
-        if(!resp.ok)continue;
-        const b=Buffer.from(await resp.arrayBuffer());
-        if(validImage(b))return b;
+      for(const msg of messages){
+        const attachments=(msg.attachments||[]).filter(a=>
+          safeUrl(a?.url)&&Number(a?.size)>10000&&
+          Number(a?.size)<=12*1024*1024&&
+          (a.filename===APPROVED_NAME||
+            /\.png$/i.test(String(a.filename||""))));
+        // Discord can rename an uploaded attachment. Exact image hash—not
+        // its display filename—is the acceptance requirement.
+        for(const a of attachments){
+          const resp=await request(a.url,{signal:AbortSignal.timeout(15000)});
+          if(!resp.ok)continue;
+          const b=Buffer.from(await resp.arrayBuffer());
+          if(validImage(b))return b;
+        }
       }
       if(messages.length<100)break;
       before=String(messages.at(-1)?.id||"");
