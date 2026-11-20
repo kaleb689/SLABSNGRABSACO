@@ -131,7 +131,7 @@ function safeError(error){
 }
 export function createManualDiscordRecapFlow({
   api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
-  getSource,makeReport,parseCheckout,postBuilder,now=()=>Date.now()
+  getSource,makeReport,parseCheckout,postBuilder,sendGraphic=null,now=()=>Date.now()
 }){
   if(!api||!token||!ownerId||!guildId||!controlChannelId||!generalChannelId||
     !dataDir||!getSource||!makeReport||!parseCheckout||!postBuilder)
@@ -223,7 +223,7 @@ export function createManualDiscordRecapFlow({
     payload.allowed_mentions={parse:[]};
     let posted;
     try{
-      posted=await api("/channels/"+generalChannelId+"/messages","POST",payload);
+      posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:session.retailer,report,visibility:session.visibility,payload}):\n        await api("/channels/"+generalChannelId+"/messages","POST",payload);
     }catch(error){
       await serialized(async()=>{
         const data=await readJournal();
