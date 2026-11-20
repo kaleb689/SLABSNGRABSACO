@@ -1443,23 +1443,17 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           components:dropControlRows()
         });
       if(!dropRecapController){
+        const loadCleanRecap=()=>approvedTemplate({filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
+          cachePath:path.join(dataDir,"approved-clean-recap.png"),channelIds:[controls.id],ownerId:controlOwnerId,api});
         dropRecapController=createDiscordDropRecapController({
           dataDir,api,token,guildId:controlGuildId,ownerId:controlOwnerId,
           generalChannelId:general.id,controlChannelId:controls.id,
           checkGraphic:async()=>{
-            const approved=await approvedTemplate({
-              filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
-              cachePath:path.join(dataDir,"approved-clean-recap.png"),
-              channelIds:[controls.id,general.id],api
-            });
+            const approved=await loadCleanRecap();
             return approved.length>10000;
           },
           prepareGraphic:async({retailer,report,visibility})=>{
-            const template=await approvedTemplate({
-              filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
-              cachePath:path.join(dataDir,"approved-clean-recap.png"),
-              channelIds:[controls.id,general.id],api
-            });
+            const template=await loadCleanRecap();
             return renderRecapGraphic({template,report,retailer,visibility});
           },
           sendGraphic:async({channelId,graphic,payload})=>{
@@ -1514,6 +1508,19 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
         dropRecapController.start();
         // Owner buttons must receive gateway events before remaining provisioning work.
         void connect().catch(error=>console.error("Discord early gateway:",error.message));
+        // Private startup smoke test: exercise the actual approved asset and renderer, never post to Discord.
+        void (async()=>{
+          const template=await loadCleanRecap();
+          const report={readyToPublish:true,totalSpentCents:12345,totalUnits:4,ordersPlaced:2,deduplicatedCancelledOrders:0,periodStart:"2026-11-19T13:00:00Z",topProducts:[{name:"Private render self-test",quantity:4}]};
+          const hidden={showPlacedOrders:false,showCancelled:false,showStickRate:false};
+          const results=[];
+          for(const visibility of [{},hidden]){
+            const graphic=await renderRecapGraphic({template,report,retailer:"target",visibility});
+            if(!Buffer.isBuffer(graphic)||graphic.length<10000||graphic.length>8*1024*1024)throw Error("Rendered PNG outside Discord size limits");
+            results.push(graphic.length);
+          }
+          console.info("RECAP_RENDER_SELFTEST_PASS "+JSON.stringify({templateBytes:template.length,renderBytes:results,posted:false}));
+        })().catch(error=>console.error("RECAP_RENDER_SELFTEST_FAIL "+String(error?.message||error)));
       }
       discordCommunityStatus.dropControls={
         ready:true,controlGuildId,

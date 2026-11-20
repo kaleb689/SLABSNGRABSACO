@@ -451,7 +451,7 @@ export function createDiscordDropRecapController({
           return "✅ Exact approved SLABSNGRABSACO recap PNG verified and available to the bot. No public message was posted.";
         }catch(error){
           console.error("Drop recap graphic check:",String(error?.message||error).slice(0,180));
-          return "⚠️ Approved recap PNG is not available to the bot. Upload the unchanged file SLABSNGRABSACO_Target_Drop_Recap_Final.png to this private channel before posting graphics.";
+          return "⚠️ Approved recap PNG is not available to the bot. Upload the unchanged file Neon Target Drop Recap Template.png to this private channel before posting graphics.";
         }
       });
     }

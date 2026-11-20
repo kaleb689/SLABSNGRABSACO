@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  APPROVED_NAME,APPROVED_SHA256,approvedTemplate,renderRecapGraphic
+  APPROVED_NAME,APPROVED_SHA256,approvedTemplate,renderRecapGraphic,matchesApprovedPixels
 } from "../discord-recap-graphic.js";
 
 test("graphic always requires exact locked approved source",async()=>{
-  assert.equal(APPROVED_NAME,"SLABSNGRABSACO_Target_Drop_Recap_Final.png");
+  assert.equal(APPROVED_NAME,"Neon Target Drop Recap Template.png");
   assert.match(APPROVED_SHA256,/^[a-f0-9]{64}$/);
   await assert.rejects(approvedTemplate({}),/approved recap|Exact owner-approved/i);
   await assert.rejects(renderRecapGraphic({
@@ -55,4 +55,16 @@ test("recap graphic replaces dynamic surfaces without blur or empty hidden-stat 
   assert.doesNotMatch(code,/LEGACY_SHA256|graphic-only cyan\/navy/);
   assert.match(code,/existing top-products panel/);
   assert.match(code,/layers=\[\{input:overlay\(report,retailer,visibility\),left:0,top:0\}\]/);
+});
+
+test("pixel verification rejects altered artwork and unrelated images",async()=>{
+  const {readFileSync}=await import("node:fs");
+  const code=readFileSync(new URL("../discord-recap-graphic.js",import.meta.url),"utf8");
+  const sample=Buffer.from(code.match(/const APPROVED_RGB=Buffer.from\("([^"]+)","base64"\)/)[1],"base64");
+  assert.equal(sample.length,32*18*3);
+  assert.equal(matchesApprovedPixels(sample),true);
+  assert.equal(matchesApprovedPixels(Buffer.alloc(sample.length)),false);
+  const edited=Buffer.from(sample);
+  for(let y=4;y<7;y++)for(let x=1;x<13;x++)for(let ch=0;ch<3;ch++)edited[(y*32+x)*3+ch]=255;
+  assert.equal(matchesApprovedPixels(edited),false);
 });
