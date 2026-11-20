@@ -339,6 +339,7 @@ export function createManualDiscordRecapFlow({
           const graphic=await prepareGraphic({retailer:session.retailer,report,visibility:session.visibility});
           return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(session,postBuilder)});
         }catch(error){
+          console.error("Manual recap graphic failed:",safeError(error));
           session.ready=false;
           session.report={...report,blockedReasons:[...(report.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
         }
@@ -357,6 +358,7 @@ export function createManualDiscordRecapFlow({
           const graphic=await prepareGraphic({retailer:s.retailer,report:s.report,visibility:s.visibility});
           return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(s,postBuilder)});
         }catch(error){
+          console.error("Manual recap graphic failed:",safeError(error));
           s.ready=false;
           s.report={...s.report,blockedReasons:[...new Set([...(s.report?.blockedReasons||[]),"approved_recap_graphic_unavailable"])]};
           return patch(d,manualRecapPreviewPayload(s,postBuilder));
@@ -384,6 +386,7 @@ export function createManualDiscordRecapFlow({
           const graphic=await prepareGraphic({retailer:session.retailer,report,visibility:session.visibility});
           return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(session,postBuilder)});
         }catch(error){
+          console.error("Manual recap graphic failed:",safeError(error));
           session.ready=false;
           session.report={...report,blockedReasons:[...(report.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
         }
