@@ -113,14 +113,15 @@ export function manualRecapPreviewPayload(session,postBuilder){
   const head="**PRIVATE PREVIEW — NO DISCORD POST SENT**\n"+
     "**"+RETAILERS[session.retailer].label+"** · "+
     fmt(Date.parse(session.from))+" → "+fmt(Date.parse(session.toExclusive))+
-    " (Eastern)\nThe buttons below determine which metrics members will see.";
+    " (Eastern)\nChoose which metrics members will see. Green ✓ means shown; gray ✕ means hidden.";
   if(!session.ready){
     return {content:head+"\n\n⚠️ **Recap is blocked until source verification succeeds.**"+
       "\n"+(r?.blockedReasons||["Discord Success unavailable"]).slice(0,8).join(", ").slice(0,600)+
       pricingDiagnostics(r),
-      embeds:[],components:[{type:1,components:[
-        {type:2,style:2,label:"Close",custom_id:"sngdrop:manual:cancel:"+session.id}
-      ]}],allowed_mentions:{parse:[]}};
+      // Show all visibility controls even while source prices are missing.
+      // Owner choices can be changed, but publishing remains disabled until
+      // every source check passes and the owner explicitly confirms.
+      embeds:[],components:toggles(session),allowed_mentions:{parse:[]}};
   }
   const sample=postBuilder(session.retailer,session.id,r,session.visibility);
   return {content:head+"\n\n**Verified only from the original Discord #success webhooks.**",
