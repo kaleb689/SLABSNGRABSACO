@@ -12,7 +12,7 @@ const mobileScript = read('public/admin-mobile.js');
 test('reference theme loads after legacy controls without changing customer data flow', () => {
   const adminControls = adminPage.indexOf('/sng-premium-controls.css?v=2');
   const adminTheme = adminPage.indexOf('/mobile-reference-theme.css?v=20261010');
-  const customerControls = customerPage.indexOf('/app-ui-uniform.css?v=20261010');
+  const customerControls = customerPage.indexOf('/app-ui-uniform.css?v=20261119-nav2');
   const customerTheme = customerPage.indexOf('/mobile-reference-theme.css?v=20261010');
   assert.ok(adminControls !== -1 && adminTheme > adminControls);
   assert.ok(customerControls !== -1 && customerTheme > customerControls);

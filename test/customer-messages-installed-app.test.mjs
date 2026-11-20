@@ -11,7 +11,7 @@ const backend=readFileSync(new URL("../server.js",import.meta.url),"utf8");
 
 test("Installed standalone app has a seventh Messages nav item and correct deep link",()=>{
  assert.match(dashboard,/messages:\s*'Messages'/);
- assert.match(dashboard,/concat\('messages'\)\.map\(/);
+ assert.match(dashboard,/\['success', 'tracking', 'profile', 'products', 'history', 'home', 'messages'\]\.map\(/);
  assert.match(dashboard,/messages:\s*'messages'/);
  assert.match(dashboard,/data-app-view/);
  assert.match(dashboard,/view === 'messages'/);
@@ -39,7 +39,7 @@ test("Unread counter and deep-linked reply route reach Messages rather than othe
  assert.match(dashboard,/customer-message-unread-changed/);
  assert.match(dashboard,/account-messages-unread/);
  assert.match(dashboard,/view === 'messages'\)\s*document\.querySelector/);
- assert.match(html,/app-dashboard\.js\?v=20261115-messages-installed-1/);
+ assert.match(html,/app-dashboard\.js\?v=20261119-nav2/);
  assert.match(html,/app-dashboard\.css\?v=20261115-messages-installed-1/);
  assert.match(worker,/appTab=\$\{tab\}/);
 });

@@ -20,7 +20,7 @@ if (appEnabled) {
   };
   const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
   const labels = { home: 'Home', success: 'Success', tracking: 'Tracking', products: 'Products', history: 'History', profile: 'Membership', drops: 'Drops', messages: 'Messages', notifications: 'Notifications', settings: 'Settings' };
-  const navLabels = ['home', 'success', 'tracking', 'profile', 'products', 'history'].concat('messages').map(id => [id, labels[id]]);
+  const navLabels = ['success', 'tracking', 'profile', 'products', 'history', 'home', 'messages'].map(id => [id, labels[id]]);
   let theme = 'night';
   try { theme = localStorage.getItem('sng-app-theme') || 'night'; } catch {}
   const snapshots = new Map(), changes = new Map();
