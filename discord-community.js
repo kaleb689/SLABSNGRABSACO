@@ -569,6 +569,39 @@ export function isGuildOwnerSkuTester(userId, verifiedGuildOwnerId) {
   return /^\d{17,22}$/.test(owner) && String(userId || "") === owner;
 }
 
+// Every linked website account must be evaluated; old/duplicate rows cannot
+// shadow a new paid account. This never grants access from an admin "active"
+// flag, Discord role or profile count without a paid entitlement.
+export async function evaluateDiscordPaidSkuAccess({
+  discordUserId,ownerId,accounts,getPaidAllowance
+}={}){
+  if(isGuildOwnerSkuTester(discordUserId,ownerId))
+    return {allowed:true,reason:"owner_test"};
+  const matching=(Array.isArray(accounts)?accounts:[]).filter(item=>
+    String(item?.discordUserId||"")===String(discordUserId||"") &&
+    /^\\d{17,22}$/.test(String(discordUserId||"")));
+  if(!matching.length)return {allowed:false,reason:"discord_not_linked"};
+  const eligible=matching.filter(item=>item?.id && !item.disabled);
+  if(!eligible.length)return {allowed:false,reason:"account_disabled"};
+  if(typeof getPaidAllowance!=="function")
+    return {allowed:false,reason:"membership_lookup_unavailable"};
+  let failures=0;
+  for(const account of eligible){
+    try{
+      const count=Number(await getPaidAllowance(account.id));
+      if(Number.isFinite(count)&&count>0)
+        return {allowed:true,reason:"active_paid",accountId:account.id};
+    }catch(error){
+      failures++;
+      console.warn("Discord SKU entitlement lookup unavailable",{
+        errorType:String(error?.code||error?.name||"lookup_error").slice(0,70)
+      });
+    }
+  }
+  return {allowed:false,reason:failures===eligible.length?
+    "membership_lookup_unavailable":"no_paid_entitlement"};
+}
+
 /*
  * A single 1 or 2 applies to every SKU in a customer's selection, across
  * all drop channels. Mixed legacy records are not valid new submissions.
@@ -3422,32 +3455,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   }
   const skuAccessMessage = "To select SKUs, you must have active paid profiles through https://slabsngrabsaco.com";
   async function skuAccessState(userId) {
-    if (isGuildOwnerSkuTester(userId, ownerId)) return {allowed:true,reason:"owner_test"};
-    const accounts=await getAccounts();
-    const matches=(Array.isArray(accounts)?accounts:[]).filter(item=>
-      String(item?.discordUserId || "") === String(userId));
-    if(!matches.length)return {allowed:false,reason:"discord_not_linked"};
-    const enabled=matches.filter(item=>!item.disabled && item.id);
-    if(!enabled.length)return {allowed:false,reason:"account_disabled"};
-    // A Discord ID can have stale/duplicate website rows. The previous .find()
-    // checked only the first one and could deny a valid newer paid member.
-    // Never grant access from activation state alone: one of the linked,
-    // enabled website accounts must independently pass the paid entitlement.
-    const allowance=getPaidSkuAllowance||getAllowance;
-    let failed=0;
-    for(const account of enabled){
-      try{
-        const count=Number(await allowance(account.id));
-        if(Number.isFinite(count)&&count>0)
-          return {allowed:true,reason:"active_paid",accountId:account.id};
-      }catch(error){
-        failed++;
-        console.warn("Discord SKU membership lookup failed",{
-          reason:String(error?.code||error?.name||"lookup_error").slice(0,70)
-        });
-      }
-    }
-    return {allowed:false,reason:failed===enabled.length?"membership_lookup_unavailable":"no_paid_entitlement"};
+    return evaluateDiscordPaidSkuAccess({
+      discordUserId:userId,ownerId,accounts:await getAccounts(),
+      getPaidAllowance:getPaidSkuAllowance||getAllowance
+    });
   }
   async function hasPaidSkuAccess(userId) {
     return (await skuAccessState(userId)).allowed;
