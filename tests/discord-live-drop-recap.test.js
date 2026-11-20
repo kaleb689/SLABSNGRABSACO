@@ -34,7 +34,7 @@ function sourceFields(order="TGT123456"){
     {name:"Quantity",value:"2"},
     {name:"Price",value:"$49.98"}];
 }
-async function harness(t,{complete=true}={}){
+async function harness(t,{complete=true,graphic=false,failGraphic=false}={}){
   const dataDir=await fs.mkdtemp(path.join(os.tmpdir(),"sng-drop-recap-"));
   t.after(()=>fs.rm(dataDir,{recursive:true,force:true}));
   let time=startAt,n=1611111111111111000n;
@@ -53,6 +53,14 @@ async function harness(t,{complete=true}={}){
   const controller=createDiscordDropRecapController({
     dataDir,api,token:"dummy-test-token",guildId:GUILD,
     ownerId:OWNER,generalChannelId:GENERAL,controlChannelId:CONTROL,
+    ...(graphic?{
+      prepareGraphic:async()=>{if(failGraphic)throw Error("Approved image unavailable");return Buffer.from("verified-png");},
+      sendGraphic:async({payload,graphic:bytes})=>{
+        assert.ok(Buffer.isBuffer(bytes));
+        requests.push({url:"/channels/"+GENERAL+"/messages",method:"POST",payload});
+        return {id:String(n++),embeds:payload?.embeds||[]};
+      }
+    }:{}),
     now:()=>time,
     getSource:async(_token,start,end)=>{
       scan.push({start,end});return {messages:[],historyComplete:true};
@@ -144,6 +152,23 @@ test("exact twelve-hour schedule posts only source-verified recap",async t=>{
   assert.equal(publicPosts(h).length,2);
 });
 
+test("scheduled recap posts approved graphic only after verified render",async t=>{
+  const h=await harness(t,{graphic:true});
+  await h.controller.startRetailer("target");
+  h.at(startAt+DROP_RECAP_DELAY_MS);
+  await h.controller.dueRecaps();
+  assert.equal(publicPosts(h).length,2);
+  assert.match(publicPosts(h)[1].payload.content,/DROP RECAP/);
+  assert.equal(h.scan.length,1);
+});
+test("scheduled recap blocks privately if approved image is missing",async t=>{
+  const h=await harness(t,{graphic:true,failGraphic:true});
+  await h.controller.startRetailer("target");
+  h.at(startAt+DROP_RECAP_DELAY_MS);
+  await h.controller.dueRecaps();
+  assert.equal(publicPosts(h).length,1);
+  assert.match(await h.controller.statusText(),/verification pending/);
+});
 test("missing evidence holds recap privately; never invents totals",async t=>{
   const h=await harness(t,{complete:false});
   await h.controller.startRetailer("target");
