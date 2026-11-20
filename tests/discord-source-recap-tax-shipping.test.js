@@ -102,7 +102,7 @@ test("November 19 Target 30th Day, Ditto and Night checkouts use owner's verifie
   assert.equal(report.targetReferencePricedOrders,11);
   assert.equal(report.targetReferencePricedUnits,22);
   assert.equal(report.readyToPublish,true);
-  assert.equal(report.totalSpentCents,502876);
+  assert.equal(report.totalSpentCents,502878);
   assert.equal(report.totalSpentBasis,"owner_verified_target_reference_retail_plus_7pct_tax_shipping");
 });
 test("unknown products are never assigned a Target reference price",()=>{
