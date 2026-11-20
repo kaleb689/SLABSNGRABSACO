@@ -234,7 +234,8 @@ export function createManualDiscordRecapFlow({
     payload.allowed_mentions={parse:[]};
     let posted;
     try{
-      posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:session.retailer,report,visibility:session.visibility,graphic,payload}):\n        await api("/channels/"+generalChannelId+"/messages","POST",payload);
+      posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:session.retailer,report,visibility:session.visibility,graphic,payload}):
+        await api("/channels/"+generalChannelId+"/messages","POST",payload);
     }catch(error){
       await serialized(async()=>{
         const data=await readJournal();
