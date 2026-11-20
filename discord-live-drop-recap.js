@@ -165,7 +165,9 @@ export function buildDropRecapPost(retailer,id,report,visibility={}){
   const {showPlacedOrders=true,showCancelled=true,showStickRate=true}=visibility;
   const placed=Number(report.ordersPlaced)||0;
   const cancelled=Number(report.deduplicatedCancelledOrders)||0;
-  const rate=placed+cancelled>0?Math.round(1000*placed/(placed+cancelled))/10:0;
+  // Cancellations are a subset of orders placed, not extra orders.
+  // Stick rate = kept placed orders / all placed orders.
+  const rate=placed>0?Math.round(1000*Math.max(0,placed-cancelled)/placed)/10:0;
   const localDate=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",
     month:"long",day:"numeric",year:"numeric"}).format(new Date(report.periodStart));
   const top=(report.topProducts||[]).slice(0,5).map((p,i)=>
