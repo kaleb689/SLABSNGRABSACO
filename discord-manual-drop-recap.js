@@ -132,7 +132,10 @@ export function manualRecapPreviewPayload(session,postBuilder){
       embeds:[],components:toggles(session),allowed_mentions:{parse:[]}};
   }
   const sample=postBuilder(session.retailer,session.id,r,session.visibility);
-  return {content:head+"\n\n**Verified only from the original Discord #success webhooks.**",
+  return {content:head+"\n\n**Verified checkouts from original Discord #success.**"+
+    (r.targetReferencePricedOrders?
+      "\nPrice source: "+r.targetReferencePricedOrders+
+        " orders use the owner's previously verified Target retail TCIN prices, with 7% tax and applicable shipping. Retail reference is not an individually confirmed charge.":"") ,
     embeds:sample.embeds,components:toggles(session),allowed_mentions:{parse:[]}};
 }
 function safeError(error){

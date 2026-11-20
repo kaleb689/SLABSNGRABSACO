@@ -78,6 +78,48 @@ test("orange Review Hold checkouts count as placed orders, units, spend, and top
   assert.equal(result.totalSpentCents,3273+5348);
   assert.equal(result.readyToPublish,true);
 });
+test("November 19 Target 30th Day, Ditto and Night checkouts use owner's verified TCIN retail when Discord omits prices",()=>{
+  const products=[
+    {name:"Pokémon Trading Card Game: 30th Celebration Ultra-Premium Collection – Day",count:7,price:249.99},
+    {name:"Pokémon Trading Card Game: 30th Celebration Ditto Premium Collection",count:2,price:49.99},
+    {name:"Pokémon Trading Card Game: 30th Celebration Ultra-Premium Collection – Night",count:2,price:249.99}
+  ];
+  const records=[];
+  let order=0;
+  for(const product of products)for(let i=0;i<product.count;i++){
+    order++;
+    const row=webhook({id:String(1511111111111111100n+BigInt(order)),
+      at:"2026-11-13T09:10:00.000Z",order:"TGT2026"+order,
+      qty:2,price:null,product:product.name,
+      state:i%2?"orange":"green"});
+    records.push(row);
+  }
+  const report=recap(records);
+  assert.equal(report.ordersPlaced,11);
+  assert.equal(report.reviewHoldCheckouts,5);
+  assert.equal(report.totalUnits,22);
+  assert.equal(report.ruleUnpricedOrders,0);
+  assert.equal(report.targetReferencePricedOrders,11);
+  assert.equal(report.targetReferencePricedUnits,22);
+  assert.equal(report.readyToPublish,true);
+  assert.equal(report.totalSpentCents,502878);
+  assert.equal(report.totalSpentBasis,"owner_verified_target_reference_retail_plus_7pct_tax_shipping");
+});
+test("unknown products are never assigned a Target reference price",()=>{
+  const unknown=webhook({id:"1511111111111111900",order:"TGTUNKNOWN",qty:2,
+    price:null,product:"Pokemon Unverified New Product"});
+  const report=recap([unknown]);
+  assert.equal(report.readyToPublish,false);
+  assert.equal(report.missingVerifiedChargeOrders,1);
+});
+test("explicit original checkout price outranks Target reference retail",()=>{
+  const m=webhook({id:"1511111111111111901",order:"TGTPRICE",qty:2,
+    product:"Pokemon TCG: 30th Celebration Ditto Premium Collection",price:39.99});
+  const report=recap([m]);
+  assert.equal(report.readyToPublish,true);
+  assert.equal(report.targetReferencePricedOrders,0);
+  assert.equal(report.totalSpentCents,8558);
+});
 test("red cancellations lacking order IDs or prices are ignored",()=>{
   const kept=webhook({id:"1511111111111111103",order:"TGT00113",price:24.99});
   const red=webhook({id:"1511111111111111104",at:"2026-11-13T09:03:00Z",
