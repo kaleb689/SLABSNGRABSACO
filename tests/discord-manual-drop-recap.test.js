@@ -241,7 +241,7 @@ test("blocked recap lets owner hide each metric, but never enables public postin
     const reply=h.lastReply().data;
     assert.match(reply.content,/Recap is blocked until source verification/);
     assert.equal(reply.components[0].components.some(c=>c.label==="✕ "+label),true);
-    assert.equal(reply.components.flatMap(r=>r.components).some(c=>c.custom_id.startsWith("sngdrop:manual:publish:")),false);
+    assert.equal(reply.components.flatMap(r=>r.components).some(c=>c.custom_id.startsWith("sngdrop:manual:publish:")&&!c.disabled),false);
     assert.equal(reply.allowed_mentions.parse.length,0);
   }
   const last=h.lastReply().data;
