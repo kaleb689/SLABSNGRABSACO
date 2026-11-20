@@ -196,7 +196,7 @@ const fileStatus=record=>record.status==="posted"?"recap posted":
   record.status==="publishing"?"recap publication pending":record.status;
 export function createDiscordDropRecapController({
   dataDir,api,token,guildId,ownerId,generalChannelId,controlChannelId,
-  onDropNotification=async()=>{},getSource=fetchDirectSourceMessages,
+  onDropNotification=async()=>{},sendGraphic=null,getSource=fetchDirectSourceMessages,
   makeReport=buildDiscordSourceRecap,now=()=>Date.now()
 }){
   if(!dataDir||typeof api!=="function"||!token||!guildId||!ownerId||
@@ -204,7 +204,7 @@ export function createDiscordDropRecapController({
   const manualFlow=createManualDiscordRecapFlow({
     api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
     getSource,makeReport,parseCheckout:parseDiscordSuccessForRecap,
-    postBuilder:buildDropRecapPost,now
+    postBuilder:buildDropRecapPost,sendGraphic,now
   });
   const store=path.join(dataDir,"discord-live-drop-recaps.json");
   let queue=Promise.resolve(),timer=null;
@@ -354,8 +354,7 @@ export function createDiscordDropRecapController({
         await save(data);
         let posted;
         try{
-          posted=await api("/channels/"+generalChannelId+"/messages","POST",
-            buildDropRecapPost(record.retailer,record.id,report));
+          const payload=buildDropRecapPost(record.retailer,record.id,report);\n          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},payload}):\n            await api("/channels/"+generalChannelId+"/messages","POST",payload);
         }catch(error){
           record.status="publishing_error";
           record.error="Discord recap delivery could not be confirmed; inspect #general.";
