@@ -232,6 +232,18 @@ test("blocked private recap visibly explains why Post is disabled and offers Rec
   assert.equal(h.posts().length,0);
   assert.equal(h.lastPatch().components.flatMap(row=>row.components).some(x=>x.label==="Recheck Totals"),true);
 });
+test("blocked totals do not repeatedly attempt unavailable approved graphic on toggle",async t=>{
+ const h=await harness(t,{ready:false,graphic:true,failGraphic:true});
+ const preview=await h.start("target");
+ const reasons=preview.content.match(/approved_recap_graphic_unavailable/g)||[];
+ assert.equal(reasons.length,0,"source-price block should not trigger graphic render");
+ const id=preview.components[0].components[0].custom_id.split(":").at(-1);
+ await h.flow.handleInteraction(interaction("sngdrop:manual:toggle:stick:"+id));
+ const current=h.lastReply().data;
+ assert.equal(current.components[0].components[2].label,"✕ Stick Rate");
+ assert.doesNotMatch(current.content,/approved_recap_graphic_unavailable/);
+ assert.equal(h.posts().length,0);
+});
 test("blocked recap lets owner hide each metric, but never enables public posting",async t=>{
   const h=await harness(t,{ready:false});
   const preview=await h.start("target");

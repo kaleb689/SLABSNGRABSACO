@@ -129,6 +129,11 @@ export function buildDiscordSourceRecap(messages,{
   const initial=[...grouped.values()].filter(x=>x.placedAt!==null&&
     x.placedAt>=start&&x.placedAt<end);
   const valid=initial.filter(x=>x.status==="confirmed"||x.status==="review_hold");
+  // Orange REVIEW HOLD is a placed checkout, not a cancellation or an
+  // unverified visit. It counts toward orders, units, product rankings and
+  // verified spend under the same evidence requirements as green checkout.
+  const reviewHoldCheckouts=valid.filter(x=>x.status==="review_hold").length;
+  const confirmedCheckouts=valid.length-reviewHoldCheckouts;
   let units=0,unitMissing=0,paidMissing=0,verifiedPaidCents=0,
     lineSubtotalCents=0,lineSubtotalOrders=0;
   const productMap=new Map();
@@ -225,6 +230,8 @@ export function buildDiscordSourceRecap(messages,{
     asOf:new Date(cutoff).toISOString(),
     sourceColorMessages:{green,orange,red},
     ordersPlaced:valid.length,
+    confirmedCheckouts,
+    reviewHoldCheckouts,
     totalUnits:unitMissing?null:units,
     // Displayable spend uses the owner-confirmed tax/shipping rules only when
     // EVERY retained checkout has a unique known unit price.

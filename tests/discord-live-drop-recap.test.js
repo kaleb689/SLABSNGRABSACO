@@ -251,6 +251,19 @@ test("recap parser reads explicitly labeled prices and quantities from original 
   assert.equal(parsed.items[0].price,24.99);
   assert.equal(parsed.orderNumber,"TGT001234");
 });
+test("checkout parser accepts explicitly labeled Item Price and Product Total",()=>{
+  const msg=responseBody([
+    {name:"Site",value:"Target"},
+    {name:"Order ID",value:"TGT-PRICE-FORMATS"},
+    {name:"Quantity",value:"2"},
+    {name:"Product",value:"Pokemon 30th Celebration Tin"},
+    {name:"Product Total",value:"$49.98"}
+  ]);
+  const parsed=parseDiscordSuccessForRecap(msg);
+  assert.equal(parsed.items.length,1);
+  assert.equal(parsed.items[0].quantity,2);
+  assert.equal(parsed.items[0].price,24.99);
+});
 test("recap parser preserves exact line vs unit pricing and currency thousands separators",()=>{
   const msg=responseBody([{name:"Site",value:"Target"},{name:"Order ID",value:"TGT001235"},
     {name:"Quantity",value:"2"},{name:"Line Total",value:"$1,299.98"}]);

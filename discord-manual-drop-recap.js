@@ -118,7 +118,10 @@ export function manualRecapPreviewPayload(session,postBuilder){
   const head="**PRIVATE PREVIEW — NO DISCORD POST SENT**\n"+
     "**"+RETAILERS[session.retailer].label+"** · "+
     fmt(Date.parse(session.from))+" → "+fmt(Date.parse(session.toExclusive))+
-    " (Eastern)\nChoose which metrics members will see. Green ✓ means shown; gray ✕ means hidden.";
+    " (Eastern)\nChoose which metrics members will see. Green ✓ means shown; gray ✕ means hidden."+
+    (Number.isSafeInteger(r?.reviewHoldCheckouts)?
+      "\nIncluded as checkouts: "+(Number(r.confirmedCheckouts)||0)+" green confirmed + "+
+        r.reviewHoldCheckouts+" orange Review Hold (red cancellations excluded).":"");
   if(!session.ready){
     return {content:head+"\n\n⚠️ **Recap is blocked until source verification succeeds.**"+
       "\n"+(r?.blockedReasons||["Discord Success unavailable"]).slice(0,8).join(", ").slice(0,600)+
@@ -147,7 +150,7 @@ function pricingDiagnostics(report){
     return name?"• "+name+" — "+(Number(x.affectedUnits)||0)+" units / "+
       (Number(x.affectedOrders)||0)+" orders":"";
   }).filter(Boolean);
-  return "\n**Price verification needed:** "+unpriced+" orders"+
+  return "\n**Price verification needed:** "+(Number(r.missingVerifiedChargeOrders)||unpriced)+" orders without a verified full paid total"+
     (r.missingProductListOrders?" ("+r.missingProductListOrders+" missing complete item lists)":"")+
     (products.length?"\n"+products.join("\n"):"")+
     "\nOnly original Discord Success prices or exact paid totals count. No products or totals were guessed.";
@@ -345,14 +348,14 @@ export function createManualDiscordRecapFlow({
       if(!s)return acknowledge(d,4,replyData("This preview expired. Open Create Manual Recap again."));
       const key=visibilityKeys[toggle[1]];
       s.visibility[key]=!s.visibility[key];
-      if(prepareGraphic&&previewGraphic){
+      if(s.ready&&prepareGraphic&&previewGraphic){
         await acknowledge(d,6);
         try{
           const graphic=await prepareGraphic({retailer:s.retailer,report:s.report,visibility:s.visibility});
           return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(s,postBuilder)});
         }catch(error){
           s.ready=false;
-          s.report={...s.report,blockedReasons:[...(s.report?.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
+          s.report={...s.report,blockedReasons:[...new Set([...(s.report?.blockedReasons||[]),"approved_recap_graphic_unavailable"])]};
           return patch(d,manualRecapPreviewPayload(s,postBuilder));
         }
       }
