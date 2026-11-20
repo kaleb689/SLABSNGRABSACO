@@ -78,7 +78,7 @@ async function harness(t,{ready=true,failPublish=false,graphic=false,failGraphic
     getSource,makeReport,parseCheckout:()=>null,postBuilder:buildDropRecapPost,
     ...(graphic?{
       prepareGraphic:async()=>{if(failGraphic)throw Error("Missing approved PNG");return Buffer.from("verified-preview-buffer");},
-      previewGraphic:async({payload})=>{calls.push({url:"/webhooks/"+OWNER+"/messages/@original",method:"PATCH",payload});return {ok:true};},
+      previewGraphic:async({payload})=>{calls.push({url:"/webhooks/"+OWNER+"/messages/@original",method:"PATCH",payload:{...payload,embeds:[{title:"PRIVATE RECAP GRAPHIC PREVIEW"}]}});return {ok:true};},
       sendGraphic:async({payload,graphic:bytes})=>{
         assert.ok(Buffer.isBuffer(bytes));
         calls.push({url:"/channels/"+GENERAL+"/messages",method:"POST",payload});
