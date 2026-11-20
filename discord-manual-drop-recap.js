@@ -105,6 +105,11 @@ function toggles(session){
   const row=[{type:2,style:2,label:"Cancel",custom_id:"sngdrop:manual:cancel:"+session.id}];
   if(session.ready)row.unshift({type:2,style:3,label:"Confirm Post to #general",
     custom_id:"sngdrop:manual:publish:"+session.id});
+  else row.unshift(
+    {type:2,style:3,label:"Post to #general — Verification Required",
+      custom_id:"sngdrop:manual:publish:"+session.id,disabled:true},
+    {type:2,style:1,label:"Recheck Totals",custom_id:"sngdrop:manual:recheck:"+session.id}
+  );
   controls.push({type:1,components:row});
   return controls;
 }
@@ -145,7 +150,7 @@ function pricingDiagnostics(report){
   return "\n**Price verification needed:** "+unpriced+" orders"+
     (r.missingProductListOrders?" ("+r.missingProductListOrders+" missing complete item lists)":"")+
     (products.length?"\n"+products.join("\n"):"")+
-    "\nOnly original Discord Success prices count. No products or totals were guessed.";
+    "\nOnly original Discord Success prices or exact paid totals count. No products or totals were guessed.";
 }
 export function createManualDiscordRecapFlow({
   api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
@@ -352,6 +357,32 @@ export function createManualDiscordRecapFlow({
         }
       }
       return acknowledge(d,7,manualRecapPreviewPayload(s,postBuilder));
+    }
+    const recheck=id.match(/^sngdrop:manual:recheck:([a-f0-9-]{36})$/);
+    if(recheck){
+      const session=draft(recheck[1]);
+      if(!session)return acknowledge(d,4,replyData("This recap preview expired. Open Create Manual Recap again."));
+      await acknowledge(d,6);
+      let report;
+      try{report=await reportFor(session.retailer,session.from,session.toExclusive);}
+      catch(error){
+        return patch(d,{...manualRecapPreviewPayload(session,postBuilder),
+          content:"⚠️ Could not recheck original Discord Success: "+safeError(error)+
+            "\nNo recap was posted. Try Recheck Totals again."});
+      }
+      session.report=report;
+      session.ready=Boolean(report.readyToPublish&&
+        Number.isSafeInteger(report.totalSpentCents)&&Number.isSafeInteger(report.totalUnits));
+      if(session.ready&&prepareGraphic&&previewGraphic){
+        try{
+          const graphic=await prepareGraphic({retailer:session.retailer,report,visibility:session.visibility});
+          return await previewGraphic({interaction:d,graphic,payload:manualRecapPreviewPayload(session,postBuilder)});
+        }catch(error){
+          session.ready=false;
+          session.report={...report,blockedReasons:[...(report.blockedReasons||[]),"approved_recap_graphic_unavailable"]};
+        }
+      }
+      return patch(d,manualRecapPreviewPayload(session,postBuilder));
     }
     const cancel=id.match(/^sngdrop:manual:cancel:([a-f0-9-]{36})$/);
     if(cancel){
