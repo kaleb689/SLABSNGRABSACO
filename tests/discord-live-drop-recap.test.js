@@ -178,6 +178,22 @@ test("unverified spend cannot be published in public recap",()=>{
   assert.equal(valid.allowed_mentions.parse[0],"everyone");
 });
 
+test("stick rate equals retained placed orders and handles complete cancellation",()=>{
+  const result=buildDropRecapPost("target","example",{
+    ...verified,ordersPlaced:132,deduplicatedCancelledOrders:56
+  });
+  const stick=result.embeds[0].fields.find(f=>f.name.includes("STICK RATE"));
+  assert.equal(stick.value,"**57.6%**");
+  const none=buildDropRecapPost("target","example",{
+    ...verified,ordersPlaced:5,deduplicatedCancelledOrders:5
+  });
+  assert.equal(none.embeds[0].fields.find(f=>f.name.includes("STICK RATE")).value,"**0.0%**");
+  const empty=buildDropRecapPost("target","example",{
+    ...verified,ordersPlaced:0,deduplicatedCancelledOrders:0
+  });
+  assert.equal(empty.embeds[0].fields.find(f=>f.name.includes("STICK RATE")).value,"**0.0%**");
+});
+
 test("source parser supports multiple independent product embeds",()=>{
   const one=responseBody(sourceFields());
   one.embeds.push({color:0x00cc66,fields:[
