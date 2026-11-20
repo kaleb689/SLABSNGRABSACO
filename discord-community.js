@@ -1060,6 +1060,12 @@ export async function submitCustomerDropSkus(discordUserId, username, selection)
 }
 
 export const discordCommunityStatus = { configured: false, rolesReady: false, serverRolesReady: false, askChannelReady: false, ticketSupportReady: false, ticketLobbyReady: false, adminChannelsReady: false, appMessagesReady: false, importantReady: false, introReady: false, rulesReady: false, giveawayReady: false, suggestionsReady: false, retailerDropsReady: false, retailerDrops: [], oneOnOneReady: false, oneOnOneQueued: 0, oneOnOneActive: false, emojiReady: false, gatewayReady: false, messageContentReady: false, aiConfigured: false, aiReady: false, aiCheckAt: null, lastRoleSyncAt: null, lastAnswerAt: null, lastAiError: null, error: null };
+export function managedPanelButtonsChanged(key,existing={},desired={}){
+  if(!["server-roles","owner-drop-controls"].includes(key))return false;
+  const buttons=panel=>JSON.stringify((panel?.components||[]).flatMap(row=>row.components||[])
+    .map(button=>({custom_id:button.custom_id,label:button.label,disabled:!!button.disabled})));
+  return buttons(existing)!==buttons(desired);
+}
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onAppMessageChannelReady, onAppSupportReply }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
@@ -2431,9 +2437,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           const old = await api(`/channels/${channelId}/messages/${previous.messageId}`);
           if (old.content !== content ||
             (old.embeds?.[0]?.description || "") !== (extras.embeds?.[0]?.description || "") ||
-            (["server-roles","owner-drop-controls"].includes(key) &&
-              JSON.stringify((old.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id))!==
-              JSON.stringify((extras.components||[]).flatMap(row=>row.components||[]).map(button=>button.custom_id)))) {
+            managedPanelButtonsChanged(key,old,extras)) {
             await api(`/channels/${channelId}/messages/${previous.messageId}`, "PATCH", payload);
           }
           return previous.messageId;
