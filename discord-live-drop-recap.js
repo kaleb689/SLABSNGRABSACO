@@ -161,7 +161,8 @@ export function dropControlRows() {
       {type:2,style:2,label:"Pending / Posted",custom_id:"sngdrop:status"}
     ]},
     {type:1,components:[
-      {type:2,style:1,label:"📊 Create Manual Recap",custom_id:"sngdrop:manual:open"}
+      {type:2,style:1,label:"📊 Create Manual Recap",custom_id:"sngdrop:manual:open"},
+      {type:2,style:2,label:"🖼️ Graphic Status",custom_id:"sngdrop:graphic:status"}
     ]}
   ];
 }
@@ -216,7 +217,7 @@ const fileStatus=record=>record.status==="posted"?"recap posted":
   record.status==="publishing"?"recap publication pending":record.status;
 export function createDiscordDropRecapController({
   dataDir,api,token,guildId,ownerId,generalChannelId,controlChannelId,
-  onDropNotification=async()=>{},getSource=fetchDirectSourceMessages,
+  onDropNotification=async()=>{},sendGraphic=null,prepareGraphic=null,previewGraphic=null,checkGraphic=null,getSource=fetchDirectSourceMessages,
   makeReport=buildDiscordSourceRecap,now=()=>Date.now()
 }){
   if(!dataDir||typeof api!=="function"||!token||!guildId||!ownerId||
@@ -224,7 +225,7 @@ export function createDiscordDropRecapController({
   const manualFlow=createManualDiscordRecapFlow({
     api,token,ownerId,guildId,controlChannelId,generalChannelId,dataDir,
     getSource,makeReport,parseCheckout:parseDiscordSuccessForRecap,
-    postBuilder:buildDropRecapPost,now
+    postBuilder:buildDropRecapPost,sendGraphic,prepareGraphic,previewGraphic,now
   });
   const store=path.join(dataDir,"discord-live-drop-recaps.json");
   let queue=Promise.resolve(),timer=null;
@@ -370,12 +371,27 @@ export function createDiscordDropRecapController({
           }
           continue;
         }
+        // A graphic rendering failure must be a private retryable block,
+        // not an unconfirmed public message or an old-number screenshot.
+        let graphic=null;
+        if(prepareGraphic){
+          try{graphic=await prepareGraphic({retailer:record.retailer,report,visibility:{}});}
+          catch(error){
+            record.status="blocked";
+            record.retryAt=stamp(time+15*60000);
+            record.blockedReasons=["approved_recap_graphic_unavailable"];
+            await save(data);
+            console.error("Approved recap graphic unavailable:",error?.message||"unknown");
+            continue;
+          }
+        }
         record.status="publishing";record.blockedReasons=[];
         await save(data);
         let posted;
         try{
-          posted=await api("/channels/"+generalChannelId+"/messages","POST",
-            buildDropRecapPost(record.retailer,record.id,report));
+          const payload=buildDropRecapPost(record.retailer,record.id,report);
+          posted=sendGraphic?await sendGraphic({channelId:generalChannelId,retailer:record.retailer,report,visibility:{},graphic,payload}):
+            await api("/channels/"+generalChannelId+"/messages","POST",payload);
         }catch(error){
           record.status="publishing_error";
           record.error="Discord recap delivery could not be confirmed; inspect #general.";
@@ -410,6 +426,16 @@ export function createDiscordDropRecapController({
     const reply=content=>api(callback,"POST",{type:4,data:{flags:64,content,allowed_mentions:{parse:[]}}});
     if(user!==String(ownerId)||String(d.channel_id)!==String(controlChannelId))
       return reply("Only the verified server owner can use these private drop controls.");
+    if(id==="sngdrop:graphic:status"){
+      if(typeof checkGraphic!=="function")return reply("⚠️ Approved graphic check has not been configured.");
+      try{
+        await checkGraphic();
+        return reply("✅ Exact approved SLABSNGRABSACO recap PNG verified and available to the bot. No public message was posted.");
+      }catch(error){
+        console.error("Drop recap graphic check:",String(error?.message||error).slice(0,180));
+        return reply("⚠️ Approved recap PNG is not available to the bot. Upload the unchanged file SLABSNGRABSACO_Target_Drop_Recap_Final.png to this private channel before posting graphics.");
+      }
+    }
     if(id.startsWith("sngdrop:manual:"))return manualFlow.handleInteraction(d);
     if(id==="sngdrop:status")return reply(await statusText());
     const start=id.match(/^sngdrop:start:(target|walmart|pokemoncenter|costco|sams)$/);
