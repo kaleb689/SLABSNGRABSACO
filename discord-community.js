@@ -1449,6 +1449,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           checkGraphic:async()=>{
             const approved=await approvedTemplate({
               filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
+              cachePath:path.join(dataDir,"approved-clean-recap.png"),
               channelIds:[controls.id,general.id],api
             });
             return approved.length>10000;
@@ -1456,6 +1457,7 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           prepareGraphic:async({retailer,report,visibility})=>{
             const template=await approvedTemplate({
               filePath:process.env.SNG_APPROVED_RECAP_FILE||"",
+              cachePath:path.join(dataDir,"approved-clean-recap.png"),
               channelIds:[controls.id,general.id],api
             });
             return renderRecapGraphic({template,report,retailer,visibility});
