@@ -468,9 +468,11 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  const batchUI=fs.readFileSync(path.join(__dirname,'emailgen-batch-ui.js'),'utf8');
  const autoTestUI=fs.readFileSync(path.join(__dirname,'emailgen-auto-test-ui.js'),'utf8');
  const oneClickUI=fs.readFileSync(path.join(__dirname,'emailgen-oneclick-ui.js'),'utf8');
+ const archiveUI=fs.readFileSync(path.join(__dirname,'emailgen-archive-ui.js'),'utf8');
  const panel=fs.readFileSync(path.join(__dirname,'emailgen-random-panel.html'),'utf8');
  const batchPanel=fs.readFileSync(path.join(__dirname,'emailgen-batch-panel.html'),'utf8');
- replace('app.js',' function addEvents(){',handler+'\n'+batchUI+'\n'+autoTestUI+'\n'+oneClickUI+'\n function addEvents(){\n  setupRandomEmailGen();\n  setupEmailBatchUI();\n  setupAutoMailTests();\n  setupOneClickEmailGen();');
+ const archivePanel='<section class="panel section" id="sngCloudflareArchive" style="margin:12px 0;padding:12px;border:1px solid #40647a;border-radius:10px"><h3>Cloudflare Email Archive</h3><p class="sectionHelp">Owner-only read-only Cloudflare receipt index. Shikari and Valor continue using your saved shared Gmail IMAP inbox. Order and shipping emails do not create verified Discord Success orders.</p><label>Filter by @sng.sarl address (optional)<input id="sngArchiveAlias" type="email" placeholder="alias@sng.sarl"></label><button type="button" id="sngArchiveRefresh" class="btn secondary">Refresh archived messages</button><p id="sngArchiveStatus" class="tiny" role="status">Connect saved Cloudflare owner credentials to inspect received messages.</p><div id="sngArchiveResults" style="max-height:380px;overflow:auto"></div></section>';
+ replace('app.js',' function addEvents(){',handler+'\n'+batchUI+'\n'+autoTestUI+'\n'+oneClickUI+'\n'+archiveUI+'\n function addEvents(){\n  setupCloudflareArchive();\n  setupRandomEmailGen();\n  setupEmailBatchUI();\n  setupAutoMailTests();\n  setupOneClickEmailGen();');
  replace('app.js'," function render(){\n  const items=unlocked?records:[];",
   " function render(){\n  refreshRandomChooser();\n  const items=unlocked?records:[];");
  replace('app.js',"credentials:Object.fromEntries(['target','walmart'].map(brand=>[brand,Verification.normalizedCredential(r.credentials?.[brand])]))",
@@ -479,22 +481,25 @@ replace('desktop-native.js',"  const update=toolbar.querySelector('#jigUpdateBut
  replace('index.html','<section class="panel section"><h2>2. Bulk generate</h2>',
   panel+'<section class="panel section"><h2>3. Manual bulk generate</h2>');
  replace('index.html','<h2>3. Cloudflare setup</h2>','<h2>4. Cloudflare setup</h2>');
- replace('index.html','<div class="bankToolbar">',batchPanel+'<div class="bankToolbar">');
+ replace('index.html','<div class="bankToolbar">',archivePanel+batchPanel+'<div class="bankToolbar">');
  fs.copyFileSync(path.join(__dirname,'emailgen-forwarding-test.js'),path.join(root,'emailgen-forwarding-test.js'));
  fs.copyFileSync(path.join(__dirname,'emailgen-mail-test-store.js'),path.join(root,'emailgen-mail-test-store.js'));
  fs.copyFileSync(path.join(__dirname,'emailgen-worker-verification.js'),path.join(root,'emailgen-worker-verification.js'));
+ fs.copyFileSync(path.join(__dirname,'emailgen-archive.js'),path.join(root,'emailgen-archive.js'));
  replace('preload.js',' cloudflare:Object.freeze({',
-  " cloudflare:Object.freeze({\n  inboundWorkerStatus:()=>ipcRenderer.invoke('email:worker:status'),\n  testInboundWorker:request=>ipcRenderer.invoke('email:worker:verify',request),\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),\n  saveMailTestCredentials:settings=>ipcRenderer.invoke('email:test:credentials:save',settings),\n  mailTestCredentialStatus:()=>ipcRenderer.invoke('email:test:credentials:status'),\n  mailTestCredentialBackups:()=>ipcRenderer.invoke('email:test:credentials:backups'),\n  restoreMissingMailTestCredentials:request=>ipcRenderer.invoke('email:test:credentials:restore-missing',request),\n  forgetMailTestCredentials:selection=>ipcRenderer.invoke('email:test:credentials:forget',selection),\n  onEmailTestProgress:callback=>{const listener=(_event,progress)=>callback(progress);ipcRenderer.on('email:test:progress',listener);return ()=>ipcRenderer.removeListener('email:test:progress',listener);},");
+  " cloudflare:Object.freeze({\n  inboundWorkerStatus:()=>ipcRenderer.invoke('email:worker:status'),
+  inboundArchiveRecent:request=>ipcRenderer.invoke('email:archive:recent',request),\n  testInboundWorker:request=>ipcRenderer.invoke('email:worker:verify',request),\n  testForwarding:request=>ipcRenderer.invoke('email:forwarding-test',request),\n  saveMailTestCredentials:settings=>ipcRenderer.invoke('email:test:credentials:save',settings),\n  mailTestCredentialStatus:()=>ipcRenderer.invoke('email:test:credentials:status'),\n  mailTestCredentialBackups:()=>ipcRenderer.invoke('email:test:credentials:backups'),\n  restoreMissingMailTestCredentials:request=>ipcRenderer.invoke('email:test:credentials:restore-missing',request),\n  forgetMailTestCredentials:selection=>ipcRenderer.invoke('email:test:credentials:forget',selection),\n  onEmailTestProgress:callback=>{const listener=(_event,progress)=>callback(progress);ipcRenderer.on('email:test:progress',listener);return ()=>ipcRenderer.removeListener('email:test:progress',listener);},");
  replace('main.js'," ipcMain.handle('cf:authorize',async(event,config)=>{",
-  " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,baseDir:app.getPath('userData'),safeStorage});\n require('./emailgen-worker-verification').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,sessions,baseDir:app.getPath('userData'),safeStorage});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
+  " require('./emailgen-forwarding-test').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,baseDir:app.getPath('userData'),safeStorage});\n require('./emailgen-worker-verification').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,sessions,baseDir:app.getPath('userData'),safeStorage});
+ require('./emailgen-archive').register({ipcMain,requireOwner:ownerSender,requireCloudflareSession:ownerSession,sessions});\n ipcMain.handle('cf:authorize',async(event,config)=>{");
  const pkgFile=path.join(root,'package.json'),pkg=JSON.parse(fs.readFileSync(pkgFile,'utf8'));
  pkg.dependencies||={};pkg.dependencies.nodemailer='^10.2.0';pkg.dependencies.imapflow='^2.2.5';pkg.dependencies.mailparser='^3.7.4';
  // Explicitly include the new main-process service without removing existing package files.
  pkg.build||={};pkg.build.files||=[];
- for(const entry of ['emailgen-forwarding-test.js','emailgen-mail-test-store.js','emailgen-worker-verification.js'])
+ for(const entry of ['emailgen-forwarding-test.js','emailgen-mail-test-store.js','emailgen-worker-verification.js','emailgen-archive.js'])
   if(!pkg.build.files.includes(entry))pkg.build.files.push(entry);
  fs.writeFileSync(pkgFile,JSON.stringify(pkg,null,2)+'\n');
- for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js','emailgen-auto-test.test.js','emailgen-worker-verification.test.js'])
+ for(const file of ['emailgen-random.test.js','emailgen-batch.test.js','emailgen-forwarding-test.test.js','emailgen-mail-test-store.test.js','emailgen-auto-test.test.js','emailgen-worker-verification.test.js','emailgen-archive.test.js'])
   fs.copyFileSync(path.join(__dirname,file),path.join(root,'tests',file));
 }
 
