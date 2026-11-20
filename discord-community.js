@@ -1080,14 +1080,17 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     // Callback tokens expire within Discord's three-second interaction window.
     // Unlike ordinary messages, these must never wait through a 429 retry
     // backoff or a 15-second network timeout. Fail promptly and report why.
-    const interactionCallback=method==="POST"&&
-      /^\\/interactions\\/[0-9]{17,22}\\/[^/]+\\/callback$/.test(String(route));
+    const routeParts=String(route).split("?")[0].split("/");
+    const interactionCallback=method==="POST"&&routeParts.length===5&&
+      routeParts[1]==="interactions"&&routeParts[4]==="callback"&&
+      /^[0-9]{17,22}$/.test(routeParts[2]);
     const attempts=interactionCallback?1:6;
     const timeoutMs=interactionCallback?2200:15000;
-    const safeRoute=String(route).split("?")[0]
-      .replace(/(\\/interactions\\/)[0-9]{17,22}\\/[^/]+\\/callback/,"$1[id]/[token]/callback")
-      .replace(/(\\/webhooks\\/)[0-9]{17,22}\\/[^/]+/,"$1[id]/[token]")
-      .replace(/[0-9]{16,22}/g,"[id]");
+    const safeRoute=routeParts[1]==="interactions"?
+      "/interactions/[id]/[token]/callback":
+      routeParts[1]==="webhooks"?
+        "/webhooks/[id]/[token]"+(routeParts.length>4?"/"+routeParts.slice(4).join("/"):""):
+        String(route).split("?")[0].replace(/[0-9]{16,22}/g,"[id]");
     for (let attempt = 0; attempt < attempts; attempt++) {
       const started=Date.now();
       const response = await fetch(`${API}${route}`, {
