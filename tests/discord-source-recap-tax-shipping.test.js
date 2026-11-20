@@ -65,6 +65,19 @@ test("per-order shipping and 7% per-order taxes, not tax on drop grand total",()
   assert.equal(result.totalSpentBasis,"rule_calculated_7pct_tax_shipping_under_35");
 });
 
+test("orange Review Hold checkouts count as placed orders, units, spend, and top products",()=>{
+  const green=webhook({id:"1511111111111111800",order:"TGT0800",qty:1,price:24.99,state:"green"});
+  const review=webhook({id:"1511111111111111801",at:"2026-11-13T09:30:00Z",
+    order:"TGT0801",qty:2,price:24.99,state:"orange"});
+  const result=recap([green,review]);
+  assert.equal(result.ordersPlaced,2);
+  assert.equal(result.confirmedCheckouts,1);
+  assert.equal(result.reviewHoldCheckouts,1);
+  assert.equal(result.totalUnits,3);
+  assert.equal(result.topProducts[0].quantity,3);
+  assert.equal(result.totalSpentCents,3273+5348);
+  assert.equal(result.readyToPublish,true);
+});
 test("red cancellations lacking order IDs or prices are ignored",()=>{
   const kept=webhook({id:"1511111111111111103",order:"TGT00113",price:24.99});
   const red=webhook({id:"1511111111111111104",at:"2026-11-13T09:03:00Z",
