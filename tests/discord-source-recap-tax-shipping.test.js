@@ -88,6 +88,35 @@ test("same-order red event removes previous successful order without including a
   assert.equal(report.totalSpentCents,3273);
 });
 
+test("verified original Discord Total Paid can supply exact recap spend without an item price",()=>{
+  const m=webhook({id:"1511111111111111400",order:"TGT00400",
+    product:"Pokemon Product With Checkout Total",price:null,paid:32.73});
+  const report=recap([m]);
+  assert.equal(report.readyToPublish,true);
+  assert.equal(report.totalSpentCents,3273);
+  assert.equal(report.totalUnits,1);
+  assert.equal(report.sourcePaidFallbackOrders,1);
+  assert.equal(report.missingVerifiedChargeOrders,0);
+  assert.equal(report.totalSpentBasis,"source_verified_paid_totals_plus_rule_calculated_orders");
+});
+test("mix of item-priced and explicitly paid Discord checkouts sums without double tax",()=>{
+  const a=webhook({id:"1511111111111111401",order:"TGT00401",
+    product:"Pokemon $24.99 Item",price:24.99});
+  const b=webhook({id:"1511111111111111402",at:"2026-11-13T09:30:00Z",
+    order:"TGT00402",product:"Pokemon $49.98 Checkout Only",price:null,paid:53.48});
+  const report=recap([a,b]);
+  assert.equal(report.readyToPublish,true);
+  assert.equal(report.ruleCalculatedOrders,1);
+  assert.equal(report.sourcePaidFallbackOrders,1);
+  assert.equal(report.totalSpentCents,3273+5348);
+});
+test("unknown paid total and unknown price still block publishing",()=>{
+  const m=webhook({id:"1511111111111111403",order:"TGT00403",price:null});
+  const report=recap([m]);
+  assert.equal(report.readyToPublish,false);
+  assert.equal(report.missingVerifiedChargeOrders,1);
+  assert.equal(report.totalSpentCents,null);
+});
 test("unknown unique product prices block total spend, never guess",()=>{
   const m=webhook({id:"1511111111111111108",order:"TGT00116",price:null,
     product:"Pokemon Unseen New Product"});
@@ -95,7 +124,7 @@ test("unknown unique product prices block total spend, never guess",()=>{
   assert.equal(report.ruleUnpricedOrders,1);
   assert.equal(report.totalSpentCents,null);
   assert.equal(report.readyToPublish,false);
-  assert.ok(report.blockedReasons.includes("missing_source_unit_prices_for_rule_total"));
+  assert.ok(report.blockedReasons.includes("missing_source_verified_order_total_or_unit_prices"));
 });
 
 test("blocked recap lists only safe missing-price products and counts",()=>{
