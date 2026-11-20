@@ -304,7 +304,7 @@ test("owner's Discord SKU summary scales without leaking mixed quantities or exc
 
 test("Discord HTTP 429 responses honor retry-after and retry the same SKU panel write", async () => {
   const { readFileSync } = await import("node:fs");
-  const { discordRateLimitDelayMs } = await import("../discord-community.js");
+  const { discordRateLimitDelayMs, discordApiRequestPolicy } = await import("../discord-community.js");
   const source = readFileSync(new URL("../discord-community.js", import.meta.url), "utf8");
   const from = source.indexOf('  async function api(route, method = "GET", payload) {');
   const to = source.indexOf('  let guildId,', from);
@@ -320,10 +320,10 @@ test("Discord HTTP 429 responses honor retry-after and retry the same SKU panel 
     };
     return { status: 200, ok: true, json: async () => ({ id: "pkc-panel-id" }) };
   };
-  const make = new Function("fetch", "API", "headers", "discordRateLimitDelayMs", "AbortSignal", "setTimeout",
+  const make = new Function("fetch", "API", "headers", "discordRateLimitDelayMs", "discordApiRequestPolicy", "AbortSignal", "setTimeout",
     block + "return api;");
   const api = make(fetch, "https://discord.com/api/v10", { Authorization: "Bot test" },
-    discordRateLimitDelayMs, AbortSignal, (callback, delay) => { delays.push(delay); callback(); });
+    discordRateLimitDelayMs, discordApiRequestPolicy, AbortSignal, (callback, delay) => { delays.push(delay); callback(); });
   const payload = { components: [{ type: 1, components: [{ type: 2, label: "Choose Multiple SKUs" }] }] };
   const result = await api("/channels/pkc/messages/panel", "PATCH", payload);
   assert.equal(result.id, "pkc-panel-id");
@@ -334,7 +334,7 @@ test("Discord HTTP 429 responses honor retry-after and retry the same SKU panel 
 
   const rejected = make(async () => ({
     status: 403, ok: false, json: async () => ({ message: "Missing Permissions" })
-  }), "https://discord.com/api/v10", {}, discordRateLimitDelayMs, AbortSignal,
+  }), "https://discord.com/api/v10", {}, discordRateLimitDelayMs, discordApiRequestPolicy, AbortSignal,
     () => { throw new Error("must not wait on 403"); });
   await assert.rejects(rejected("/channels/pkc/messages/panel", "PATCH", payload), /HTTP 403/);
 });

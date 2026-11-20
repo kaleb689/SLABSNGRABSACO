@@ -34,6 +34,14 @@ import {
 
 const API = "https://discord.com/api/v10";
 // Retry-After from Discord's JSON body and headers is in seconds.
+export function discordApiRequestPolicy(route,method="GET"){
+  const parts=String(route).split("?")[0].split("/");
+  const initialCallback=method==="POST"&&parts.length===5&&
+    parts[1]==="interactions"&&parts[4]==="callback"&&
+    /^[0-9]{17,22}$/.test(parts[2]);
+  return {interactionCallback:initialCallback,
+    attempts:initialCallback?1:6,timeoutMs:initialCallback?2200:15000};
+}
 export function discordRateLimitDelayMs({ retryAfter, headerRetryAfter, resetAfter, attempt = 0 } = {}) {
   const candidates = [retryAfter, headerRetryAfter, resetAfter]
     .filter(value => value !== null && value !== undefined && String(value).trim() !== "")
@@ -1077,13 +1085,27 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
   }
   async function api(route, method = "GET", payload) {
-    // Honor Discord's rate-limit window instead of dropping critical SKU panel
-    // writes (or other Discord actions) on the first HTTP 429 response.
-    for (let attempt = 0; attempt < 6; attempt++) {
+    // Callback tokens expire within Discord's three-second interaction window.
+    // Unlike ordinary messages, these must never wait through a 429 retry
+    // backoff or a 15-second network timeout. Fail promptly and report why.
+    const routeParts=String(route).split("?")[0].split("/");
+    const {interactionCallback,attempts,timeoutMs}=discordApiRequestPolicy(route,method);
+    const safeRoute=routeParts[1]==="interactions"?
+      "/interactions/[id]/[token]/callback":
+      routeParts[1]==="webhooks"?
+        "/webhooks/[id]/[token]"+(routeParts.length>4?"/"+routeParts.slice(4).join("/"):""):
+        String(route).split("?")[0].replace(/[0-9]{16,22}/g,"[id]");
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const started=Date.now();
       const response = await fetch(`${API}${route}`, {
         method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
+      if(interactionCallback)
+        console.info("Discord interaction callback response",{
+          httpStatus:response.status,elapsedMs:Date.now()-started,
+          interactionType:Number(payload?.type)||null
+        });
       if (response.status === 429) {
         const rateLimit = await response.json().catch(() => ({}));
         const retryMs = discordRateLimitDelayMs({
@@ -1092,7 +1114,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           resetAfter: response.headers?.get?.("x-ratelimit-reset-after"),
           attempt
         });
-        if (attempt === 5) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP 429 after retries`);
+        if (interactionCallback || attempt === attempts-1)
+          throw new Error(`Discord ${method} ${safeRoute}: HTTP 429 before interaction acknowledgement`);
         await new Promise(resolve => setTimeout(resolve, retryMs));
         continue;
       }
@@ -1106,7 +1129,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           if (Number.isSafeInteger(code) && code > 0) detail += " code=" + code;
           if (fields.length) detail += " invalid_fields=" + fields.join(",");
         }
-        const safeRoute = route.split("?")[0].replace(/[0-9]{16,22}/g, "[id]");
         throw new Error("Discord " + method + " " + safeRoute + ": HTTP " + response.status + detail);
       }
       return response.status === 204 ? null : response.json();
@@ -4680,6 +4702,18 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   async function interaction(payload) {
     const d = payload?.d || {};
     if (payload?.t !== "INTERACTION_CREATE" || !d.id) return interactionImpl(payload);
+    const dropAction=String(d.data?.custom_id||"");
+    if(dropAction.startsWith("sngdrop:")){
+      let ageMs=null;
+      try{
+        const snowflake=BigInt(String(d.id));
+        ageMs=Date.now()-Number((snowflake>>22n)+1420070400000n);
+      }catch{}
+      console.info("Discord owner control interaction received",{
+        action:dropAction.split(":").slice(0,3).join(":"),
+        type:d.type,ageMs,connected:discordCommunityStatus.gatewayReady
+      });
+    }
     return skuAuditContext.run({
       interactionId: String(d.id),
       discordUserId: String(d.member?.user?.id || d.user?.id || ""),
@@ -5664,19 +5698,37 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     try {
       const gateway = await api("/gateway/bot");
       socket = new WebSocket(`${gateway.url}?v=10&encoding=json`);
+      const activeSocket=socket;
+      let awaitingHeartbeatAck=false;
       socket.addEventListener("message", event => {
+        if(socket!==activeSocket)return;
         try {
           const packet = JSON.parse(event.data);
           if (packet.s !== null) sequence = packet.s;
           if (packet.op === 10) {
             clearInterval(heartbeat);
-            heartbeat = setInterval(() => socket.readyState === 1 && socket.send(JSON.stringify({ op: 1, d: sequence })), packet.d.heartbeat_interval);
+            awaitingHeartbeatAck=false;
+            heartbeat = setInterval(() => {
+              if(socket!==activeSocket||activeSocket.readyState!==1)return;
+              if(awaitingHeartbeatAck){
+                console.warn("Discord gateway heartbeat ACK overdue; reconnecting stalled socket");
+                activeSocket.close(4000,"Heartbeat acknowledgement overdue");
+                return;
+              }
+              awaitingHeartbeatAck=true;
+              activeSocket.send(JSON.stringify({op:1,d:sequence}));
+            },packet.d.heartbeat_interval);
             heartbeat.unref?.();
             socket.send(JSON.stringify({ op: 2, d: { token, intents: 1 | 512 | 4096 | (contentIntentEnabled ? 32768 : 0), properties: { os: "linux", browser: "slabsngrabsaco", device: "slabsngrabsaco" } } }));
           }
-          if (packet.op === 1 && socket.readyState === 1) socket.send(JSON.stringify({ op: 1, d: sequence }));
-          if (packet.op === 7 || packet.op === 9) socket.close();
+          if(packet.op===11)awaitingHeartbeatAck=false;
+          if (packet.op === 1 && socket.readyState === 1){
+            awaitingHeartbeatAck=true;
+            activeSocket.send(JSON.stringify({op:1,d:sequence}));
+          }
+          if (packet.op === 7 || packet.op === 9) activeSocket.close();
           if (packet.t === "READY") {
+            console.info("Discord gateway READY; owner controls can receive button clicks");
             reconnectDelay = 1000;
             discordCommunityStatus.gatewayReady = true;
             discordCommunityStatus.messageContentReady = contentIntentEnabled;
@@ -5712,6 +5764,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         } catch (error) { console.error("Discord gateway packet:", error.message); }
       });
       socket.addEventListener("close", event => {
+        if(socket!==activeSocket)return;
+        socket=null;
+        console.warn("Discord gateway closed; reconnecting",{
+          code:event.code,clean:event.wasClean
+        });
         discordCommunityStatus.gatewayReady = false;
         discordCommunityStatus.messageContentReady = false;
         if (event.code === 4014 && contentIntentEnabled) {
