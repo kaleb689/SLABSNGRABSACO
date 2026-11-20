@@ -1077,13 +1077,28 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
   }
   async function api(route, method = "GET", payload) {
-    // Honor Discord's rate-limit window instead of dropping critical SKU panel
-    // writes (or other Discord actions) on the first HTTP 429 response.
-    for (let attempt = 0; attempt < 6; attempt++) {
+    // Callback tokens expire within Discord's three-second interaction window.
+    // Unlike ordinary messages, these must never wait through a 429 retry
+    // backoff or a 15-second network timeout. Fail promptly and report why.
+    const interactionCallback=method==="POST"&&
+      /^\\/interactions\\/[0-9]{17,22}\\/[^/]+\\/callback$/.test(String(route));
+    const attempts=interactionCallback?1:6;
+    const timeoutMs=interactionCallback?2200:15000;
+    const safeRoute=String(route).split("?")[0]
+      .replace(/(\\/interactions\\/)[0-9]{17,22}\\/[^/]+\\/callback/,"$1[id]/[token]/callback")
+      .replace(/(\\/webhooks\\/)[0-9]{17,22}\\/[^/]+/,"$1[id]/[token]")
+      .replace(/[0-9]{16,22}/g,"[id]");
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const started=Date.now();
       const response = await fetch(`${API}${route}`, {
         method, headers, body: payload === undefined ? undefined : JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(timeoutMs)
       });
+      if(interactionCallback)
+        console.info("Discord interaction callback response",{
+          httpStatus:response.status,elapsedMs:Date.now()-started,
+          interactionType:Number(payload?.type)||null
+        });
       if (response.status === 429) {
         const rateLimit = await response.json().catch(() => ({}));
         const retryMs = discordRateLimitDelayMs({
@@ -1092,7 +1107,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           resetAfter: response.headers?.get?.("x-ratelimit-reset-after"),
           attempt
         });
-        if (attempt === 5) throw new Error(`Discord ${method} ${route.split("?")[0]}: HTTP 429 after retries`);
+        if (interactionCallback || attempt === attempts-1)
+          throw new Error(`Discord ${method} ${safeRoute}: HTTP 429 before interaction acknowledgement`);
         await new Promise(resolve => setTimeout(resolve, retryMs));
         continue;
       }
@@ -1106,7 +1122,6 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           if (Number.isSafeInteger(code) && code > 0) detail += " code=" + code;
           if (fields.length) detail += " invalid_fields=" + fields.join(",");
         }
-        const safeRoute = route.split("?")[0].replace(/[0-9]{16,22}/g, "[id]");
         throw new Error("Discord " + method + " " + safeRoute + ": HTTP " + response.status + detail);
       }
       return response.status === 204 ? null : response.json();
