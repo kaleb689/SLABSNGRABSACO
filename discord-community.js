@@ -1074,7 +1074,7 @@ export function managedPanelButtonsChanged(key,existing={},desired={}){
     .map(button=>({custom_id:button.custom_id,label:button.label,disabled:!!button.disabled})));
   return buttons(existing)!==buttons(desired);
 }
-export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onAppMessageChannelReady, onAppSupportReply }) {
+export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onAppMessageChannelReady, onAppSupportReply, raffleClub }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
   if (!token) return;
@@ -1403,6 +1403,15 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     const guild = await api(`/guilds/${guildId}`);
     ownerId = guild.owner_id;
     const channels = await api(`/guilds/${guildId}/channels`);
+    if (raffleClub) {
+      try {
+        await raffleClub.provisionDiscord({api,guildId,appId,ownerId,channels});
+        discordCommunityStatus.raffleClubReady = true;
+      } catch (error) {
+        discordCommunityStatus.raffleClubReady = false;
+        console.error("Target Raffle Club provisioning:", error?.message || error);
+      }
+    }
     // Owner buttons and public announcements belong to the paid-member ACO
     // Discord guild. The original SLABSNGRABSTC Success channel remains the
     // ONLY source of checkout/recap totals, never the destination for posts.
@@ -2215,7 +2224,8 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
           "**In-Store** pings you when new in-store releases are posted in In-Store Drops.\n\n"+
           "Your choices are private. Each button confirms your current status.",
           {components:[...retailerAlertButtons(),{type:1,components:[
-            {type:2,style:2,label:"In-Store",custom_id:"instore:role",emoji:{name:"🏬"}}]}]});
+            {type:2,style:2,label:"In-Store",custom_id:"instore:role",emoji:{name:"🏬"}},
+            {type:2,style:1,label:"Target Raffle Club",custom_id:"raffle:role",emoji:{name:"🎯"}}]}]});
         discordCommunityStatus.serverRolesReady=true;
       }catch(error){
         discordCommunityStatus.serverRolesReady=false;
@@ -4747,6 +4757,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const callback = `/interactions/${d.id}/${d.token}/callback`;
     const reply = content => api(callback, "POST", { type: 4, data: { content, flags: 64, allowed_mentions: { parse: [] } } });
     try {
+      if ((d.type===3||d.type===5) && String(d.data?.custom_id||"").startsWith("raffle:") && raffleClub) {
+        return await raffleClub.handleInteraction(d);
+      }
       if ((d.type===3||d.type===5)&&String(d.data?.custom_id||"").startsWith("sngdrop:")) {
         if(!dropRecapController)return await reply("The owner drop controls are unavailable. Check the bot status.");
         return await dropRecapController.handleInteraction(d);
