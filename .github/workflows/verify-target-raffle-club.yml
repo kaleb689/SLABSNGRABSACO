@@ -6,6 +6,7 @@ on:
     paths:
       - target-raffle-club.js
       - target-raffle-payments.js
+      - target-raffle-notifications.js
       - discord-community.js
       - server.js
       - public/target-raffle-*
@@ -32,13 +33,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - run: npm ci --ignore-scripts
       - name: Check backend and frontend syntax
         run: |
           node --check target-raffle-club.js
           node --check target-raffle-payments.js
+          node --check target-raffle-notifications.js
           node --check discord-community.js
           node --check server.js
           node --check public/target-raffle-club-page.js
           node --check public/target-raffle-admin.js
       - name: Exercise paid queue and refund rules
-        run: node --test test/target-raffle-club.test.mjs test/target-raffle-payments.test.mjs
+        run: node --test test/target-raffle-club.test.mjs test/target-raffle-payments.test.mjs test/target-raffle-notifications.test.mjs
