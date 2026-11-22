@@ -155,7 +155,7 @@ export function registerTargetRaffleItemPayments({
           customer_email:account.email,
           line_items:lines.map(line=>({
             price_data:{currency:"usd",unit_amount:line.priceCents,
-              product_data:{name:line.name.slice(0,160),description:"Target SKU: "+(line.sku||"unlisted")}},
+              product_data:{name:line.name.slice(0,160),description:"Target SKU: "+(line.sku||"unlisted")+" | Option to buy 1 or 2 qty per raffle"}},
             quantity:line.qty
           })),
           expires_at:Math.floor((now+30*60000)/1000),
