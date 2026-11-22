@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { registerTargetRaffleItemPayments, RAFFLE_REFUND_NOTICE } from "./target-raffle-payments.js";
 
 const ACTIVE = new Set(["active", "trialing"]);
 const ROLE = "Target Raffle Club";
@@ -159,11 +160,11 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         "**Status:** "+(item.active?"OPEN — first come, first served":"CLOSED")+"\n\n"+
         (lines.join("\n")||"No requests yet.")+
         (q.length>35?"\n+"+(q.length-35)+" more (use View Queue)":"")+
-        "\n\nRequesting does not place or charge an order. The owner confirms availability and payment.",
+        "\n\n**Paid queue only:** select quantities, then pay on the website. Your position is assigned after successful payment.\n"+RAFFLE_REFUND_NOTICE,
       footer:{text:"Changing quantity preserves position; leaving and rejoining starts at the back."}
     }],components:[{type:1,components:[
-      {type:2,style:1,label:"Choose Quantity",custom_id:"raffle:qty:"+item.id,disabled:!item.active},
-      {type:2,style:2,label:"View Queue",custom_id:"raffle:view:"+item.id+":0"},
+      {type:2,style:1,label:"Select SKU / Qty",custom_id:"raffle:qty:"+item.id,disabled:!item.active},
+      {type:2,style:2,label:"View Paid Queue",custom_id:"raffle:view:"+item.id+":0"},
       {type:2,style:4,label:"Close (Owner)",custom_id:"raffle:close:"+item.id,disabled:!item.active}
     ]}]};
   }
@@ -261,7 +262,8 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         if(!await linked(userId)){await reply("This requires a paid raffle subscription and linked Discord.");return true;}
         const item=(await items()).find(x=>x.id===choose[1]);
         if(!item?.active){await reply("This item queue is closed.");return true;}
-        const current=queueFor(item).find(x=>x.userId===userId);
+        const cart = await itemPayments.getCart(account.id);
+        const current=cart.lines.find(line=>line.itemId===item.id);
         await discord.api(endpoint,"POST",{type:9,data:{custom_id:"raffle:submit:"+item.id,
           title:"Choose Raffle Quantity",components:[{type:1,components:[
             {type:4,style:1,custom_id:"qty",label:"0 to leave; max "+item.maxQty,
@@ -276,13 +278,14 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
           .find(x=>x.custom_id==="qty")?.value||"").trim();
         if(!/^(0|[1-9]\d{0,2})$/.test(qtyString)){await reply("Enter a whole-number quantity or 0.");return true;}
         const qty=Number(qtyString);
-        const result=await setQty(submit[1],{userId,accountId:String(account.id),
-          name:d.member?.user?.global_name||d.member?.user?.username||"Member",
-          qty,joinId:String(d.id)});
-        await reply(qty===0?"Removed. Rejoining starts at the end of the queue.":
-          "Saved "+qty+" × "+result.item.name+" ("+money(qty*result.item.priceCents)+
-          "). Queue position #"+result.place+". This is not a completed purchase.");
-        void refreshItem(submit[1]).catch(()=>{});return true;
+        const cart = await itemPayments.setDraft({accountId:String(account.id),userId,itemId:submit[1],qty});
+        const notice=qty===0?"Removed from your unpaid selection.":
+          "Added "+qty+" item(s) to your cart. Your unpaid selections are not queued or reserved.";
+        await discord.api(endpoint,"POST",{type:4,data:{
+          content:notice+"\n**Selected total: "+money(cart.totalCents)+".** Complete payment on the website to enter the first-come-first-served queue.\n"+RAFFLE_REFUND_NOTICE,
+          flags:64,allowed_mentions:{parse:[]},components:[{type:1,components:[
+            {type:2,style:5,label:"Pay Selected SKUs on Website",url:baseUrl+"/target-raffle-club.html#club-checkout"}
+          ]}]}});return true;
       }
       const view=action.match(/^raffle:view:([a-f0-9]{18}):(\d{1,4})$/);
       if(view&&d.type===3){
@@ -331,13 +334,14 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     const intro={
       allowed_mentions:{parse:[]},
       content:"🎯 **TARGET RAFFLE CLUB**\n**$5/month** for existing paid ACO members; **$20/month** for standalone subscribers.\n\n"+
-        "The owner posts priced items below. On each, press **Choose Quantity** to request 1 or more units, "+
-        "or choose **0** to leave. Join one, several, or no item queues. "+
-        "Everyone in this channel can view the first-come-first-served line.\n"+
-        "Queue requests are not purchases or guarantees. Stock and payment are confirmed separately.",
+        "The owner posts individual SKU prices below. Select each desired SKU and quantity, or choose **0** to remove an unpaid selection. "+
+        "Select multiple products, then use **Pay Selected SKUs** to pay their combined total securely on the website. "+
+        "The visible first-come-first-served queue contains **paid selections only**; a position is assigned when payment succeeds.\n"+
+        RAFFLE_REFUND_NOTICE,
       components:[{type:1,components:[
         {type:2,style:1,label:"Post Item (Owner)",custom_id:"raffle:create"},
-        {type:2,style:2,label:"Confirm Club Role",custom_id:"raffle:role"}
+        {type:2,style:2,label:"Confirm Club Role",custom_id:"raffle:role"},
+        {type:2,style:5,label:"Pay Selected SKUs",url:baseUrl+"/target-raffle-club.html#club-checkout"}
       ]}]
     };
     const panel=await read(panelPath,{});
@@ -457,6 +461,58 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   app.post("/api/admin/raffle-club/items/:id/close",requireAdmin,async(req,res)=>{
     try{await close(String(req.params.id));res.json({ok:true});}
     catch(e){res.status(400).json({error:e.message});}
+  });
+  const itemPayments=registerTargetRaffleItemPayments({
+    app,stripe,requireCustomer,requireAdmin,dataDir,baseUrl,
+    getItems:items,getSubscription:active,getAccounts,
+    commitPaidOrder:async order=>{
+      const accounts=await getAccounts();
+      const account=accounts.find(a=>String(a.id)===String(order.accountId));
+      const name=plain([account?.firstName,account?.lastName].filter(Boolean).join(" ") ||
+        account?.name || account?.discordUsername || "Member").slice(0,75);
+      const changed=await serial(async()=>{
+        const all=await items(),affected=[];
+        for(const line of order.lines){
+          const item=all.find(x=>x.id===line.itemId);
+          if(!item)throw Error("A paid raffle product is unavailable.");
+          const existing=(item.entries||[]).find(x=>x.orderId===order.id);
+          if(existing)continue;
+          item.queueSerial=Number(item.queueSerial||0)+1;
+          const at=Date.parse(order.paidAt)||Date.now();
+          const joinId=(BigInt(at)*10000n+BigInt(item.queueSerial%10000)).toString();
+          (item.entries||(item.entries=[])).push({
+            orderId:order.id,userId:String(order.discordUserId||account?.discordUserId||""),
+            accountId:String(order.accountId),name,qty:line.qty,
+            joinId,joinedAt:order.paidAt,paid:true
+          });
+          affected.push(item.id);
+        }
+        if(affected.length)await save(itemsPath,all);
+        return affected;
+      });
+      for(const id of changed)void refreshItem(id).catch(error=>
+        console.error("Raffle paid queue update:",error.message));
+    },
+    applyOrderRefund:async order=>{
+      const changed=await serial(async()=>{
+        const all=await items(),affected=[];
+        for(const line of order.lines){
+          const item=all.find(x=>x.id===line.itemId);
+          if(!item)continue;
+          const entry=(item.entries||[]).find(x=>x.orderId===order.id);
+          if(!entry)continue;
+          const balance=Math.max(0,line.qty-Number(line.refundedQty||0));
+          if(entry.qty===balance)continue;
+          entry.qty=balance;
+          if(!balance)item.entries=item.entries.filter(x=>x.orderId!==order.id);
+          affected.push(item.id);
+        }
+        if(affected.length)await save(itemsPath,all);
+        return affected;
+      });
+      for(const id of changed)void refreshItem(id).catch(error=>
+        console.error("Raffle refunded queue update:",error.message));
+    }
   });
   const timer=setInterval(()=>void syncRoles().catch(e=>console.error("Raffle role sweep:",e.message)),600000);
   timer.unref?.();
