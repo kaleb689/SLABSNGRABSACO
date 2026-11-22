@@ -156,8 +156,8 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
       title:"🎯 "+item.name,color:item.active?0x28cbd0:0x88929c,
       description:"**Price:** "+money(item.priceCents)+" each\n"+
         "**Available stock:** "+(item.stock===null?"Owner to confirm":item.stock)+"\n"+
-        "**Queue:** "+q.length+" people / "+q.reduce((n,x)=>n+x.qty,0)+" requested units\n"+
-        "**Status:** "+(item.active?"OPEN — first come, first served":"CLOSED")+"\n\n"+
+        "**Paid queue:** "+q.length+" confirmed orders / "+q.reduce((n,x)=>n+x.qty,0)+" paid units\n"+
+        "**Status:** "+(item.active?"OPEN — first paid, first served":"CLOSED")+"\n\n"+
         (lines.join("\n")||"No requests yet.")+
         (q.length>35?"\n+"+(q.length-35)+" more (use View Queue)":"")+
         "\n\n**Paid queue only:** select quantities, then pay on the website. Your position is assigned after successful payment.\n"+RAFFLE_REFUND_NOTICE,
@@ -464,7 +464,7 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   });
   const itemPayments=registerTargetRaffleItemPayments({
     app,stripe,requireCustomer,requireAdmin,dataDir,baseUrl,
-    getItems:items,getSubscription:active,getAccounts,
+    getItems:items,getSubscription:active,getAccounts,closeItem:close,
     commitPaidOrder:async order=>{
       const accounts=await getAccounts();
       const account=accounts.find(a=>String(a.id)===String(order.accountId));
@@ -516,5 +516,12 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   });
   const timer=setInterval(()=>void syncRoles().catch(e=>console.error("Raffle role sweep:",e.message)),600000);
   timer.unref?.();
-  return {onStripeEvent,provisionDiscord,handleInteraction,syncRoles};
+  return {
+    onStripeEvent:async event=>{
+      const subscriptionHandled=await onStripeEvent(event);
+      const itemHandled=await itemPayments.onStripeEvent(event);
+      return subscriptionHandled||itemHandled;
+    },
+    provisionDiscord,handleInteraction,syncRoles
+  };
 }
