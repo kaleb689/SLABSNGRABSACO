@@ -1,0 +1,35 @@
+name: Verify Target Raffle Club
+on:
+  pull_request:
+    paths:
+      - "target-raffle-club.js"
+      - "discord-community.js"
+      - "server.js"
+      - "public/target-raffle-*"
+      - "test/target-raffle-club.test.mjs"
+      - ".github/workflows/verify-target-raffle-club.yml"
+  push:
+    branches:
+      - "feature/target-raffle-club-20261122"
+    paths:
+      - "target-raffle-club.js"
+      - "discord-community.js"
+      - "server.js"
+      - "public/target-raffle-*"
+      - "test/target-raffle-club.test.mjs"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: node --check target-raffle-club.js
+      - run: node --check discord-community.js
+      - run: node --check server.js
+      - run: node --check public/target-raffle-club-page.js
+      - run: node --check public/target-raffle-admin.js
+      - run: node --test test/target-raffle-club.test.mjs

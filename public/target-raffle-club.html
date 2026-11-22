@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Target Raffle Club | SLABSNGRABSACO</title>
+<meta name="description" content="Join Target Raffle Club for priority first-come-first-served requests on featured Target items.">
+<link rel="icon" type="image/png" href="/slabsngrabs-aco-logo-transparent.png">
+<link rel="stylesheet" href="/target-raffle-club.css?v=1">
+<script src="/target-raffle-club-page.js?v=1" defer></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="/"><img src="/slabsngrabs-aco-logo-transparent.png" alt="SLABSNGRABSACO logo"><span>SLABSNGRABSACO</span></a>
+<nav><a href="/#pricing">Memberships</a><a href="/#my-profile">My Profile / Sign In</a><a href="/join-discord">Discord</a></nav></header>
+<main>
+<section class="hero">
+ <div class="eyebrow">EXCLUSIVE TARGET ACCESS</div>
+ <h1>🎯 TARGET<br><em>RAFFLE CLUB</em></h1>
+ <p class="intro">Get first-come-first-served priority on the Target raffle items that interest you. View the public-to-members queue, select the number of units you want, and stay in control of each request.</p>
+ <div class="action-row"><a class="outline" href="/#my-profile">Link your Discord in My Profile</a><a class="outline" href="/join-discord">Open Discord</a></div>
+</section>
+<section class="content">
+ <div class="cards">
+   <article class="price-card member"><div class="eyebrow">ACO MEMBERS ADD-ON</div><h2>Existing members</h2><p class="price">$5<span>/month</span></p><p>For customers with an active SLABSNGRABSACO profile membership.</p><span class="detail">Adds raffle privileges, not more ACO profiles.</span></article>
+   <article class="price-card"><div class="eyebrow">STANDALONE MEMBERSHIP</div><h2>Raffle Club only</h2><p class="price">$20<span>/month</span></p><p>For people who only want Target Raffle Club without any ACO profile tier.</p><span class="detail">No auto-checkout profiles included.</span></article>
+ </div>
+ <section class="checkout-panel" aria-labelledby="club-status-title">
+   <div><div class="eyebrow">YOUR MEMBERSHIP</div><h2 id="club-status-title">Check your access</h2>
+   <p id="club-status" role="status" aria-live="polite">Checking your membership…</p>
+   <p id="club-note">Your correct monthly price is determined from your current ACO membership at checkout.</p></div>
+   <div class="buttons">
+     <button id="club-join" type="button" disabled>Join Target Raffle Club</button>
+     <button id="club-manage" type="button" class="secondary" hidden>Manage Subscription</button>
+     <a id="club-signin" href="/#my-profile" class="button secondary" hidden>Sign in / Create Account</a>
+   </div>
+ </section>
+ <section class="how"><h2>How requests work</h2><div class="how-grid">
+  <article><b>01</b><h3>Join the private channel</h3><p>Pay for the club, link Discord to your website account, and receive the Target Raffle Club Discord role.</p></article>
+  <article><b>02</b><h3>Choose any items</h3><p>The owner posts each item's price. Request one, several, or no products, and choose your quantity separately for each.</p></article>
+  <article><b>03</b><h3>Watch your queue position</h3><p>Requests are ordered by the time they are confirmed. Everyone in the club can view the line. Editing your quantity keeps your place; leaving and rejoining moves you to the end.</p></article>
+ </div><p class="fine">Joining a queue is a request, not a completed purchase, reserved inventory, or guarantee of allocation. The owner confirms stock availability, fulfillment, and item payment separately. Club fees renew monthly until cancelled.</p></section>
+ <section id="club-queue-panel" class="queue-panel" hidden>
+   <div class="queue-head"><div><div class="eyebrow">ACTIVE REQUESTS</div><h2>Club item queues</h2></div><button id="club-refresh" class="secondary" type="button">Refresh</button></div>
+   <p>These lists show the current request order. Quantity selections are made in the Discord channel.</p>
+   <div id="club-queue" class="queue-list"></div>
+ </section>
+</section>
+</main><footer><a href="/">SLABSNGRABSACO</a> · Target Raffle Club · <a href="/#faq">Questions?</a></footer>
+</body>
+</html>
