@@ -122,4 +122,8 @@ async function start(){
   await reload();
 }
 void start();
+setInterval(() => {
+  if (!panel.hidden && document.visibilityState === "visible")
+    void renderQueue().catch(() => {});
+}, 15000);
 })();
