@@ -6,6 +6,7 @@
  <section class="checkout-panel"><form id="raffle-admin-create" style="width:100%">
    <h2>Post a raffle item</h2>
    <div class="how-grid">
+     <label>Target SKU / TCIN <input name="sku" minlength="3" maxlength="79" required placeholder="1234567890"></label>
      <label>Item / product name <input name="name" maxlength="160" minlength="3" required placeholder="Target product name"></label>
      <label>Price per item (USD) <input name="price" type="number" step=".01" min=".01" max="999999" required placeholder="49.99"></label>
      <label>Available units (optional) <input name="stock" type="number" min="1" max="100000" placeholder="Leave blank to confirm later"></label>
