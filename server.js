@@ -5,6 +5,7 @@ import {registerAdminBulkProfileAssignments, customProfileExpiration} from "./ad
 import {registerStudioLinkedLoginSync} from "./server-studio-linked-login-sync.js";
 import {ownerWalmartUnused} from "./owner-walmart-unused.js";
 import { registerPrivateStudioLicensing } from "./private-studio-license.js";
+import { registerTargetRaffleClub } from "./target-raffle-club.js";
 import { createBillingReceiptHandler } from "./billing-receipts.js";
 import { createCustomerPaymentActions } from "./customer-payment-records.js";
 import { savedDataRevision, savedDataPrecondition } from "./saved-data-revisions.js";
@@ -7318,6 +7319,7 @@ function preferManagedAccountsMatchingAssignedPoolEmails(
 let privateStudioLicensing;
 let billingReceiptHandler;
 let membershipExtensionCommerce;
+let targetRaffleClub;
 
 /* -------------------------------------------------------
    STRIPE WEBHOOK
@@ -7360,6 +7362,7 @@ app.post(
     try {
       // Standalone desktop licensing only; customer vault data is never accessed.
       if (privateStudioLicensing) await privateStudioLicensing.onStripeEvent(event);
+      if (targetRaffleClub) await targetRaffleClub.onStripeEvent(event);
       if (billingReceiptHandler) await billingReceiptHandler.onStripeEvent(event);
 
       // Prepaid extensions are fulfilled ONLY after a verified Stripe payment webhook.
@@ -8512,6 +8515,12 @@ privateStudioLicensing = registerPrivateStudioLicensing({
 });
 billingReceiptHandler = createBillingReceiptHandler({
   dataDir: DATA_DIR, stripe, sendEmail: sendPurchaseReceiptEmail
+});
+targetRaffleClub = registerTargetRaffleClub({
+  app, stripe, requireCustomer, requireAdmin,
+  dataDir: DATA_DIR, baseUrl: BASE_URL,
+  getAccounts: getCustomerAccounts,
+  getActiveMemberProfiles: getCustomerProfileAllowance
 });
 
 
@@ -51320,6 +51329,7 @@ await initializeArrayFile(
           }
         });
         startDiscordCommunity({
+          raffleClub: targetRaffleClub,
           token: String(process.env.DISCORD_BOT_TOKEN || "").trim(),
           channelId: String(process.env.DISCORD_SUCCESS_CHANNEL_ID || "").trim(),
           getChannelId: async () => (await resolvedDiscordSuccessConfig()).channelId,
