@@ -127,6 +127,14 @@ export function registerTargetRaffleItemPayments({
       const totalCents=raffleCartTotal(lines);
       if(totalCents>99999999)throw Error("Selected item amount exceeds the maximum.");
       const now=Date.now(),nowIso=new Date(now).toISOString();
+      const sameLines=(left,right)=>JSON.stringify((left||[]).map(x=>[x.itemId,x.qty,x.priceCents]).sort())===
+        JSON.stringify((right||[]).map(x=>[x.itemId,x.qty,x.priceCents]).sort());
+      const existing=allOrders.find(order=>order.accountId===String(account.id) &&
+        order.status==="pending" && Date.parse(order.expiresAt)>now+30000 &&
+        order.checkoutUrl && sameLines(order.lines,lines));
+      if(existing)return {url:existing.checkoutUrl,orderId:existing.id,
+        totalCents:existing.totalCents,
+        lines:existing.lines.map(x=>({name:x.name,qty:x.qty,priceCents:x.priceCents}))};
       for(const line of lines){
         const item=availableItems.find(x=>x.id===line.itemId);
         const left=raffleAvailableStock(item,allOrders,now);
