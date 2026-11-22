@@ -3,6 +3,11 @@
 <main class="content" style="padding-top:36px">
  <div class="eyebrow">SLABSNGRABSACO · STAFF</div><h1>Target Raffle Club</h1>
  <p>Post individually priced Target SKUs, review the first-paid-first-served queue, and handle canceled draw orders with full or partial Stripe refunds. Access requires your existing admin login.</p>
+ <section class="queue-panel" aria-labelledby="raffle-admin-notification-title">
+   <div class="queue-head"><div><div class="eyebrow">NEW MEMBERS &amp; PAID ENTRIES</div><h2 id="raffle-admin-notification-title">Your Target Raffle Club notifications</h2></div><button id="raffle-admin-notifications-refresh" class="secondary" type="button">Refresh Alerts</button></div>
+   <p>New paid club memberships and paid raffle entries appear here, with private Discord and enabled Admin push alerts.</p>
+   <div id="raffle-admin-notifications" class="queue-list" aria-live="polite"></div>
+ </section>
  <section class="checkout-panel"><form id="raffle-admin-create" style="width:100%">
    <h2>Post a raffle item</h2>
    <div class="how-grid">
@@ -10,8 +15,10 @@
      <label>Item / product name <input name="name" maxlength="160" minlength="3" required placeholder="Target product name"></label>
      <label>Price per item (USD) <input name="price" type="number" step=".01" min=".01" max="999999" required placeholder="49.99"></label>
      <label>Available units (optional) <input name="stock" type="number" min="1" max="100000" placeholder="Leave blank to confirm later"></label>
-     <label>Max requested per user <input name="maxQty" type="number" value="20" min="1" max="100" required></label>
-   </div><button type="submit" id="raffle-admin-post">Post to Discord &amp; Open Queue</button>
+     <label>Maximum checkout quantity per member <input name="maxQty" type="number" value="20" min="1" max="100" required></label>
+   </div>
+   <p class="raffle-warning">Each item displays: <strong>Option to buy 1 or 2 qty per raffle</strong>. This is a note for users; it does not limit the quantity they can actually select or pay for.</p>
+   <button type="submit" id="raffle-admin-post">Post to Discord &amp; Open Queue</button>
  </form></section>
  <p id="raffle-admin-message" role="status" aria-live="polite"></p>
  <section class="queue-panel">
