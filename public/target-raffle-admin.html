@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Target Raffle Club — Admin</title><link rel="stylesheet" href="/target-raffle-club.css?v=1"><script src="/target-raffle-admin.js?v=1" defer></script></head>
+<body><header class="top"><a class="brand" href="/admin"><img src="/slabsngrabs-aco-logo-transparent.png" alt="">ADMIN · TARGET RAFFLE CLUB</a><nav><a href="/admin">Admin Home</a><a href="/target-raffle-club.html">View Member Offer</a></nav></header>
+<main class="content" style="padding-top:36px">
+ <div class="eyebrow">SLABSNGRABSACO · STAFF</div><h1>Target Raffle Club</h1>
+ <p>Post priced items to the private Discord channel and review quantity requests in first-come-first-served order. Access requires your existing admin login.</p>
+ <section class="checkout-panel"><form id="raffle-admin-create" style="width:100%">
+   <h2>Post a raffle item</h2>
+   <div class="how-grid">
+     <label>Item / product name <input name="name" maxlength="160" minlength="3" required placeholder="Target product name"></label>
+     <label>Price per item (USD) <input name="price" type="number" step=".01" min=".01" max="999999" required placeholder="49.99"></label>
+     <label>Available units (optional) <input name="stock" type="number" min="1" max="100000" placeholder="Leave blank to confirm later"></label>
+     <label>Max requested per user <input name="maxQty" type="number" value="20" min="1" max="100" required></label>
+   </div><button type="submit" id="raffle-admin-post">Post to Discord &amp; Open Queue</button>
+ </form></section>
+ <p id="raffle-admin-message" role="status" aria-live="polite"></p>
+ <section class="queue-panel">
+   <div class="queue-head"><div><div class="eyebrow">OWNER OVERVIEW</div><h2>Requests, quantities &amp; queue order</h2></div><button id="raffle-admin-refresh" type="button" class="secondary">Refresh</button></div>
+   <div id="raffle-admin-items" class="queue-list">Loading…</div>
+ </section>
+ <section class="queue-panel"><h2>Subscribers</h2><div id="raffle-admin-subscribers" class="queue-list"></div></section>
+</main><style>
+#raffle-admin-create input{display:block;width:100%;margin-top:10px;border-radius:10px;padding:12px;border:1px solid #467082;color:#fff;background:#071827;font:inherit}
+#raffle-admin-create label{display:block;font-size:14px;color:#d7e8f4}
+#raffle-admin-post{margin-top:24px}
+.raffle-rows{overflow-x:auto}
+.raffle-table{border-collapse:collapse;width:100%;min-width:550px;font-size:13px}
+.raffle-table th,.raffle-table td{border-bottom:1px solid #24475a;text-align:left;padding:12px 8px;overflow-wrap:anywhere}
+.raffle-table th{color:#57e0ec}
+.raffle-closed{color:#a9b4c0}
+</style></body></html>
