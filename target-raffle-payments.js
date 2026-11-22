@@ -394,5 +394,31 @@ export function registerTargetRaffleItemPayments({
       res.status(503).json({error:error.message||"Could not process draw refunds."});
     }
   });
+  async function reconcilePaidRefunds(){
+    const [all,available]=await Promise.all([orders(),getItems()]);
+    const byItem=new Map(available.map(x=>[x.id,x]));
+    for(const order of all.filter(isPaid)){
+      if(Number(order.refundedCents||0)>0){
+        try{await applyOrderRefund(order);}
+        catch(error){console.error("Raffle refunded queue reconciliation:",error.message);}
+      }
+      for(const line of order.lines||[]){
+        if(!byItem.get(line.itemId)?.drawCanceledAt)continue;
+        const amount=line.priceCents*line.qty-Number(line.refundedCents||0);
+        if(amount<=0)continue;
+        try{
+          await refund({orderId:order.id,requestId:"auto-cancel-"+line.itemId+"-"+order.id,
+            itemId:line.itemId,amountCents:amount,reason:"target_draw_canceled",
+            adminId:"automatic_draw_cancellation"});
+        }catch(error){
+          console.error("Raffle canceled item refund reconciliation:",error.message);
+        }
+      }
+    }
+  }
+  setTimeout(()=>void reconcilePaidRefunds().catch(error=>
+    console.error("Raffle payment startup reconciliation:",error.message)),5000).unref?.();
+  setInterval(()=>void reconcilePaidRefunds().catch(error=>
+    console.error("Raffle payment periodic reconciliation:",error.message)),10*60000).unref?.();
   return {setDraft,getCart,orders,onStripeEvent};
 }
