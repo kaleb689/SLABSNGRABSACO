@@ -34,7 +34,7 @@ function summary(order) {
     paidAt:order.paidAt||null,totalCents:order.totalCents,
     refundedCents:Number(order.refundedCents||0),
     lines:(order.lines||[]).map(line=>({
-      itemId:line.itemId,name:line.name,qty:line.qty,priceCents:line.priceCents,
+      itemId:line.itemId,sku:line.sku||"",name:line.name,qty:line.qty,priceCents:line.priceCents,
       totalCents:line.priceCents*line.qty,refundedCents:Number(line.refundedCents||0),
       refundedQty:Number(line.refundedQty||0)
     })),paymentConfirmed:paid};
@@ -81,7 +81,7 @@ export function registerTargetRaffleItemPayments({
       if(!item||!item.active)throw Error("One selected item is no longer available.");
       if(!Number.isInteger(n)||n<1||n>Number(item.maxQty||20))
         throw Error("One selected quantity exceeds the available per-person limit.");
-      return {itemId:id,name:item.name,priceCents:Number(item.priceCents),qty:n,
+      return {itemId:id,sku:String(item.sku||""),name:item.name,priceCents:Number(item.priceCents),qty:n,
         refundedCents:0,refundedQty:0};
     });
     if(!lines.length)throw Error("Select your products in #target-raffle-club before paying.");
@@ -95,7 +95,7 @@ export function registerTargetRaffleItemPayments({
     try{lines=validCartLines(selected,availableItems);}
     catch(e){error=e.message;}
     return {lines:lines.map(x=>({itemId:x.itemId,name:x.name,
-      priceCents:x.priceCents,qty:x.qty,subtotalCents:x.priceCents*x.qty})),
+      sku:x.sku,priceCents:x.priceCents,qty:x.qty,subtotalCents:x.priceCents*x.qty})),
       totalCents:lines.length?raffleCartTotal(lines):0,
       error,notice:RAFFLE_REFUND_NOTICE};
   }
@@ -147,7 +147,7 @@ export function registerTargetRaffleItemPayments({
           customer_email:account.email,
           line_items:lines.map(line=>({
             price_data:{currency:"usd",unit_amount:line.priceCents,
-              product_data:{name:line.name.slice(0,160)}},
+              product_data:{name:line.name.slice(0,160),description:"Target SKU: "+(line.sku||"unlisted")}},
             quantity:line.qty
           })),
           expires_at:Math.floor((now+30*60000)/1000),
@@ -179,10 +179,10 @@ export function registerTargetRaffleItemPayments({
       session.metadata?.purchase_type!=="target_raffle_items")return false;
     if(session.payment_status!=="paid")return true;
     const id=String(session.metadata?.raffle_order_id||"");
-    return locked(async()=>{
+    const paidOrder=await locked(async()=>{
       const all=await orders(),order=all.find(x=>x.id===id);
       if(!order)throw Error("Paid raffle checkout order not found.");
-      if(isPaid(order))return true;
+      if(isPaid(order))return {...order};
       if(order.status!=="pending"&&order.status!=="checkout_failed")
         throw Error("Raffle checkout was not in a payable state.");
       if(order.stripeSessionId!==String(session.id) ||
@@ -191,22 +191,35 @@ export function registerTargetRaffleItemPayments({
         Number(session.amount_total)!==Number(order.totalCents) ||
         session.currency!=="usd"||session.mode!=="payment"||!session.payment_intent)
         throw Error("Raffle paid checkout failed integrity verification.");
-      // Fulfillment and queue entries are idempotent per order ID so a retried webhook is safe.
       const paidAt=new Date(Number(event.created||Math.floor(Date.now()/1000))*1000).toISOString();
       const updated={...order,status:"paid",paidAt,updatedAt:new Date().toISOString(),
-        paymentIntentId:String(session.payment_intent),checkoutUrl:null};
+        paymentIntentId:typeof session.payment_intent==="string"?
+          session.payment_intent:session.payment_intent.id,checkoutUrl:null};
       await commitPaidOrder(updated);
       Object.assign(order,updated);
       await write(ordersPath,all);
-      // Clear only identical quantities, retaining selections altered since checkout.
       const allCarts=await carts(),cart=allCarts[order.accountId];
       if(cart){
         for(const line of order.lines)
           if(Number(cart.selected?.[line.itemId])===line.qty)delete cart.selected[line.itemId];
         await write(cartsPath,allCarts);
       }
-      return true;
+      return {...order};
     });
+    // A draw may be canceled while a member is still on Stripe Checkout.
+    // Accept the verified payment, then refund its affected SKU(s) even if
+    // this webhook arrives after the owner canceled the draw.
+    const byId=new Map((await getItems()).map(item=>[item.id,item]));
+    for(const line of paidOrder.lines){
+      if(!byId.get(line.itemId)?.drawCanceledAt)continue;
+      const remaining=line.priceCents*line.qty-Number(line.refundedCents||0);
+      if(remaining<=0)continue;
+      await refund({orderId:paidOrder.id,
+        requestId:"auto-cancel-"+line.itemId+"-"+paidOrder.id,
+        itemId:line.itemId,amountCents:remaining,reason:"target_draw_canceled",
+        adminId:"automatic_draw_cancellation"});
+    }
+    return true;
   }
   async function refund({orderId,requestId,itemId,amountCents,reason,adminId}){
     if(!isRequestId(requestId)||!Number.isSafeInteger(amountCents)||amountCents<1)
@@ -329,8 +342,7 @@ export function registerTargetRaffleItemPayments({
   });
   app.get("/api/account/raffle-club/orders",requireCustomer,async(req,res)=>{
     try{
-      if(!await eligible(req.customerAccount.id))
-        return res.status(403).json({error:"Active Club membership required."});
+      // Past buyers must retain access to payment/refund records after membership ends.
       const rows=await orders();
       res.setHeader("Cache-Control","no-store");
       res.json({orders:rows.filter(x=>x.accountId===String(req.customerAccount.id))
