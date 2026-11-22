@@ -46,7 +46,7 @@ async function refreshCart(){
     const list=node("div",undefined,"cart-lines");
     for(const line of cartLines){
       const row=node("div",undefined,"cart-line");
-      row.append(node("strong",line.name));
+      row.append(node("strong",(line.sku?line.sku+" · ":"")+line.name));
       row.append(node("span",cash(line.priceCents)+" × "+line.qty+" = "+cash(line.subtotalCents)));
       list.append(row);
     }
@@ -95,7 +95,7 @@ async function renderOrders(){
     card.append(node("p",status.toUpperCase()+" · "+(time?new Date(time).toLocaleString():"")+" · Refunded "+cash(order.refundedCents),"meta"));
     const rows=node("ul");
     for(const line of order.lines||[]){
-      const li=node("li",line.name+" · "+line.qty+" × "+cash(line.priceCents)+
+      const li=node("li",(line.sku?line.sku+" · ":"")+line.name+" · "+line.qty+" × "+cash(line.priceCents)+
         (line.refundedCents?" · Refunded "+cash(line.refundedCents):""));
       rows.append(li);
     }
