@@ -41,7 +41,7 @@ function summary(order) {
 }
 export function registerTargetRaffleItemPayments({
   app,stripe,requireCustomer,requireAdmin,dataDir,baseUrl,
-  getItems,commitPaidOrder,applyOrderRefund,getSubscription,getAccounts
+  getItems,commitPaidOrder,applyOrderRefund,closeItem,getSubscription,getAccounts
 }){
   const cartsPath=path.join(dataDir,"target-raffle-carts.json");
   const ordersPath=path.join(dataDir,"target-raffle-orders.json");
@@ -217,8 +217,9 @@ export function registerTargetRaffleItemPayments({
         throw Error("Only verified paid raffle orders can be refunded.");
       const past=(order.refunds||[]).find(x=>x.requestId===requestId);
       if(past){
-        if(past.amountCents!==amountCents||past.itemId!==itemId)
+        if(past.amountCents!==amountCents||past.itemId!==String(itemId||"all"))
           throw Error("The refund request ID was already used for a different amount.");
+        await applyOrderRefund(order);
         return {order:summary(order),refundId:past.refundId,idempotent:true};
       }
       const remaining=order.totalCents-Number(order.refundedCents||0);
@@ -263,6 +264,49 @@ export function registerTargetRaffleItemPayments({
       return {order:summary(order),refundId:stripeRefund.id,status:stripeRefund.status};
     });
   }
+  async function cancelAndRefundItem(itemId){
+    if(!isId(itemId))throw Error("Invalid raffle product.");
+    const item=(await getItems()).find(row=>row.id===itemId);
+    if(!item)throw Error("This raffle product no longer exists.");
+    await closeItem(itemId);
+    const paid=(await orders()).filter(order=>isPaid(order)&&order.paymentIntentId&&
+      order.lines.some(line=>line.itemId===itemId&&line.priceCents*line.qty>Number(line.refundedCents||0)));
+    const completed=[],failures=[];
+    for(const order of paid){
+      const line=order.lines.find(line=>line.itemId===itemId);
+      const amount=line.qty*line.priceCents-Number(line.refundedCents||0);
+      try{
+        const result=await refund({orderId:order.id,
+          requestId:"cancel-"+itemId+"-"+order.id,
+          itemId,amountCents:amount,reason:"target_draw_canceled",adminId:"owner_cancel_draw"});
+        completed.push({orderId:order.id,refundId:result.refundId,amountCents:amount,status:result.status});
+      }catch(error){
+        failures.push({orderId:order.id,reason:String(error.message||"Refund failed").slice(0,150)});
+      }
+    }
+    return {closed:true,refunded:completed,failures};
+  }
+  app.post("/api/account/raffle-club/items/claim",requireCustomer,async(req,res)=>{
+    try{
+      const sessionId=String(req.body?.sessionId||"");
+      if(!/^cs_(?:test_)?[A-Za-z0-9_]{12,150}$/.test(sessionId))
+        return res.status(400).json({error:"Invalid payment session."});
+      const session=await stripe.checkout.sessions.retrieve(sessionId);
+      if(session.mode!=="payment"||session.metadata?.purchase_type!=="target_raffle_items"||
+        String(session.metadata?.customer_account_id)!==String(req.customerAccount.id))
+        return res.status(403).json({error:"This payment does not belong to your account."});
+      if(session.payment_status==="paid")
+        await onStripeEvent({type:"checkout.session.completed",created:Math.floor(Date.now()/1000),
+          data:{object:session}});
+      const order=(await orders()).find(x=>x.stripeSessionId===session.id);
+      if(!order || String(order.accountId)!==String(req.customerAccount.id))
+        return res.status(404).json({error:"Payment record was not found."});
+      res.json({order:summary(order),confirmed:order.status==="paid"});
+    }catch(error){
+      console.error("Raffle paid item claim:",error.message);
+      res.status(503).json({error:"Your payment is being verified. Refresh your orders shortly."});
+    }
+  });
   app.get("/api/account/raffle-club/cart",requireCustomer,async(req,res)=>{
     try{
       if(!await eligible(req.customerAccount.id))
@@ -317,6 +361,17 @@ export function registerTargetRaffleItemPayments({
     }catch(error){
       console.error("Raffle refund:",error.message);
       res.status(409).json({error:error.message||"Refund unsuccessful."});
+    }
+  });
+  app.post("/api/admin/raffle-club/items/:id/cancel-and-refund",requireAdmin,async(req,res)=>{
+    try{
+      if(req.body?.confirmCancellation!==true)
+        return res.status(400).json({error:"Confirm that this draw was cancelled and buyers must be refunded."});
+      const result=await cancelAndRefundItem(String(req.params.id||""));
+      res.status(result.failures.length?207:200).json(result);
+    }catch(error){
+      console.error("Raffle draw cancellation refunds:",error.message);
+      res.status(503).json({error:error.message||"Could not process draw refunds."});
     }
   });
   return {setDraft,getCart,orders,onStripeEvent};
