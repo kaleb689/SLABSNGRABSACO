@@ -47,6 +47,7 @@ async function refreshCart(){
     for(const line of cartLines){
       const row=node("div",undefined,"cart-line");
       row.append(node("strong",(line.sku?line.sku+" · ":"")+line.name));
+      row.append(node("small","Option to buy 1 or 2 qty per raffle"));
       row.append(node("span",cash(line.priceCents)+" × "+line.qty+" = "+cash(line.subtotalCents)));
       list.append(row);
     }
@@ -66,6 +67,7 @@ async function renderQueue(){
   for(const item of items){
     const card=node("article",undefined,"queue-item");
     card.append(node("h3",item.name));
+    card.append(node("p",item.description||"Option to buy 1 or 2 qty per raffle","meta"));
     card.append(node("p",cash(item.priceCents)+" each · "+(item.active?"Open":"Closed")+
       " · "+(item.queue||[]).length+" paid orders","meta"));
     const entries=Array.isArray(item.queue)?item.queue:[];
