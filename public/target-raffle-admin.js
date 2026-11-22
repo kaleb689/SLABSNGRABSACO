@@ -44,7 +44,7 @@ function refundControls(order){
     "Refunded "+cash(order.refundedCents)+" · Remaining "+cash(refundable),"raffle-payment-meta"));
   if(order.lines?.length){
     card.append(table(["SKU / Item","Quantity","Paid","Already refunded","Remaining"],order.lines.map(line=>[
-      line.name,line.qty,cash(line.totalCents),cash(line.refundedCents),
+      (line.sku?line.sku+" · ":"")+line.name,line.qty,cash(line.totalCents),cash(line.refundedCents),
       cash(Math.max(0,line.totalCents-line.refundedCents))
     ])));
   }
@@ -122,7 +122,7 @@ async function refresh(){
     if(!data.items.length)items.append(node("p","No raffle items have been posted yet."));
     for(const item of data.items){
       const card=node("article",undefined,"queue-item");
-      card.append(node("h3",item.name+" · "+cash(item.priceCents)+" each"));
+      card.append(node("h3",(item.sku||"SKU missing")+" · "+item.name+" · "+cash(item.priceCents)+" each"));
       card.append(node("p",(item.active?"OPEN":"CLOSED")+" · "+item.entries.length+
         " paid requests · "+item.entries.reduce((n,x)=>n+x.qty,0)+" paid units"+
         (item.stock===null?" · stock unspecified":" · "+item.stock+" stock"),"meta"));
@@ -174,6 +174,7 @@ $("raffle-admin-create").addEventListener("submit",async e=>{
   btn.disabled=true;msg.textContent="Posting SKU to Discord…";
   try{
     await post("/api/admin/raffle-club/items",{
+      sku:String(fields.get("sku")||"").trim(),
       name:String(fields.get("name")||"").trim(),
       priceCents:Math.round(Number(value)*100),
       stock:fields.get("stock")===""?null:Number(fields.get("stock")),
