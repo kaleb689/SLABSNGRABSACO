@@ -259,7 +259,7 @@ export function registerTargetRaffleItemPayments({
         payment_intent:order.paymentIntentId,amount:amountCents,
         metadata:{raffle_order_id:order.id,refund_reason:cleanReason,
           raffle_item_id:chosen,admin_id:String(adminId||"website").slice(0,100)}
-      },{idempotencyKey:"target-raffle-refund-"+order.id+"-"+requestId});
+      },{idempotencyKey:"target-raffle-refund-"+order.id+"-"+chosen+"-"+amountCents+"-"+Number(order.refundedCents||0)});
       if(!stripeRefund?.id||stripeRefund.status==="failed")
         throw Error("Stripe did not accept the refund.");
       let toAllocate=amountCents;
