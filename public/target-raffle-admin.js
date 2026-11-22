@@ -2,7 +2,8 @@
 "use strict";
 const $=id=>document.getElementById(id);
 const msg=$("raffle-admin-message"),items=$("raffle-admin-items"),
-  subs=$("raffle-admin-subscribers"),payments=$("raffle-admin-orders");
+  subs=$("raffle-admin-subscribers"),payments=$("raffle-admin-orders"),
+  notifications=$("raffle-admin-notifications");
 const cash=n=>"$"+(Number(n||0)/100).toFixed(2);
 function node(tag,text,className){
   const el=document.createElement(tag);
@@ -115,10 +116,22 @@ function refundControls(order){
 async function refresh(){
   msg.textContent="Loading Target Raffle Club…";
   try{
-    const [data,ledger]=await Promise.all([
-      api("/api/admin/raffle-club/items"),api("/api/admin/raffle-club/orders")
+    const [data,ledger,alertData]=await Promise.all([
+      api("/api/admin/raffle-club/items"),api("/api/admin/raffle-club/orders"),
+      api("/api/admin/raffle-club/notifications")
     ]);
-    clear(items);clear(subs);clear(payments);
+    clear(items);clear(subs);clear(payments);clear(notifications);
+    const alerts=Array.isArray(alertData.notifications)?alertData.notifications:[];
+    if(!alerts.length)notifications.append(node("p","No Target Raffle Club memberships or paid entry alerts yet."));
+    else for(const alert of alerts){
+      const card=node("article",undefined,"queue-item");
+      card.append(node("h3",alert.kind==="membership"?"New club member":"Paid raffle entry"));
+      card.append(node("p",alert.title+" — "+alert.body));
+      card.append(node("p",new Date(alert.createdAt).toLocaleString()+" · "+
+        (alert.pushSent?"Push recorded":"Push pending")+" · "+
+        (alert.discordSent?"Discord alert recorded":"Discord alert pending"),"meta"));
+      notifications.append(card);
+    }
     if(!data.items.length)items.append(node("p","No raffle items have been posted yet."));
     for(const item of data.items){
       const card=node("article",undefined,"queue-item");
@@ -126,6 +139,7 @@ async function refresh(){
       card.append(node("p",(item.active?"OPEN":"CLOSED")+" · "+item.entries.length+
         " paid requests · "+item.entries.reduce((n,x)=>n+x.qty,0)+" paid units"+
         (item.stock===null?" · stock unspecified":" · "+item.stock+" stock"),"meta"));
+      card.append(node("p",item.description||"Option to buy 1 or 2 qty per raffle","meta"));
       if(item.active){
         card.append(button("Close New Purchases",async()=>{
           if(!confirm("Close "+item.name+" for new payments? This will not refund existing purchases."))return;
@@ -186,5 +200,6 @@ $("raffle-admin-create").addEventListener("submit",async e=>{
 });
 $("raffle-admin-refresh").addEventListener("click",refresh);
 $("raffle-admin-orders-refresh").addEventListener("click",refresh);
+$("raffle-admin-notifications-refresh").addEventListener("click",refresh);
 void refresh();
 })();
