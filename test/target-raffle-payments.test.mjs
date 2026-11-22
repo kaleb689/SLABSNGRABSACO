@@ -146,3 +146,24 @@ test("late successful payment after draw canceled is automatically refunded",asy
   const history=await f.request("GET","/api/admin/raffle-club/orders");
   assert.equal(history.result.orders[0].status,"refunded");
 });
+
+test("listed $50 unit price produces $50 for one and $100 for two, without enforcing the informational note",async t=>{
+  const f=await fixture(t);
+  f.catalog[0].priceCents=5000;
+  await f.payments.setDraft({accountId:ACCOUNT,userId:USER,itemId:ITEM,qty:1});
+  assert.equal((await f.payments.getCart(ACCOUNT)).totalCents,5000);
+  await f.payments.setDraft({accountId:ACCOUNT,userId:USER,itemId:ITEM,qty:2});
+  assert.equal((await f.payments.getCart(ACCOUNT)).totalCents,10000);
+  const response=await f.request("POST","/api/account/raffle-club/items/checkout",
+    {body:{acknowledgeRefundPolicy:true}});
+  assert.equal(response.status,200);
+  assert.equal(response.result.totalCents,10000);
+  assert.equal(f.created[0].line_items.length,1);
+  assert.equal(f.created[0].line_items[0].price_data.unit_amount,5000);
+  assert.equal(f.created[0].line_items[0].quantity,2);
+  assert.match(f.created[0].line_items[0].price_data.product_data.description,
+    /Option to buy 1 or 2 qty per raffle/);
+  // The note is descriptive; admin's separate maxQty (4 here) remains authoritative.
+  await f.payments.setDraft({accountId:ACCOUNT,userId:USER,itemId:ITEM,qty:3});
+  assert.equal((await f.payments.getCart(ACCOUNT)).totalCents,15000);
+});
