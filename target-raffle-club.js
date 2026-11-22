@@ -69,7 +69,11 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     return matches.length===1&&await active(matches[0].id)?matches[0]:null;
   }
   async function updateSubscription(sub,session){
-    const meta=sub.metadata?.purchase_type==="target_raffle_club"?sub.metadata:session?.metadata;
+    const historical=(await subscribers()).find(row=>row.subscriptionId===sub.id);
+    const meta=sub.metadata?.purchase_type==="target_raffle_club"
+      ? sub.metadata : session?.metadata?.purchase_type==="target_raffle_club"
+      ? session.metadata : historical
+      ? {purchase_type:"target_raffle_club",customer_account_id:historical.accountId} : null;
     if(meta?.purchase_type!=="target_raffle_club")return false;
     const accountId=String(meta.customer_account_id||session?.client_reference_id||"");
     const plan=Object.keys(prices).find(p=>prices[p]&&sub.items?.data?.some(x=>priceOf(x)===prices[p]));
@@ -104,23 +108,42 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   async function syncRoles(){
     if(!discord)return false;
     const accounts=new Map((await getAccounts()).map(a=>[String(a.id),a]));
-    for(const row of await subscribers()){
-      const a=accounts.get(String(row.accountId));
-      const desired=ACTIVE.has(row.status)&&a&&!a.disabled&&snowflake(a.discordUserId)?String(a.discordUserId):"";
-      const previous=snowflake(row.discordUserId)?String(row.discordUserId):"";
-      if(previous&&previous!==desired){
-        await discord.api("/guilds/"+discord.guildId+"/members/"+previous+"/roles/"+discord.roleId,"DELETE")
-          .catch(e=>{if(!/HTTP 404/.test(e.message))console.error("Raffle role revoke:",e.message);});
-      }
-      if(desired){
-        await discord.api("/guilds/"+discord.guildId+"/members/"+desired+"/roles/"+discord.roleId,"PUT")
-          .catch(e=>console.error("Raffle role add:",e.message));
-      }
-      if(previous!==desired)await serial(async()=>{
-        const rows=await subscribers(),current=rows.find(x=>x.subscriptionId===row.subscriptionId);
-        if(current){current.discordUserId=desired;await save(subscribersPath,rows);}
-      });
+    const rows=await subscribers();
+    const desired=new Set();
+    const previously=new Set();
+    for(const row of rows){
+      const account=accounts.get(String(row.accountId));
+      if(snowflake(row.discordUserId))previously.add(String(row.discordUserId));
+      if(ACTIVE.has(row.status)&&account&&!account.disabled&&snowflake(account.discordUserId))
+        desired.add(String(account.discordUserId));
     }
+    for(const discordUserId of previously){
+      if(desired.has(discordUserId))continue;
+      await discord.api("/guilds/"+discord.guildId+"/members/"+discordUserId+"/roles/"+discord.roleId,"DELETE")
+        .catch(e=>{if(!/HTTP 404/.test(e.message))console.error("Raffle role revoke:",e.message);});
+    }
+    for(const discordUserId of desired){
+      await discord.api("/guilds/"+discord.guildId+"/members/"+discordUserId+"/roles/"+discord.roleId,"PUT")
+        .catch(e=>console.error("Raffle role add:",e.message));
+    }
+    const next=rows.map(row=>{
+      const account=accounts.get(String(row.accountId));
+      const discordUserId=ACTIVE.has(row.status)&&account&&!account.disabled&&snowflake(account.discordUserId)
+        ?String(account.discordUserId):"";
+      return {...row,discordUserId};
+    });
+    if(next.some((row,i)=>row.discordUserId!==String(rows[i].discordUserId||"")))
+      await serial(async()=>{
+        const latest=await subscribers();
+        const newMap=new Map(next.map(row=>[row.subscriptionId,row.discordUserId]));
+        let changed=false;
+        for(const row of latest){
+          if(!newMap.has(row.subscriptionId))continue;
+          if(String(row.discordUserId||"")===newMap.get(row.subscriptionId))continue;
+          row.discordUserId=newMap.get(row.subscriptionId);changed=true;
+        }
+        if(changed)await save(subscribersPath,latest);
+      });
     return true;
   }
   const queueFor=item=>orderRaffleQueue(item.entries||[]);
