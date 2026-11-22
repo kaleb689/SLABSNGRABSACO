@@ -357,7 +357,9 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
           if(x){x.messageId=p.id;await save(itemsPath,rows);}});
       }catch(e){console.error("Raffle item restoration:",e.message);}
     }
-    await syncRoles();
+    // Do not delay Discord Gateway startup while reconciling subscriber roles.
+    setTimeout(() => void syncRoles().catch(e =>
+      console.error("Raffle role initial reconciliation:",e.message)), 1000).unref?.();
     return {channelId:channel.id,roleId:role.id};
   }
   app.get("/api/public/raffle-club/offer",async(_req,res)=>{
