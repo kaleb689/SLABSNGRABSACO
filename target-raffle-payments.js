@@ -141,10 +141,12 @@ export function registerTargetRaffleItemPayments({
         if(left!==null && line.qty>left)
           throw Error("Insufficient available units for "+line.name+". Only "+left+" remain.");
       }
+      // Allow for request latency above Stripe’s 30-minute minimum.
+      const expiresAt = Math.floor(now / 1000) + 35 * 60;
       const orderId=crypto.randomUUID();
       const order={id:orderId,accountId:String(account.id),
         discordUserId:String(cart.userId||account.discordUserId||""),
-        status:"pending",createdAt:nowIso,expiresAt:new Date(now+30*60000).toISOString(),
+        status:"pending",createdAt:nowIso,expiresAt:new Date(expiresAt * 1000).toISOString(),
         totalCents,refundedCents:0,lines,refunds:[],stripeSessionId:null,paymentIntentId:null};
       allOrders.push(order);
       await write(ordersPath,allOrders);
@@ -158,7 +160,7 @@ export function registerTargetRaffleItemPayments({
               product_data:{name:line.name.slice(0,160),description:"Target SKU: "+(line.sku||"unlisted")+" | Option to buy 1 or 2 qty per raffle"}},
             quantity:line.qty
           })),
-          expires_at:Math.floor((now+30*60000)/1000),
+          expires_at:expiresAt,
           success_url:baseUrl+"/target-raffle-club.html?items=success&session_id={CHECKOUT_SESSION_ID}",
           cancel_url:baseUrl+"/target-raffle-club.html?items=cancelled",
           metadata:{purchase_type:"target_raffle_items",raffle_order_id:orderId,
@@ -171,7 +173,7 @@ export function registerTargetRaffleItemPayments({
           throw Error("Checkout did not return a secure payment URL.");
         order.stripeSessionId=session.id;
         order.checkoutUrl=session.url;
-        order.expiresAt=new Date(Number(session.expires_at||Math.floor((now+30*60000)/1000))*1000).toISOString();
+        order.expiresAt=new Date(Number(session.expires_at || expiresAt)*1000).toISOString();
         await write(ordersPath,allOrders);
         return {url:session.url,orderId,totalCents,lines:lines.map(x=>({name:x.name,qty:x.qty,priceCents:x.priceCents}))};
       }catch(error){
