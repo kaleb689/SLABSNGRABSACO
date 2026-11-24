@@ -1,9 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { registerTargetRaffleItemPayments, RAFFLE_REFUND_NOTICE } from "./target-raffle-payments.js";
+import { createRaffleOwnerNotifier } from "./target-raffle-notifications.js";
 
 const ACTIVE = new Set(["active", "trialing"]);
 const ROLE = "Target Raffle Club";
+const ITEM_NOTE = "Option to buy 1 or 2 qty per raffle";
 const money = n => "$" + (Number(n) / 100).toFixed(2);
 const plain = s => String(s || "").replace(/[\r\n<>*@|]/g, " ").trim();
 const snowflake = id => /^\d{17,22}$/.test(String(id || ""));
@@ -40,6 +43,7 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   const prices={member:String(memberPriceId||""),standalone:String(standalonePriceId||"")};
   const cents={member:500,standalone:2000};
   let discord=null,chain=Promise.resolve(),refreshChain=Promise.resolve();
+  const notifier=createRaffleOwnerNotifier({dataDir,getDiscord:()=>discord});
   function serial(task){const p=chain.then(task,task);chain=p.catch(()=>{});return p;}
   async function read(file,empty){try{return JSON.parse(await fs.readFile(file,"utf8"));}
     catch(e){if(e.code==="ENOENT")return empty;throw e;}}
@@ -78,9 +82,11 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     const accountId=String(meta.customer_account_id||session?.client_reference_id||"");
     const plan=Object.keys(prices).find(p=>prices[p]&&sub.items?.data?.some(x=>priceOf(x)===prices[p]));
     if(!accountId||!String(sub.id||"").startsWith("sub_")||!plan)throw Error("Unrecognized raffle subscription.");
+    let joinedNow=false;
     await serial(async()=>{
       const rows=await subscribers();
       let r=rows.find(x=>x.subscriptionId===sub.id);
+      const wasActive=!!r&&ACTIVE.has(r.status);
       if(r&&r.accountId!==accountId)throw Error("Raffle subscription ownership mismatch.");
       if(!r){r={subscriptionId:sub.id,accountId,createdAt:new Date().toISOString()};rows.push(r);}
       Object.assign(r,{plan,status:String(sub.status||"incomplete"),
@@ -88,8 +94,17 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         cancelAtPeriodEnd:sub.cancel_at_period_end===true,
         periodEnd:sub.items?.data?.[0]?.current_period_end||sub.current_period_end||null,
         updatedAt:new Date().toISOString()});
+      joinedNow=ACTIVE.has(r.status)&&!wasActive;
       await save(subscribersPath,rows);
     });
+    if(joinedNow){
+      const account=(await getAccounts()).find(a=>String(a.id)===accountId);
+      const who=plain(account?.email||account?.name||"Account "+accountId);
+      void notifier.announce({kind:"membership",eventId:sub.id,
+        title:"New Target Raffle Club membership",
+        body:who+" joined Target Raffle Club ("+money(cents[plan])+"/month)."}).catch(e=>
+        console.error("Raffle membership owner alert:",e.message));
+    }
     void syncRoles().catch(e=>console.error("Raffle role sync:",e.message));
     return true;
   }
@@ -153,17 +168,18 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
       " ("+money(x.qty*item.priceCents)+")");
     return {allowed_mentions:{parse:[]},embeds:[{
       title:"🎯 "+item.name,color:item.active?0x28cbd0:0x88929c,
-      description:"**Price:** "+money(item.priceCents)+" each\n"+
+      description:"**SKU:** "+(item.sku||"Not assigned")+"\n"+"**Price:** "+money(item.priceCents)+" each\n"+
+        "**Description:** "+ITEM_NOTE+"\n"+
         "**Available stock:** "+(item.stock===null?"Owner to confirm":item.stock)+"\n"+
-        "**Queue:** "+q.length+" people / "+q.reduce((n,x)=>n+x.qty,0)+" requested units\n"+
-        "**Status:** "+(item.active?"OPEN — first come, first served":"CLOSED")+"\n\n"+
+        "**Paid queue:** "+q.length+" confirmed orders / "+q.reduce((n,x)=>n+x.qty,0)+" paid units\n"+
+        "**Status:** "+(item.active?"OPEN — first paid, first served":"CLOSED")+"\n\n"+
         (lines.join("\n")||"No requests yet.")+
         (q.length>35?"\n+"+(q.length-35)+" more (use View Queue)":"")+
-        "\n\nRequesting does not place or charge an order. The owner confirms availability and payment.",
+        "\n\n**Paid queue only:** select quantities, then pay on the website. Your position is assigned after successful payment.\n"+RAFFLE_REFUND_NOTICE,
       footer:{text:"Changing quantity preserves position; leaving and rejoining starts at the back."}
     }],components:[{type:1,components:[
-      {type:2,style:1,label:"Choose Quantity",custom_id:"raffle:qty:"+item.id,disabled:!item.active},
-      {type:2,style:2,label:"View Queue",custom_id:"raffle:view:"+item.id+":0"},
+      {type:2,style:1,label:"Select SKU / Qty",custom_id:"raffle:qty:"+item.id,disabled:!item.active},
+      {type:2,style:2,label:"View Paid Queue",custom_id:"raffle:view:"+item.id+":0"},
       {type:2,style:4,label:"Close (Owner)",custom_id:"raffle:close:"+item.id,disabled:!item.active}
     ]}]};
   }
@@ -176,16 +192,18 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     refreshChain=job.catch(e=>console.error("Raffle post refresh:",e.message));
     return job;
   }
-  async function postItem({name,priceCents,stock=null,maxQty=20,createdBy}){
+  async function postItem({sku,name,priceCents,stock=null,maxQty=20,createdBy}){
     const title=plain(name).slice(0,160);
+    const code=String(sku||"").trim().toUpperCase();
     const price=Number(priceCents),max=Number(maxQty);
     const count=stock===""||stock===undefined||stock===null?null:Number(stock);
-    if(title.length<3||!Number.isInteger(price)||price<1||price>99999999||
+    if(title.length<3||!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(code)||
+      !Number.isInteger(price)||price<1||price>99999999||
       !Number.isInteger(max)||max<1||max>100||
       (count!==null&&(!Number.isInteger(count)||count<1||count>100000)))
       throw Error("Invalid item name, price, stock, or maximum quantity.");
     if(!discord?.channelId)throw Error("The private raffle channel is not ready.");
-    const item={id:crypto.randomBytes(9).toString("hex"),name:title,priceCents:price,
+    const item={id:crypto.randomBytes(9).toString("hex"),sku:code,name:title,description:ITEM_NOTE,priceCents:price,
       stock:count,maxQty:max,active:true,entries:[],createdBy,
       createdAt:new Date().toISOString(),messageId:null};
     await serial(async()=>{const list=await items();list.push(item);await save(itemsPath,list);});
@@ -211,6 +229,17 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
       await save(itemsPath,list);
     });
     void refreshItem(id).catch(()=>{});
+  }
+  async function cancelDraw(id){
+    await serial(async()=>{
+      const all=await items(),item=all.find(row=>row.id===id);
+      if(!item)throw Error("Target raffle item not found.");
+      item.active=false;
+      item.drawCanceledAt=item.drawCanceledAt||new Date().toISOString();
+      item.closedAt=item.closedAt||item.drawCanceledAt;
+      await save(itemsPath,all);
+    });
+    await refreshItem(id);
   }
   function queuePage(item,page){
     const q=queueFor(item),pages=Math.max(1,Math.ceil(q.length/20));
@@ -241,6 +270,7 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         if(!owner){await reply("Only the owner can post raffle items.");return true;}
         await discord.api(endpoint,"POST",{type:9,data:{custom_id:"raffle:create:submit",
           title:"Post Target Raffle Item",components:[
+            {type:1,components:[{type:4,style:1,custom_id:"sku",label:"Target SKU / TCIN",required:true,min_length:3,max_length:79}]},
             {type:1,components:[{type:4,style:1,custom_id:"name",label:"Product",required:true,min_length:3,max_length:160}]},
             {type:1,components:[{type:4,style:1,custom_id:"price",label:"Price each (USD e.g. 49.99)",required:true,max_length:12}]},
             {type:1,components:[{type:4,style:1,custom_id:"stock",label:"Available stock (optional)",required:false,max_length:6}]},
@@ -252,16 +282,18 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         const fields=(d.data.components||[]).flatMap(x=>x.components||[]);
         const field=k=>String(fields.find(x=>x.custom_id===k)?.value||"").trim();
         if(!/^\d{1,6}(\.\d{1,2})?$/.test(field("price"))){await reply("Enter a valid USD price.");return true;}
-        const item=await postItem({name:field("name"),priceCents:Math.round(Number(field("price"))*100),
+        const item=await postItem({sku:field("sku"),name:field("name"),priceCents:Math.round(Number(field("price"))*100),
           stock:field("stock"),maxQty:field("max")||20,createdBy:userId});
         await reply("Posted "+item.name+" at "+money(item.priceCents)+".");return true;
       }
       const choose=action.match(/^raffle:qty:([a-f0-9]{18})$/);
       if(choose&&d.type===3){
         if(!await linked(userId)){await reply("This requires a paid raffle subscription and linked Discord.");return true;}
+        const account=await linked(userId);
         const item=(await items()).find(x=>x.id===choose[1]);
         if(!item?.active){await reply("This item queue is closed.");return true;}
-        const current=queueFor(item).find(x=>x.userId===userId);
+        const cart = await itemPayments.getCart(account.id);
+        const current=cart.lines.find(line=>line.itemId===item.id);
         await discord.api(endpoint,"POST",{type:9,data:{custom_id:"raffle:submit:"+item.id,
           title:"Choose Raffle Quantity",components:[{type:1,components:[
             {type:4,style:1,custom_id:"qty",label:"0 to leave; max "+item.maxQty,
@@ -276,13 +308,14 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
           .find(x=>x.custom_id==="qty")?.value||"").trim();
         if(!/^(0|[1-9]\d{0,2})$/.test(qtyString)){await reply("Enter a whole-number quantity or 0.");return true;}
         const qty=Number(qtyString);
-        const result=await setQty(submit[1],{userId,accountId:String(account.id),
-          name:d.member?.user?.global_name||d.member?.user?.username||"Member",
-          qty,joinId:String(d.id)});
-        await reply(qty===0?"Removed. Rejoining starts at the end of the queue.":
-          "Saved "+qty+" × "+result.item.name+" ("+money(qty*result.item.priceCents)+
-          "). Queue position #"+result.place+". This is not a completed purchase.");
-        void refreshItem(submit[1]).catch(()=>{});return true;
+        const cart = await itemPayments.setDraft({accountId:String(account.id),userId,itemId:submit[1],qty});
+        const notice=qty===0?"Removed from your unpaid selection.":
+          "Added "+qty+" item(s) to your cart. Your unpaid selections are not queued or reserved.";
+        await discord.api(endpoint,"POST",{type:4,data:{
+          content:notice+"\n**Selected total: "+money(cart.totalCents)+".** Complete payment on the website to enter the first-come-first-served queue.\n"+RAFFLE_REFUND_NOTICE,
+          flags:64,allowed_mentions:{parse:[]},components:[{type:1,components:[
+            {type:2,style:5,label:"Pay Selected SKUs on Website",url:baseUrl+"/target-raffle-club.html#club-checkout"}
+          ]}]}});return true;
       }
       const view=action.match(/^raffle:view:([a-f0-9]{18}):(\d{1,4})$/);
       if(view&&d.type===3){
@@ -331,13 +364,14 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     const intro={
       allowed_mentions:{parse:[]},
       content:"🎯 **TARGET RAFFLE CLUB**\n**$5/month** for existing paid ACO members; **$20/month** for standalone subscribers.\n\n"+
-        "The owner posts priced items below. On each, press **Choose Quantity** to request 1 or more units, "+
-        "or choose **0** to leave. Join one, several, or no item queues. "+
-        "Everyone in this channel can view the first-come-first-served line.\n"+
-        "Queue requests are not purchases or guarantees. Stock and payment are confirmed separately.",
+        "The owner posts individual SKU prices below. Select each desired SKU and quantity, or choose **0** to remove an unpaid selection. "+
+        "Select multiple products, then use **Pay Selected SKUs** to pay their combined total securely on the website. "+
+        "The visible first-come-first-served queue contains **paid selections only**; a position is assigned when payment succeeds.\n"+
+        RAFFLE_REFUND_NOTICE,
       components:[{type:1,components:[
         {type:2,style:1,label:"Post Item (Owner)",custom_id:"raffle:create"},
-        {type:2,style:2,label:"Confirm Club Role",custom_id:"raffle:role"}
+        {type:2,style:2,label:"Confirm Club Role",custom_id:"raffle:role"},
+        {type:2,style:5,label:"Pay Selected SKUs",url:baseUrl+"/target-raffle-club.html#club-checkout"}
       ]}]
     };
     const panel=await read(panelPath,{});
@@ -428,13 +462,17 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
         return res.status(403).json({error:"Paid raffle access required."});
       res.setHeader("Cache-Control","no-store");
       res.json({items:(await items()).map(item=>({
-        id:item.id,name:item.name,priceCents:item.priceCents,active:item.active,
+        id:item.id,name:item.name,description:item.description||ITEM_NOTE,priceCents:item.priceCents,active:item.active,
         queue:queueFor(item).map((x,i)=>({
           position:i+1,userId:x.userId,name:x.name,qty:x.qty,
           mine:x.accountId===String(req.customerAccount.id)
         }))
       }))});
     }catch(e){res.status(503).json({error:"Raffle queue unavailable."});}
+  });
+  app.get("/api/admin/raffle-club/notifications",requireAdmin,async(_req,res)=>{
+    try{res.setHeader("Cache-Control","no-store");res.json({notifications:await notifier.history()});}
+    catch(error){res.status(503).json({error:"Raffle Club alerts unavailable."});}
   });
   app.get("/api/admin/raffle-club/items",requireAdmin,async(_req,res)=>{
     try{
@@ -449,7 +487,7 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
   });
   app.post("/api/admin/raffle-club/items",requireAdmin,async(req,res)=>{
     try{
-      const item=await postItem({name:req.body?.name,priceCents:req.body?.priceCents,
+      const item=await postItem({sku:req.body?.sku,name:req.body?.name,priceCents:req.body?.priceCents,
         stock:req.body?.stock,maxQty:req.body?.maxQty||20,createdBy:"admin"});
       res.status(201).json({id:item.id});
     }catch(e){res.status(400).json({error:e.message});}
@@ -458,7 +496,77 @@ export function registerTargetRaffleClub({app, stripe, requireCustomer, requireA
     try{await close(String(req.params.id));res.json({ok:true});}
     catch(e){res.status(400).json({error:e.message});}
   });
+  const itemPayments=registerTargetRaffleItemPayments({
+    app,stripe,requireCustomer,requireAdmin,dataDir,baseUrl,
+    getItems:items,getSubscription:active,getAccounts,closeItem:cancelDraw,
+    commitPaidOrder:async order=>{
+      const accounts=await getAccounts();
+      const account=accounts.find(a=>String(a.id)===String(order.accountId));
+      const name=plain([account?.firstName,account?.lastName].filter(Boolean).join(" ") ||
+        account?.name || account?.discordUsername || "Member").slice(0,75);
+      const changed=await serial(async()=>{
+        const all=await items(),affected=[];
+        for(const line of order.lines){
+          const item=all.find(x=>x.id===line.itemId);
+          if(!item)throw Error("A paid raffle product is unavailable.");
+          const existing=(item.entries||[]).find(x=>x.orderId===order.id);
+          if(existing)continue;
+          item.queueSerial=Number(item.queueSerial||0)+1;
+          const at=Date.parse(order.paidAt)||Date.now();
+          const joinId=(BigInt(at)*10000n+BigInt(item.queueSerial%10000)).toString();
+          (item.entries||(item.entries=[])).push({
+            orderId:order.id,userId:String(order.discordUserId||account?.discordUserId||""),
+            accountId:String(order.accountId),name,qty:line.qty,
+            joinId,joinedAt:order.paidAt,paid:true
+          });
+          affected.push(item.id);
+        }
+        if(affected.length)await save(itemsPath,all);
+        return affected;
+      });
+      for(const id of changed)void refreshItem(id).catch(error=>
+        console.error("Raffle paid queue update:",error.message));
+      const latest=await items();
+      const detail=order.lines.map(line=>{
+        const item=latest.find(row=>row.id===line.itemId);
+        const rank=item?queueFor(item).findIndex(entry=>entry.orderId===order.id)+1:0;
+        return (line.sku||"SKU")+" "+line.name+" x"+line.qty+
+          " "+money(line.qty*line.priceCents)+(rank?" (queue #"+rank+")":"");
+      }).join("; ");
+      await notifier.announce({kind:"paid-item",eventId:order.id,
+        title:"New paid Target raffle entry",
+        body:plain(account?.email||name)+" paid "+money(order.totalCents)+". "+detail}).catch(error=>
+        console.error("Raffle paid entry owner alert:",error.message));
+    },
+    applyOrderRefund:async order=>{
+      const changed=await serial(async()=>{
+        const all=await items(),affected=[];
+        for(const line of order.lines){
+          const item=all.find(x=>x.id===line.itemId);
+          if(!item)continue;
+          const entry=(item.entries||[]).find(x=>x.orderId===order.id);
+          if(!entry)continue;
+          const balance=Math.max(0,line.qty-Number(line.refundedQty||0));
+          if(entry.qty===balance)continue;
+          entry.qty=balance;
+          if(!balance)item.entries=item.entries.filter(x=>x.orderId!==order.id);
+          affected.push(item.id);
+        }
+        if(affected.length)await save(itemsPath,all);
+        return affected;
+      });
+      for(const id of changed)void refreshItem(id).catch(error=>
+        console.error("Raffle refunded queue update:",error.message));
+    }
+  });
   const timer=setInterval(()=>void syncRoles().catch(e=>console.error("Raffle role sweep:",e.message)),600000);
   timer.unref?.();
-  return {onStripeEvent,provisionDiscord,handleInteraction,syncRoles};
+  return {
+    onStripeEvent:async event=>{
+      const subscriptionHandled=await onStripeEvent(event);
+      const itemHandled=await itemPayments.onStripeEvent(event);
+      return subscriptionHandled||itemHandled;
+    },
+    provisionDiscord,handleInteraction,syncRoles
+  };
 }

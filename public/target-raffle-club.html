@@ -15,7 +15,7 @@
 <section class="hero">
  <div class="eyebrow">EXCLUSIVE TARGET ACCESS</div>
  <h1>🎯 TARGET<br><em>RAFFLE CLUB</em></h1>
- <p class="intro">Get first-come-first-served priority on the Target raffle items that interest you. View the public-to-members queue, select the number of units you want, and stay in control of each request.</p>
+ <p class="intro">Join the private monthly club, select the Target SKUs and quantities you want, then pay their listed prices securely on the website. Your paid purchase enters the first-come-first-served queue.</p>
  <div class="action-row"><a class="outline" href="/#my-profile">Link your Discord in My Profile</a><a class="outline" href="/join-discord">Open Discord</a></div>
 </section>
 <section class="content">
@@ -35,12 +35,30 @@
  </section>
  <section class="how"><h2>How requests work</h2><div class="how-grid">
   <article><b>01</b><h3>Join the private channel</h3><p>Pay for the club, link Discord to your website account, and receive the Target Raffle Club Discord role.</p></article>
-  <article><b>02</b><h3>Choose any items</h3><p>The owner posts each item's price. Request one, several, or no products, and choose your quantity separately for each.</p></article>
-  <article><b>03</b><h3>Watch your queue position</h3><p>Requests are ordered by the time they are confirmed. Everyone in the club can view the line. Editing your quantity keeps your place; leaving and rejoining moves you to the end.</p></article>
- </div><p class="fine">Joining a queue is a request, not a completed purchase, reserved inventory, or guarantee of allocation. The owner confirms stock availability, fulfillment, and item payment separately. Club fees renew monthly until cancelled.</p></section>
- <section id="club-queue-panel" class="queue-panel" hidden>
-   <div class="queue-head"><div><div class="eyebrow">ACTIVE REQUESTS</div><h2>Club item queues</h2></div><button id="club-refresh" class="secondary" type="button">Refresh</button></div>
-   <p>These lists show the current request order. Quantity selections are made in the Discord channel.</p>
+  <article><b>02</b><h3>Select SKUs, then pay</h3><p>The owner posts the price of each SKU. Choose one or several products in Discord, then pay the combined item total on this website. The monthly club fee is separate.</p></article>
+  <article><b>03</b><h3>Enter the paid queue</h3><p>Your queue position is recorded after Stripe confirms your payment. Other club members can see the order of paid requests. Further paid purchases enter later in the queue.</p></article>
+ </div><p class="fine">If a Target draw order is canceled, payments for the canceled raffle items will be refunded. If only some items or quantities are canceled, a partial refund may be issued. A paid raffle selection does not guarantee retailer fulfillment. Your club subscription renews monthly until canceled and is a separate charge from merchandise.</p></section>
+ <section id="club-checkout" class="queue-panel" hidden>
+   <div class="eyebrow">YOUR SELECTED SKUS</div>
+   <h2>Pay for raffle items</h2>
+   <p>Choose SKUs and quantities in your private Discord channel. They appear in this cart until paid. Check all items before you proceed to Stripe Checkout.</p>
+   <div id="club-cart" class="queue-list" aria-live="polite"></div>
+   <p id="club-cart-total" class="club-cart-total">Selected total: $0.00</p>
+   <div class="refund-disclosure">
+    <strong>Cancellation and refund notice</strong>
+    <p>If a Target draw order is canceled, payments for the canceled raffle items will be refunded. If only part of an order is canceled, a partial refund may be issued. A paid selection does not guarantee retailer fulfillment.</p>
+    <label><input type="checkbox" id="club-refund-ack"> I understand the item prices, cancellation policy and possible partial refunds.</label>
+   </div>
+   <div class="action-row"><button id="club-pay" type="button" disabled>Pay selected SKUs</button><button id="club-cart-refresh" class="secondary" type="button">Refresh Cart</button></div>
+   <p id="club-payment-message" role="status" aria-live="polite"></p>
+  </section>
+  <section id="club-orders-panel" class="queue-panel" hidden>
+   <div class="queue-head"><div><div class="eyebrow">PAID ITEM PURCHASES</div><h2>My raffle payments & refunds</h2></div><button id="club-orders-refresh" class="secondary" type="button">Refresh</button></div>
+   <div id="club-orders" class="queue-list"></div>
+  </section>
+  <section id="club-queue-panel" class="queue-panel" hidden>
+   <div class="queue-head"><div><div class="eyebrow">PAYMENT CONFIRMED</div><h2>Club paid item queues</h2></div><button id="club-refresh" class="secondary" type="button">Refresh</button></div>
+   <p>These lists show confirmed paid order priority. Selecting an SKU without completing payment does not give a queue position.</p>
    <div id="club-queue" class="queue-list"></div>
  </section>
 </section>
