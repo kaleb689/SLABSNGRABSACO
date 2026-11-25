@@ -215,7 +215,7 @@ function renderProduct(product) {
   // A name with ":" ("Collection: Day and Night") gets its SKU on its own
   // line so the SKU reader still pairs the number with the product.
   const numeric = /^\d{6,14}$/.test(product.sku) && !/:/.test(product.name);
-  const lines = ["**" + safe(product.name).slice(0, 200) + "**" + (numeric ? " `" + product.sku + "`" : "")];
+  const lines = ["**" + safe(product.name) + "**" + (numeric ? " `" + product.sku + "`" : "")];
   if (!numeric && product.sku) lines.push("> **SKU:** `" + safe(product.sku).slice(0, 80) + "`");
   // The owner does not want the "Market: eBay Sold" line in formatted posts.
   for (const f of product.fields) {
@@ -249,7 +249,8 @@ export function dropNewsPayloads(parsed, label, rawText = "") {
   const descriptions = [];
   let buffer = "";
   for (const section of sections) {
-    const piece = section.slice(0, 3800);
+    if (section.length > 3800) return []; // Leave oversized original posts intact instead of truncating them.
+    const piece = section;
     if (buffer && buffer.length + piece.length + 2 > 3800) { descriptions.push(buffer); buffer = ""; }
     buffer += (buffer ? "\n\n" : "") + piece;
   }
@@ -330,7 +331,7 @@ export function upcomingAnnouncementPayload(input) {
     } else if (isUrl(line)) {
       body.push("> **Link:** " + line);
     } else if (first) {
-      body.push("**" + emojiFix(safe(line)).slice(0,220) + "**");
+      body.push("**" + emojiFix(safe(line)) + "**");
     } else if (/^(?:retail|msrp|resale|price|demand|outlook|product|time|date|notes?|store|seller)\s*:/i.test(line)) {
       const match = /^([^:]{1,35}):\s*(.*)$/.exec(line);
       body.push(match ? quoteLine(match[1],match[2]) : "> " + emojiFix(safe(line)));
