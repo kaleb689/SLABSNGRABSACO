@@ -332,7 +332,7 @@ export function parseDropSkus(message) {
         // product line (no label, no links or times) is that product's SKU.
         const bare=/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
         addSku(bare[2],bare[1].trim());
-      }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
+      }else if(!/^(?:(?:qty|quantity|price|retail|msrp|resale|stock|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?)\s*(?::|$)|(?:price|stock)\s+(?:\$|\d|pending\b)|https?:\/\/|<@)/i.test(line)){
         title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"");
         titleLine=!/:/.test(line);
       }
@@ -386,10 +386,9 @@ export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
     isFormattedDropPost(post,appId) && post.channel_id===raw.channel_id &&
     Number.isFinite(at(post)) && at(post)>=rawTime && at(post)-rawTime<=5*60*1000);
   if(!formatted.length)return false;
-  const originalSkus=new Set(original.map(item=>item.sku));
-  const postedSkus=new Set(formatted.flatMap(post=>parseDropSkus(post).map(item=>item.sku)));
-  return originalSkus.size===postedSkus.size &&
-    [...originalSkus].every(sku=>postedSkus.has(sku));
+  const originalNames=new Map(original.map(item=>[item.sku,item.name]));
+  const postedNames=new Map(formatted.flatMap(post=>parseDropSkus(post).map(item=>[item.sku,item.name])));
+  return originalNames.size===postedNames.size && [...originalNames].every(([sku,name])=>postedNames.get(sku)===name);
 }
 export function recentSelectableDropPosts(messages, appId, limit=12) {
  return (Array.isArray(messages)?messages:[])
