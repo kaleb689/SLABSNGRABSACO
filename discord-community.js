@@ -332,7 +332,7 @@ export function parseDropSkus(message) {
         // product line (no label, no links or times) is that product's SKU.
         const bare=/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
         addSku(bare[2],bare[1].trim());
-      }else if(!/^(?:(?:qty|quantity|price|retail|msrp|resale|stock|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?)\s*(?::|$)|(?:price|stock)\s+(?:\$|\d|pending\b)|https?:\/\/|<@)/i.test(line)){
+      }else if(!/^(?:(?:qty|quantity|price|retail|msrp|resale|stock|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?)\s*(?::|$)|(?:price|stock)\s+(?:\$|\d|pending\b)|\$\s*\d[\d,.]*\s*$|https?:\/\/|<@)/i.test(line)){
         title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"");
         titleLine=!/:/.test(line);
       }
