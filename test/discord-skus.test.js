@@ -377,3 +377,15 @@ test("customer app loads multiple posts per retailer and saves without removing 
  assert.match(src,/withoutSupersededSkus\(carried,/);
  assert.match(src,/isSelectableSkuSource\(source, appId\)/);
 });
+
+
+test("long SKU product names are not truncated by parsing or the public panel", () => {
+  const name = "Pokemon Trading Card Game " + "Special Collection ".repeat(8) + "Exclusive Variant";
+  const sku = "1234567890";
+  const message = {content: name + "\nSKU: " + sku, id:"123", channel_id:"target"};
+  const products = parseDropSkus(message);
+  assert.deepEqual(products,[{name,sku}]);
+  const card = skuControlPayload(message,products,"tonight",{target:"Target"});
+  assert.ok(card.embeds[0].description.includes(name));
+  assert.ok(card.embeds[0].description.length <= 4096);
+});
