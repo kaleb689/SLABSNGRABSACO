@@ -139,10 +139,10 @@ export function parseDropNews(input, now = Date.now()) {
     const field = labeled(line);
     // "Delta Reign Elite Trainer Box:" with "SKU: ..." on the next line is a
     // product name, not an empty header field.
-    if (field && !field.value && !SKU_LABEL.test(field.label)) {
+    if (field && !SKU_LABEL.test(field.label) && (!HEADER_LABEL.test(field.label) || /^products?$/i.test(field.label)) && !PRODUCT_FIELD.test(field.label)) {
       const next = labeled(nextFilled(i + 1));
       if (next && SKU_LABEL.test(next.label)) {
-        current = { name: productName(field.label), sku: "", fields: [], link: "" };
+        current = { name: productName(line.replace(/^product(?: name)?\s*:\s*/i,"")), sku: "", fields: [], link: "" };
         products.push(current);
         continue;
       }
