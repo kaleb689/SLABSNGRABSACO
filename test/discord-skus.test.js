@@ -379,7 +379,8 @@ test("customer app loads multiple posts per retailer and saves without removing 
 });
 
 
-test("long SKU product names are not truncated by parsing or the public panel", () => {
+test("long SKU product names are not truncated by parsing or the public panel", async () => {
+  const { skuControlPayload } = await import("../discord-community.js");
   const name = "Pokemon Trading Card Game " + "Special Collection ".repeat(8) + "Exclusive Variant";
   const sku = "1234567890";
   const message = {content: name + "\nSKU: " + sku, id:"123", channel_id:"target"};
