@@ -2,6 +2,7 @@ import { targetMasterItems } from "./target-sku-master.js";
 
 const PAGE_SIZE = 5;
 const REVIEW_SIZE = 15;
+function pagesByName(rows,max,display){const pages=[];let page=[],length=0;for(const row of rows){const size=display(row).length+1;if(page.length&&(page.length>=max||length+size>3200)){pages.push(page);page=[];length=0;}page.push(row);length+=size;}if(page.length||!pages.length)pages.push(page);return pages;}
 const BACKTICK = String.fromCharCode(96);
 const sku = value => String(value || "").trim().toUpperCase();
 const safe = value => String(value || "").replace(/[\r\n<>@*_`~|]/g, " ").replace(/\s+/g, " ").trim();
@@ -83,16 +84,17 @@ export function targetMasterPicker(master, draft, requestedPage, notice = "") {
   const matched = words.length
     ? items.filter(row => words.every(word => (row.sku + " " + row.name).toLowerCase().includes(word)))
     : items;
-  const pages = Math.max(1, Math.ceil(matched.length / PAGE_SIZE));
+  const groups=pagesByName(matched,PAGE_SIZE,row=>safe(row.sku)+" — "+safe(row.name));
+  const pages = groups.length;
   const requested = Number(requestedPage ?? draft?.page ?? 0);
   const page = Number.isFinite(requested) ? Math.max(0, Math.min(pages - 1, Math.trunc(requested))) : 0;
-  const view = matched.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const view = groups[page];
   const selected = new Set((draft?.selected || []).map(sku));
   const list = view.map((row, index) => {
     const indexLabel = (index + 1) + ".";
     return "**" + indexLabel + "** " + (selected.has(row.sku) ? "✅" : "▫️") +
       " " + BACKTICK + safe(row.sku).slice(0, 60) + BACKTICK +
-      " — " + safe(row.name).slice(0, 110);
+      " — " + safe(row.name);
   });
   const description = [
     notice ? "**" + safe(notice).slice(0, 320) + "**" : "",
@@ -130,12 +132,13 @@ export function targetMasterPicker(master, draft, requestedPage, notice = "") {
 export function targetMasterPickReview(master, draft, requestedPage = 0) {
   const catalog = new Map(targetMasterItems(master).map(row => [row.sku, row]));
   const selected = [...new Set((draft?.selected || []).map(sku))].filter(key => catalog.has(key));
-  const pages = Math.max(1, Math.ceil(selected.length / REVIEW_SIZE));
+  const groups=pagesByName(selected,REVIEW_SIZE,key=>safe(key)+" — "+safe(catalog.get(key)?.name));
+  const pages = groups.length;
   const page = Math.max(0, Math.min(pages - 1, Number(requestedPage) || 0));
-  const visible = selected.slice(page * REVIEW_SIZE, (page + 1) * REVIEW_SIZE);
+  const visible = groups[page];
   const { added, removed } = targetPickDiff(draft);
   const lines = visible.map(key => BACKTICK + safe(key).slice(0, 60) + BACKTICK +
-    " — " + safe(catalog.get(key)?.name).slice(0, 88));
+    " — " + safe(catalog.get(key)?.name));
   return {
     flags: 64, allowed_mentions: { parse: [] },
     embeds: [{

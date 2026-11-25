@@ -303,7 +303,7 @@ export function parseDropSkus(message) {
     const addSku=(sku,name)=>{
       const id=String(sku||"").toUpperCase();
       if(!/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(id)||seen.has(id))return;
-      products.push({name:String(name||title).slice(0,100),sku:id});
+      products.push({name:String(name||title),sku:id});
       seen.add(id);
     };
     for(const raw of section.split(/\r?\n/)){
@@ -332,8 +332,8 @@ export function parseDropSkus(message) {
         // product line (no label, no links or times) is that product's SKU.
         const bare=/^(.*[A-Za-z].*?)[\s\-|·]+(\d{6,14})$/.exec(line);
         addSku(bare[2],bare[1].trim());
-      }else if(!/^(?:qty|quantity|price|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?|https?:\/\/|<@)/i.test(line)){
-        title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"").slice(0,100);
+      }else if(!/^(?:(?:qty|quantity|price|retail|msrp|resale|stock|cart\s*limit|seller|type|new product|sku|pid|tcin|size|date|time|image|links?)\s*(?::|$)|(?:price|stock)\s+(?:\$|\d|pending\b)|\$\s*\d[\d,.]*\s*$|https?:\/\/|<@)/i.test(line)){
+        title=line.replace(/^(?:product(?: name)?|item(?: name)?)\s*:\s*/i,"");
         titleLine=!/:/.test(line);
       }
     }
@@ -386,10 +386,9 @@ export function isCoveredRawMonitorPost(raw, messages, ownerId, appId) {
     isFormattedDropPost(post,appId) && post.channel_id===raw.channel_id &&
     Number.isFinite(at(post)) && at(post)>=rawTime && at(post)-rawTime<=5*60*1000);
   if(!formatted.length)return false;
-  const originalSkus=new Set(original.map(item=>item.sku));
-  const postedSkus=new Set(formatted.flatMap(post=>parseDropSkus(post).map(item=>item.sku)));
-  return originalSkus.size===postedSkus.size &&
-    [...originalSkus].every(sku=>postedSkus.has(sku));
+  const originalNames=new Map(original.map(item=>[item.sku,item.name]));
+  const postedNames=new Map(formatted.flatMap(post=>parseDropSkus(post).map(item=>[item.sku,item.name])));
+  return originalNames.size===postedNames.size && [...originalNames].every(([sku,name])=>postedNames.get(sku)===name);
 }
 export function recentSelectableDropPosts(messages, appId, limit=12) {
  return (Array.isArray(messages)?messages:[])
@@ -407,7 +406,7 @@ const skuSafeText = value => String(value || "").replace(/[\r\n<>*_`~|]/g, " ").
 
 export function skuControlPayload(message, products, tonightChannelId, retailerDropLabels = {}) {
   const lines = products.map(item =>
-    `**\`${skuSafeText(item.sku).slice(0, 80)}\`** — ${skuSafeText(item.name).slice(0, 75) || "Product name not provided"}`
+    `**\`${skuSafeText(item.sku).slice(0, 80)}\`** — ${skuSafeText(item.name) || "Product name not provided"}`
   );
   // Keep the entire public panel below Discord's 4096-char description
   // and 6000-char combined embed limits. All items remain accessible privately.
@@ -470,7 +469,7 @@ export function skuBrowsePayload(sourceId, products, requestedPage = 0, draft = 
   const offset = page * 25;
   const qty = uniformSkuQuantity(draft);
   const options = products.slice(offset, offset + 25).map((product, index) => ({
-    label: (skuSafeText(product.sku).slice(0, 30) + " · " + skuSafeText(product.name).slice(0, 65)).slice(0, 100),
+    label: (skuSafeText(product.sku).slice(0, 30) + " · " + skuSafeText(product.name)).slice(0, 100),
     description: ("Product: " + skuSafeText(product.name)).slice(0, 100),
     value: String(offset + index),
     default: draft.some(item => item.sku === product.sku)
@@ -529,7 +528,7 @@ export function skuDraftReviewPayload(sourceId, items, requestedPage = 0) {
   const qty = uniformSkuQuantity(items);
   const skus = "(" + selected.map(item => skuSafeText(item.sku).slice(0, 80)).join(", ") + ")";
   const lines = selected.map(item => skuSafeText(item.sku).slice(0, 35) + " — " +
-    skuSafeText(item.name).slice(0, 60));
+    skuSafeText(item.name));
   const header = "**SKUs:**\n" + skus + "\n**Qty: " +
     (qty || "choose 1 or 2") + " — for ALL selected SKUs**";
   const visibleNames = [];
@@ -775,7 +774,7 @@ function skuOwnerChangeFooter(changes, capacity) {
     let section = header, shown = 0;
     for (const row of bucket.rows) {
       const sku = skuSafeText(row.sku).slice(0, 65);
-      const name = skuSafeText(row.name).slice(0, 75) || ("SKU " + sku);
+      const name = skuSafeText(row.name) || ("SKU " + sku);
       const line = "\n• **" + name + " " + bucket.verb + "** · SKU " + String.fromCharCode(96) + sku + String.fromCharCode(96);
       if (section.length + line.length + 40 > allowance) break;
       section += line;
@@ -929,7 +928,7 @@ export function skuAdminReviewPayload(items, userId, requestedPage = 0, groupOf 
   const selected = rows.slice(page * 20, (page + 1) * 20);
   const quantity = uniformSkuQuantity(rows) || 1;
   const details = selected.map(item =>
-    "**" + skuSafeText(item.name).slice(0, 70) + "** · SKU " +
+    "**" + skuSafeText(item.name) + "** · SKU " +
     skuSafeText(item.sku).slice(0, 70));
   const header = "**SKUs:**\n(" + selected.map(item => skuSafeText(item.sku).slice(0,80)).join(", ") +
     ")\n**Qty: " + quantity + " — for ALL selected SKUs**";
@@ -3871,6 +3870,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         converted=new Set(payloads.flatMap(payload=>parseDropSkus(payload).map(item=>item.sku)));
       }
       if(!payloads.length)continue;
+      const originalNames = new Map(parseDropSkus(source).map(item => [item.sku,item.name]));
+      const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku,item.name]));
+      if(![...originalNames].every(([sku,name]) => renderedNames.get(sku) === name))continue;
       // Reject incomplete conversion; never lose a SKU that somebody pasted.
       if([...ids].some(id=>!converted.has(id))) {
         console.warn("Upcoming Drops repair skipped incomplete SKU parse:",JSON.stringify({sourceId:source.id,sourceSkus:ids.size,renderedSkus:converted.size}));
@@ -3949,7 +3951,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const payloads=formattedDropPayloads(priced,dropChannelLabel(channelId),{header:stock.header});
         const originalSkus=new Set(parseDropSkus(raw).map(x=>x.sku));
         const resultSkus=new Set(payloads.flatMap(p=>parseDropSkus(p).map(x=>x.sku)));
-        if(!originalSkus.size||originalSkus.size!==resultSkus.size||
+        const originalNames = new Map(parseDropSkus(raw).map(item => [item.sku,item.name]));
+        const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku,item.name]));
+        if(![...originalNames].every(([sku,name]) => renderedNames.get(sku) === name)||!originalSkus.size||originalSkus.size!==resultSkus.size||
            [...originalSkus].some(sku=>!resultSkus.has(sku))){
           stats.skippedSkuCoverage=(stats.skippedSkuCoverage||0)+1;
           console.warn("Discord stock formatting SKU coverage held:",JSON.stringify({
@@ -4273,7 +4277,10 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     const payloads = dropNewsPayloads(parseDropNews(d), "In-Store Drops", d.content || "");
     const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
     const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
-    if (!payloads.length || rawSkus.size !== cardSkus.size || ![...rawSkus].every(sku => cardSkus.has(sku))) return;
+    const originalNames = new Map(parseDropSkus(d).map(item => [item.sku, item.name]));
+    const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku, item.name]));
+    const namesPreserved = [...originalNames].every(([sku, name]) => renderedNames.get(sku) === name);
+    if (!payloads.length || !namesPreserved || rawSkus.size !== cardSkus.size || ![...rawSkus].every(sku => cardSkus.has(sku))) return;
     try {
       const withPreviews = await waitForLinkPreviews(d);
       for (const [index, payload] of payloads.entries()) {
@@ -4365,6 +4372,11 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
         const label = dropChannelLabel(d.channel_id);
         const priced = await priceKnownTargetDropProducts(structuredProducts,d);
         const payloads = formattedDropPayloads(priced,label,{header:stockParsed.header});
+        const originalNames = new Map(parseDropSkus(d).map(item => [item.sku,item.name]));
+        const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku,item.name]));
+        if (!payloads.length || ![...originalNames].every(([sku,name]) => renderedNames.get(sku) === name)) {
+          throw new Error("Formatted drop would lose an original SKU or product name");
+        }
         const rendered = [];
         for (const payload of payloads) {
           const saved = await api(`/channels/${d.channel_id}/messages`, "POST", payload);
@@ -4404,7 +4416,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
       const payloads = dropNewsPayloads(parsedNews, label, d.content || "");
       const rawSkus = new Set(parseDropSkus(d).map(item => item.sku));
       const cardSkus = new Set(payloads.flatMap(payload => parseDropSkus(payload).map(item => item.sku)));
-      if (payloads.length && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
+      const originalNames = new Map(parseDropSkus(d).map(item => [item.sku,item.name]));
+      const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku,item.name]));
+      if (payloads.length && [...originalNames].every(([sku,name]) => renderedNames.get(sku) === name) && rawSkus.size === cardSkus.size && [...rawSkus].every(sku => cardSkus.has(sku))) {
         try {
           const withPreviews = await waitForLinkPreviews(d);
           const rendered = [];
@@ -4447,7 +4461,9 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
     // the fallback from running.
     if (d.channel_id === upcomingChannelId && trusted && !d.pinned) {
       const payloads=upcomingAnnouncementPayloads(d);
-      if(payloads.length) {
+      const originalNames = new Map(parseDropSkus(d).map(item => [item.sku,item.name]));
+      const renderedNames = new Map(payloads.flatMap(payload => parseDropSkus(payload)).map(item => [item.sku,item.name]));
+      if(payloads.length && [...originalNames].every(([sku,name]) => renderedNames.get(sku) === name)) {
         try {
           const posted=[];
           for(const payload of payloads) {

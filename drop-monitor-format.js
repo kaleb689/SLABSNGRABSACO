@@ -158,7 +158,7 @@ export function formattedDropPayloads(products,label,options={}){
   const embeds=block.map((product,index)=>{
    const price=Number(product.price);
    const lines=[
-    "**"+safe(product.name).slice(0,280)+"**",
+    "**"+safe(product.name)+"**",
     Number.isFinite(price)&&price>0?"Price $"+price.toFixed(2):"Price pending",
     "SKU: "+safe(product.sku).slice(0,80)
    ];
@@ -179,6 +179,8 @@ export function formattedDropPayloads(products,label,options={}){
     footer:{text:FORMATTED_DROP_MARKER}
    };
   });
+  // Discord enforces per-embed and aggregate message limits. Preserve the raw paste when it cannot fit.
+  if(embeds.some(e=>e.description.length>4096)||embeds.reduce((n,e)=>n+e.description.length+(e.title||"").length+(e.footer?.text||"").length,0)>6000)return [];
   blocks.push({content:"**"+title+"**",embeds,allowed_mentions:{parse:[]}});
  }
  return blocks;

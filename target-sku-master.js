@@ -133,7 +133,7 @@ export function targetMasterEnsureOwnerRequested(master, at=new Date().toISOStri
 
 const skuKey = value=>String(value||"").trim().toUpperCase();
 const isSku = value=>/^[A-Z0-9][A-Z0-9._-]{2,79}$/.test(value);
-const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replaceAll(String.fromCharCode(96)," ").replace(/\s+/g," ").trim().slice(0,180);
+const safeName = value=>String(value||"").replace(/[\r\n<>@*_~|]/g," ").replaceAll(String.fromCharCode(96)," ").replace(/\s+/g," ").trim();
 const tick = String.fromCharCode(96);
 const dollar = value => typeof value === "number" && Number.isFinite(value)
   ? "$" + value.toFixed(2) : "N/A";
@@ -218,8 +218,14 @@ export function targetMasterRestore(master,sku,name,ownerId="",at=new Date().toI
   next.updatedAt=at;
   return {master:next,created:!existed};
 }
+function masterLine(x) {return tick+x.sku+tick+" - "+safeName(x.name)+"\n  "+targetMasterPriceLine(x);}
+function masterPages(items,max) {
+  const pages=[];let page=[],length=0;
+  for(const row of items){const size=masterLine(row).length+1;if(page.length&&(page.length>=max||length+size>3500)){pages.push(page);page=[];length=0;}page.push(row);length+=size;}
+  if(page.length||!pages.length)pages.push(page);return pages;
+}
 export function targetMasterDashboard(master) {
-  const items=targetMasterItems(master),preview=items.slice(0,14);
+  const items=targetMasterItems(master),preview=masterPages(items,14)[0];
   return {allowed_mentions:{parse:[]},
     embeds:[{title:"Target SKU Master - "+items.length+" products",
       description:(preview.map(x=>tick+x.sku+tick+" - "+safeName(x.name)+"\n  "+targetMasterPriceLine(x)).join("\n")||"No Target SKUs saved.")+
@@ -233,9 +239,9 @@ export function targetMasterDashboard(master) {
     ]}]};
 }
 export function targetMasterView(master,page=0) {
-  const items=targetMasterItems(master),pages=Math.max(1,Math.ceil(items.length/15));
-  const chosen=Math.max(0,Math.min(Number(page)||0,pages-1));
-  const shown=items.slice(chosen*15,(chosen+1)*15);
+  const items=targetMasterItems(master),groups=masterPages(items,15),pages=groups.length;
+  const chosen=Math.max(0,Math.min(Math.trunc(Number(page)||0),pages-1));
+  const shown=groups[chosen];
   return {flags:64,allowed_mentions:{parse:[]},
     embeds:[{title:"Target Master - "+items.length+" SKUs - Page "+(chosen+1)+"/"+pages,
       description:shown.map(x=>tick+x.sku+tick+" - "+safeName(x.name)+"\n  "+targetMasterPriceLine(x)).join("\n")||"No SKUs saved.",
