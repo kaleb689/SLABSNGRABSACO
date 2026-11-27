@@ -1,0 +1,42 @@
+# Copy to wrangler.toml and insert the D1 database ID returned by Wrangler.
+# There is intentionally NO addresses routing trigger, public workers.dev
+# subdomain, DNS route or custom domain. Deploying cannot replace the
+# production sng.sarl catch-all automatically.
+name = "sng-inbound-ingest"
+main = "src/worker.mjs"
+compatibility_date = "2026-11-18"
+workers_dev = false
+
+[[r2_buckets]]
+binding = "RAW_MAIL"
+bucket_name = "sng-inbound-raw"
+
+[[queues.producers]]
+binding = "INBOUND_QUEUE"
+queue = "sng-inbound-events"
+
+[[queues.consumers]]
+queue = "sng-inbound-events"
+max_batch_size = 50
+max_batch_timeout = 5
+max_retries = 10
+max_concurrency = 5
+dead_letter_queue = "sng-inbound-dead-letter"
+
+[[d1_databases]]
+binding = "RECEIPTS"
+database_name = "sng-inbound-index"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Verification-code messages expire after 24 hours by default.
+# All other messages (including orders and shipping) last AT LEAST 14 days.
+# Default 30 days. Allowed regular-mail values: 336 (14d), 504 (21d),
+# 720 (30d), 1080 (45d), 1440 (60d), 2160 (90d) hours.
+# Code options: 1, 6, 12, 24, 48, 72, 168 hours.
+[vars]
+CODE_RETENTION_HOURS = "24"
+OTHER_RETENTION_HOURS = "720"
+
+# Hourly UTC expiry removes both the original R2 MIME and its D1 index.
+[triggers]
+crons = ["0 * * * *"]
