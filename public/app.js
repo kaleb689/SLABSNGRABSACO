@@ -9,7 +9,8 @@ const PLANS = {
   8: { name: "Ultimate", profiles: 100, amount: 800 }
 };
 
-const NOV28_PRICING_START = Date.parse("2026-11-28T05:00:00.000Z");
+// Owner-confirmed effective time: November 27 at midnight Eastern.
+const NOV28_PRICING_START = Date.parse("2026-11-27T05:00:00.000Z");
 const NOV28_PLAN_PRICES = Object.freeze({1:20,2:35,3:55,4:95,5:170,6:210,7:410,8:1135});
 function updateEffectiveWebsitePlanPrices() {
   if (Date.now() < NOV28_PRICING_START) return;
@@ -553,7 +554,7 @@ function membershipUpcomingHtml(tier) {
   const value = Number(membershipUpcoming?.prices?.[tier]);
   const effective = new Date(membershipUpcoming?.effectiveAt || "");
   const percent = Number(membershipUpcoming?.increasePercent);
-  if (!membershipUpcoming || !Number.isSafeInteger(value) || value <= 0 ||
+  if (Date.now() >= NOV28_PRICING_START || !membershipUpcoming || !Number.isSafeInteger(value) || value <= 0 ||
       !Number.isFinite(effective.getTime()) || percent !== 42) return "";
   const label = effective.toLocaleDateString("en-US", {
     timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric"
@@ -588,7 +589,7 @@ async function refreshMembershipSales() {
     const data = await response.json();
     updateEffectiveWebsitePlanPrices();
     membershipSales = Object.fromEntries(Object.entries(data.discounts || {}).filter(([,sale]) => String(sale?.code || "").trim().toUpperCase() !== "THANKS25"));
-    membershipUpcoming = data.upcoming && typeof data.upcoming === "object" ? data.upcoming : null;
+    membershipUpcoming = Date.now() < NOV28_PRICING_START && data.upcoming && typeof data.upcoming === "object" ? data.upcoming : null;
     renderPricing();
     updateSelectedPlan();
   } catch {}
@@ -728,9 +729,9 @@ function renderPricing() {
   for (const id of ["home-upcoming-pricing-banner", "membership-upcoming-pricing-banner"]) {
     const notice = document.getElementById(id);
     if (!notice) continue;
-    notice.hidden = !membershipUpcoming;
-    notice.textContent = membershipUpcoming
-      ? "Upcoming November 28, 2026: regular membership prices will increase. See the new monthly rates above."
+    notice.hidden = !membershipUpcoming || Date.now() >= NOV28_PRICING_START;
+    notice.textContent = !notice.hidden
+      ? "Upcoming November 27, 2026: regular membership prices will increase. See the new monthly rates above."
       : "";
   }
 

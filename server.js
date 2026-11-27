@@ -380,7 +380,8 @@ const PLANS = {
   }
 };
 
-const NOV28_PRICE_EFFECTIVE_AT = Date.parse("2026-11-28T05:00:00.000Z");
+// Owner correction: Black Friday rates started at midnight Eastern, November 27.
+const NOV28_PRICE_EFFECTIVE_AT = Date.parse("2026-11-27T05:00:00.000Z");
 const NOV28_MEMBERSHIP_PRICES = Object.freeze({1:20,2:35,3:55,4:95,5:170,6:210,7:410,8:1135});
 function activateNov28MembershipPricing(now = Date.now()) {
   if (now < NOV28_PRICE_EFFECTIVE_AT) return false;
@@ -485,22 +486,40 @@ function rentalPriceFor(
 async function synchronizeMembershipPrices() {
   const file = path.join(SECRET_DIR, "membership-stripe-prices.json");
   const cached = await readJson(file, {});
+  const legacyFile=path.join(SECRET_DIR,"membership-legacy-stripe-prices.json");
+  const savedLegacy=await readJson(legacyFile,{});
   for (const tier of [1, 2, 3, 4, 5, 6, 7, 8]) {
     const plan = PLANS[tier];
-    if (!plan.priceId) continue;
-    const originalId = plan.priceId;
+    plan.configuredPriceId ||= plan.priceId;
+    const originalId = plan.configuredPriceId;
+    if (!originalId) continue;
+    plan.legacyPrices = {...(savedLegacy[tier]||{}),...(plan.legacyPrices||{})};
     try {
-      const result = await correctedMembershipPrice(stripe, tier, plan, cached[tier]);
-      plan.legacyPrices = { [originalId]: result.original.unit_amount / 100 };
+      const previousId=cached[tier];
+      const result = await correctedMembershipPrice(stripe, tier, {...plan,priceId:originalId}, previousId);
+      plan.legacyPrices[originalId]=result.original.unit_amount/100;
+      // Before replacing the previously corrected price ID, retain its verified
+      // amount for members whose existing subscriptions still reference it.
+      if(previousId&&previousId!==originalId&&previousId!==result.price.id&&!Object.hasOwn(plan.legacyPrices,previousId)){
+        try{
+          const previous=await stripe.prices.retrieve(previousId);
+          const product=p=>typeof p.product==="string"?p.product:p.product?.id;
+          if(product(previous)===product(result.original)&&previous.currency==="usd"&&previous.type==="recurring"&&previous.recurring?.interval==="month"&&(previous.recurring?.interval_count||1)===1&&Number.isSafeInteger(previous.unit_amount)){
+            plan.legacyPrices[previousId]=previous.unit_amount/100;
+          }
+        }catch(error){console.error("Legacy membership price lookup failed:",JSON.stringify({tier,reason:error?.code||"price_lookup_error"}));throw error;}
+      }
+      savedLegacy[tier]=plan.legacyPrices;
       plan.priceId = result.price.id;
       cached[tier] = result.price.id;
       console.log("Membership Stripe price verified:", JSON.stringify({ tier, profiles: plan.profiles, amount: result.price.unit_amount / 100 }));
     } catch (error) {
-      plan.legacyPrices = { [originalId]: { 5: 70, 6: 100, 7: 215 }[tier] };
+      if (!Object.hasOwn(plan.legacyPrices,originalId) && [5,6,7].includes(tier)) plan.legacyPrices[originalId] = { 5: 70, 6: 100, 7: 215 }[tier];
       plan.priceId = null;
       console.error("Membership price verification failed:", JSON.stringify({ tier, reason: error?.code || "price_configuration_error" }));
     }
   }
+  await writeJson(legacyFile,savedLegacy);
   await writeJson(file, cached);
 }
 
@@ -12691,6 +12710,16 @@ const THANKS25_END_AT = "2026-11-28T05:00:00.000Z";   // Nov 27 at 11:59 PM East
 const THANKS25_COUPON_ID = "SNG_THANKS25_SIX_MONTHS_2026";
 
 async function ensureThanksgivingPromotionConfigured() {
+  if (Date.now() >= NOV28_PRICE_EFFECTIVE_AT) {
+    // The owner retired THANKS25 and its coupon. Do not recreate or reactivate it.
+    const records = await getDiscountCodes();
+    const retired = records.filter(x => String(x.code||"").trim().toUpperCase()==="THANKS25" && x.active);
+    if (retired.length) {
+      for (const record of retired) { record.active=false; record.updatedAt=new Date().toISOString(); }
+      await saveDiscountCodes(records);
+    }
+    return false;
+  }
   if (Date.now() >= Date.parse(THANKS25_END_AT)) return false;
   const existing = (await getDiscountCodes()).find(x => x.code === "THANKS25");
   if (existing?.stripeCouponId && existing?.stripePromotionCodeId) {
@@ -12787,7 +12816,7 @@ const THANKSGIVING_DISCORD_ANNOUNCEMENT = [
 // Explicitly owner-approved announcement. This posting is separate from the
 // earlier incorrect #general post, and must never fall back to #general.
 async function announceThanksgivingOfferOnce() {
-  if (Date.now() < Date.parse(THANKS25_START_AT) ||
+  if (Date.now() >= NOV28_PRICE_EFFECTIVE_AT || Date.now() < Date.parse(THANKS25_START_AT) ||
       Date.now() >= Date.parse(THANKS25_END_AT)) return false;
   const sentFile = path.join(DATA_DIR, "thanksgiving-2026-approved-announcements-everyone.json");
   if ((await readJson(sentFile, {})).sentAt) return false;
@@ -12883,7 +12912,7 @@ async function activateStartedScheduledPromotions() {
   const records=await getDiscountCodes(),now=Date.now();
   for(const record of records){
     const id=String(record.stripePromotionCodeId||"");
-    if(!id||!record.startsAt||!record.active||record.discountScope==="extension"||
+    if((now>=NOV28_PRICE_EFFECTIVE_AT&&String(record.code||"").trim().toUpperCase()==="THANKS25")||!id||!record.startsAt||!record.active||record.discountScope==="extension"||
        (record.expiresAt&&Date.parse(record.expiresAt)<=now)||
        Date.parse(record.startsAt)>now||
        activatedScheduledPromotionCodes.has(id))continue;
@@ -51228,7 +51257,7 @@ await initializeArrayFile(
     }
     // Retry approved Nov 28 price activation until all eight Stripe tier prices
     // have been reconciled, without altering existing subscriptions.
-    let nov28PricingUpdated = Date.now() >= NOV28_PRICE_EFFECTIVE_AT;
+    let nov28PricingUpdated = Date.now() >= NOV28_PRICE_EFFECTIVE_AT && Object.values(PLANS).every(plan => Boolean(plan.priceId));
     const nov28PricingTimer = setInterval(async () => {
       if (nov28PricingUpdated || Date.now() < NOV28_PRICE_EFFECTIVE_AT) return;
       try {
@@ -51237,7 +51266,7 @@ await initializeArrayFile(
         if (Object.values(PLANS).every(plan => Boolean(plan.priceId))) {
           nov28PricingUpdated = true;
           broadcastLiveDataChange("membership-pricing-updated");
-          console.log("November 28 membership prices now active.");
+          console.log("November 27 membership prices now active.");
         }
       } catch (error) {
         console.error("November 28 pricing activation:", error?.message || error);

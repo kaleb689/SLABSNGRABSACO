@@ -31,9 +31,9 @@ test("upcoming pricing is absent until owner approval and never silently reprice
  assert.equal(approvedUpcomingSchedule(plans),null);
  assert.equal(approvedUpcomingSchedule(plans,{approved:false,now:Date.parse("2026-11-15T20:00:00Z")}),null);
  const approved=approvedUpcomingSchedule(plans,{approved:true,now:Date.parse("2026-11-15T20:00:00Z")});
- assert.equal(approved.effectiveAt,"2026-11-28T05:00:00.000Z");
+ assert.equal(approved.effectiveAt,"2026-11-27T05:00:00.000Z");
  assert.deepEqual(Object.values(approved.prices),tiers.map(row=>row[5]));
- assert.equal(approvedUpcomingSchedule(plans,{approved:true,now:Date.parse("2026-11-28T05:00:00Z")}),null);
+ assert.equal(approvedUpcomingSchedule(plans,{approved:true,now:Date.parse("2026-11-27T05:00:00Z")}),null);
 });
 
 test("server exposes future-pricing display only behind explicit approval flag",()=>{
@@ -44,8 +44,17 @@ test("server exposes future-pricing display only behind explicit approval flag",
  assert.match(server,/approvedUpcomingSchedule\(PLANS/);
  assert.match(server,/return res\.json\(\{ discounts,/);
  assert.match(app,/membershipUpcomingHtml/);
- assert.match(app,/membershipUpcoming = data\.upcoming/);
+ assert.match(app,/membershipUpcoming = Date\.now\(\) < NOV28_PRICING_START/);
  assert.match(markup,/id="home-upcoming-pricing-banner"/);
  assert.match(markup,/id="membership-upcoming-pricing-banner"/);
  assert.doesNotMatch(server,/STRIPE_TIER1_PRICE_ID\s*=\s*["']price_/);
+});
+
+test("owner-corrected midnight activation agrees on website and server",()=>{
+ const server=readFileSync(new URL("../server.js",import.meta.url),"utf8");
+ const app=readFileSync(new URL("../public/app.js",import.meta.url),"utf8");
+ assert.match(server,/NOV28_PRICE_EFFECTIVE_AT = Date\.parse\("2026-11-27T05:00:00\.000Z"\)/);
+ assert.match(app,/NOV28_PRICING_START = Date\.parse\("2026-11-27T05:00:00\.000Z"\)/);
+ assert.match(server,/membership-legacy-stripe-prices\.json/);
+ assert.match(server,/record\.active=false/);
 });

@@ -1,9 +1,9 @@
-// Thanksgiving 2026 upcoming price display, rounded DOWN to nearest $5 on Nov 28.
+// Thanksgiving 2026 upcoming price display, rounded DOWN to nearest $5, effective Nov 27.
 export const THANKSGIVING_2026 = Object.freeze({
   code: "THANKS25",
   discountPercent: 25,
   saleEndExclusive: "2026-11-28T05:00:00.000Z", // Nov 27, 11:59:59 PM EST
-  upcomingEffectiveAt: "2026-11-28T05:00:00.000Z",
+  upcomingEffectiveAt: "2026-11-27T05:00:00.000Z",
   increasePercent: 42
 });
 
