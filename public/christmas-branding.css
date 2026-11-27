@@ -12,3 +12,11 @@ html.christmas-theme .home-reference-trust span::first-letter{color:#83e7a9}
 html.christmas-theme .price-card,html.christmas-theme .checkout-panel,html.christmas-theme .how,html.christmas-theme .queue-panel{border-color:#355d46}
 html.christmas-theme .home-reference-art::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.34;background:radial-gradient(circle,#fff 0 1px,transparent 1.8px) 7px 5px/73px 89px,radial-gradient(circle,#fff 0 1px,transparent 1.8px) 31px 17px/109px 137px;mask-image:linear-gradient(180deg,#000,transparent 90%)}
 @media(prefers-reduced-motion:reduce){html.christmas-theme .home-reference-art::before{animation:none}}
+
+/* Independent, decorative snowfall: never catches clicks or changes layout. */
+.sng-holiday-snow{display:none}
+html.christmas-theme .sng-holiday-snow{display:block;position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:12;contain:strict}
+.sng-holiday-flake{position:absolute;top:0;left:var(--snow-x);width:var(--snow-size);height:var(--snow-size);border-radius:50%;background:#fff;box-shadow:0 0 5px #d5f4ff80;opacity:var(--snow-opacity);animation:sng-holiday-snowfall var(--snow-duration) linear var(--snow-delay) infinite;pointer-events:none;will-change:transform}
+@keyframes sng-holiday-snowfall{0%{transform:translate3d(0,-12vh,0)}50%{transform:translate3d(var(--snow-drift),48vh,0)}100%{transform:translate3d(0,110vh,0)}}
+@media(max-width:680px){.sng-holiday-flake:nth-child(n+19){display:none}}
+@media(prefers-reduced-motion:reduce){html.christmas-theme .sng-holiday-snow{display:none}}

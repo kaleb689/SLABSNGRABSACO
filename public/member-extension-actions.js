@@ -20,14 +20,12 @@
   let current=null,verifiedQuote=null,requestId=null,refreshing=false;
   function thanksgivingSelected(){return code.value.trim().toUpperCase()==="THANKS25";}
   function syncPromotionLimit(){
-    // Other extensions can be longer, but THANKS25 can never be used for
-    // more than six prepaid months in one purchase.
-    months.max=thanksgivingSelected()?"6":"1200";
+    months.max="1200";
     months.setAttribute("aria-describedby","extension-promo-six-month-cap");
     const note=$("extension-promo-six-month-cap");
     if(note)note.textContent=thanksgivingSelected()
-      ?"THANKS25: 25% off for 1–6 prepaid months. Remove the code to buy more than 6 months at the regular price."
-      :"Thanksgiving promotion: at most 6 prepaid months can be discounted with THANKS25.";
+      ?"This Thanksgiving offer has ended. Remove the expired code to continue."
+      :"Enter an eligible extension discount code if you have one.";
   }
   function invalidate(){
     syncPromotionLimit();
@@ -83,8 +81,8 @@
     if(!Number.isSafeInteger(count)||count<1||count>1200){
       status.textContent="Enter a positive whole number of months, up to the supported limit.";return;
     }
-    if(thanksgivingSelected()&&count>6){
-      status.textContent="THANKS25 is limited to 6 discounted membership months. Select 1–6 months or remove the code for a longer full-price extension.";return;
+    if(thanksgivingSelected()){
+      status.textContent="The Thanksgiving offer has ended. Remove the expired code to continue.";return;
     }
     quoteBtn.disabled=true;purchaseBtn.hidden=true;status.textContent="Checking your current Stripe term and discount…";
     try{

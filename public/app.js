@@ -572,8 +572,7 @@ function membershipPriceHtml(tier, plan) {
       : sale.duration === "repeating" && Number(sale.durationMonths) > 0
         ? `First ${Number(sale.durationMonths)} monthly payments`
         : "First payment";
-    const capNote = String(sale.code || "").toUpperCase() === "THANKS25"
-      ? " · Prepaid extensions capped at 6 discounted months" : "";
+    const capNote = "";
     const end = new Date(sale.endsAt || "");
     const expires = Number.isFinite(end.getTime())
       ? " · Ends " + end.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })
@@ -588,7 +587,7 @@ async function refreshMembershipSales() {
     if (!response.ok) return;
     const data = await response.json();
     updateEffectiveWebsitePlanPrices();
-    membershipSales = data.discounts || {};
+    membershipSales = Object.fromEntries(Object.entries(data.discounts || {}).filter(([,sale]) => String(sale?.code || "").trim().toUpperCase() !== "THANKS25"));
     membershipUpcoming = data.upcoming && typeof data.upcoming === "object" ? data.upcoming : null;
     renderPricing();
     updateSelectedPlan();

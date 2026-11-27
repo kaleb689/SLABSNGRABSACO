@@ -42,13 +42,21 @@ test("approved OG members receive 10% unless a greater sitewide discount is acti
   const og = membershipDiscountOptions([], "", 4, Date.now(), "og@example.test", true);
   assert.deepEqual(og, { discounts: [{ coupon: "SNG_OG10_LIFETIME_2026" }] });
   const sitewide = {
-    code: "THANKS25", percent: 25, tier: "all", sitewide: true, active: true,
+    code: "SALE25", percent: 25, tier: "all", sitewide: true, active: true,
     stripePromotionCodeId: "promo_thanks25", discountScope: "both"
   };
   assert.deepEqual(membershipDiscountOptions([sitewide], "", 4, Date.now(), "og@example.test", true),
     { discounts: [{ promotion_code: "promo_thanks25" }] });
-  assert.deepEqual(membershipDiscountOptions([sitewide], "THANKS25", 4, Date.now(), "og@example.test", true),
+  assert.deepEqual(membershipDiscountOptions([sitewide], "SALE25", 4, Date.now(), "og@example.test", true),
     { discounts: [{ promotion_code: "promo_thanks25" }] });
   assert.deepEqual(membershipDiscountOptions([{ ...sitewide, percent: 5 }], "", 4, Date.now(), "og@example.test", true),
     { discounts: [{ coupon: "SNG_OG10_LIFETIME_2026" }] });
+});
+
+test("retired Thanksgiving code is never auto-selected or accepted; OG pricing stays intact",()=>{
+  const retired={code:"THANKS25",percent:25,tier:"all",sitewide:true,active:true,stripePromotionCodeId:"promo_thanks25"};
+  assert.equal(activeSitewideDiscount([retired],1),null);
+  assert.throws(()=>membershipDiscountOptions([retired],"thanks25",1),/ended/);
+  assert.deepEqual(membershipDiscountOptions([retired],"",1,Date.now(),"og@example.test",true),
+    {discounts:[{coupon:"SNG_OG10_LIFETIME_2026"}]});
 });

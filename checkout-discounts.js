@@ -1,7 +1,8 @@
 import { OG_DISCOUNT_COUPON_ID } from "./og-member-grants.js";
+import { isThanksgivingCode } from "./thanksgiving-2026.js";
 
 export function activeSitewideDiscount(records, tier, now = Date.now()) {
-  return records.filter(item => item.sitewide === true && item.discountScope !== "extension" && (!item.startsAt || Date.parse(item.startsAt) <= now) && item.active && !item.exhausted && !item.usageUnavailable && item.stripePromotionCodeId &&
+  return records.filter(item => !isThanksgivingCode(item) && item.sitewide === true && item.discountScope !== "extension" && (!item.startsAt || Date.parse(item.startsAt) <= now) && item.active && !item.exhausted && !item.usageUnavailable && item.stripePromotionCodeId &&
     !item.recipientEmail && item.ogOnly !== true &&
     (item.tier === "all" || Number(item.tier) === Number(tier)) &&
     (!item.expiresAt || Date.parse(item.expiresAt) > now))
@@ -25,6 +26,7 @@ export function membershipDiscountOptions(
   isOgMember = false
 ) {
   const code = String(input || "").trim().toUpperCase();
+  if (isThanksgivingCode(code)) throw new Error("The Thanksgiving discount has ended.");
 
   let discount = null;
   if (code) {

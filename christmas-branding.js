@@ -14,35 +14,55 @@ export function christmasActive(date=new Date()){
   const key=parts.year+"-"+parts.month+"-"+parts.day;
   return key>="2026-11-27"&&key<"2027-01-01";
 }
+const ART_VERSION="christmas-2026-v2";
 const palette=["#ff464f","#58ee89","#ffd16b","#f7faff"];
 function lightsSvg(){
-  const bulbs=Array.from({length:28},(_,i)=>{
-    const angle=-Math.PI/2+2*Math.PI*i/28;
-    const x=512+453*Math.cos(angle),y=512+447*Math.sin(angle);
-    const color=palette[i%palette.length],rotation=angle*180/Math.PI+90;
-    return '<g transform="translate('+x.toFixed(1)+' '+y.toFixed(1)+') rotate('+rotation.toFixed(1)+')"><ellipse cy="9" rx="16" ry="22" fill="'+color+'" opacity=".42" filter="url(#glow)"/><rect x="-6" y="-7" width="12" height="11" rx="3" fill="#133b2a"/><ellipse cy="10" rx="8.5" ry="13.5" fill="'+color+'" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/><ellipse cx="-2.5" cy="5" rx="2" ry="4" fill="#fff" opacity=".8"/></g>';
+  // Keep all ornaments outside the two card faces and the original lettering.
+  // The broad draped string, corner sprigs and snow accents surround the original emblem.
+  const points=[[86,126],[155,91],[228,65],[306,48],[391,40],[477,40],[558,40],[642,44],[723,59],[800,82],[872,118],[928,176],[958,251],[976,334],[980,418],[981,504],[979,590],[965,675],[932,754],[885,821],[822,876],[745,920],[662,946],[576,962],[488,970],[401,963],[315,949],[235,922],[159,879],[99,821],[59,754],[36,675],[26,590],[24,504],[28,418],[40,334],[60,250],[75,184]];
+  const bulbs=points.map(([x,y],i)=>{
+    const a=Math.atan2(y-512,x-512)*180/Math.PI-90,c=palette[i%palette.length];
+    return '<g transform="translate('+x+' '+y+') rotate('+a.toFixed(1)+')"><ellipse cy="11" rx="19" ry="25" fill="'+c+'" opacity=".55" filter="url(#glow)"/><rect x="-7" y="-7" width="14" height="13" rx="3" fill="#294d2f"/><ellipse cy="12" rx="10" ry="16" fill="'+c+'" stroke="#fff" stroke-opacity=".75" stroke-width="1.4"/><ellipse cx="-3" cy="7" rx="3" ry="5" fill="#fff" opacity=".8"/></g>';
   }).join("");
-  return Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><filter id="glow"><feGaussianBlur stdDeviation="8"/></filter><linearGradient id="wire" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ac2438"/><stop offset=".5" stop-color="#e1434e"/><stop offset="1" stop-color="#159b56"/></linearGradient></defs><ellipse cx="512" cy="512" rx="453" ry="447" fill="none" stroke="#0b301e" stroke-width="10"/><ellipse cx="512" cy="512" rx="453" ry="447" fill="none" stroke="url(#wire)" stroke-width="3"/>'+bulbs+'</svg>');
+  const wire=points.map(([x,y],i)=>(i?"L":"M")+x+" "+y).join(" ")+"Z";
+  const snow=Array.from({length:42},(_,i)=>{
+    const a=i*2.399963,x=512+Math.cos(a)*(468+(i%4)*8),y=512+Math.sin(a)*(450+(i%5)*8);
+    return '<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+(i%3+1.6)+'" fill="#fff" opacity="'+(.34+(i%4)*.12)+'"/>';
+  }).join("");
+  return Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><filter id="glow"><feGaussianBlur stdDeviation="9"/></filter><radialGradient id="h"><stop stop-color="#174b2c" stop-opacity=".20"/><stop offset="1" stop-color="#10221b" stop-opacity="0"/></radialGradient></defs><ellipse cx="512" cy="512" rx="475" ry="465" fill="url(#h)"/><path d="'+wire+'" fill="none" stroke="#0b271b" stroke-width="8" stroke-linejoin="round"/><path d="'+wire+'" fill="none" stroke="#5b7953" stroke-width="2.5" stroke-linejoin="round"/>'+snow+bulbs+'</svg>');
 }
 let logoWork;
 export function prepareChristmasLogo(){
   if(!logoWork)logoWork=(async()=>{
-    // The original PNG stays untouched. All holiday art is behind the original,
-    // so its lettering, card art, sports card, and typography are not redrawn.
+    // The original PNG stays untouched. Use its real pixels rather than redrawing
+    // either graded card or the lettering. Recolor only blue trim outside protected card zones.
     const {data:original,info}=await sharp(ORIGINAL).ensureAlpha()
       .trim({background:"#00000000",threshold:2})
       .resize({width:875,height:875,fit:"inside"}).png().toBuffer({resolveWithObject:true});
     const {data:raw,info:ri}=await sharp(original).ensureAlpha().raw().toBuffer({resolveWithObject:true});
     const halo=Buffer.alloc(raw.length);
+    const decorated=Buffer.from(raw);
     for(let y=0;y<ri.height;y++)for(let x=0;x<ri.width;x++){
       const p=(y*ri.width+x)*4,t=x/Math.max(1,ri.width-1);
       halo[p]=Math.round(21+216*t);halo[p+1]=Math.round(159-112*t);
       halo[p+2]=Math.round(80-19*t);halo[p+3]=raw[p+3];
+      const u=x/Math.max(1,ri.width-1),v=y/Math.max(1,ri.height-1);
+      // Protect Charizard and Josh Allen in the upper center and the lower hand/card art.
+      // All grayscale lettering stays pixel-identical; only saturated cyan trim is recolored.
+      const cardZone=(v<.47&&u>.14&&u<.86)||(v>.68&&u>.20&&u<.80);
+      const r=raw[p],g=raw[p+1],b=raw[p+2];
+      if(!cardZone&&raw[p+3]>0&&b-r>45&&g-r>28&&b>85&&b>=g*.87){
+        const brightness=Math.max(r,g,b)/255;
+        const red=(u+v*.28)>.61;
+        const colors=red?[255,63,76]:[64,222,118];
+        for(let c=0;c<3;c++)decorated[p+c]=Math.min(255,Math.round(colors[c]*brightness*.92+Math.min(r,g,b)*.12));
+      }
     }
     const edge=await sharp(halo,{raw:{width:ri.width,height:ri.height,channels:4}})
       .resize({width:ri.width+24,height:ri.height+24,fit:"fill"}).blur(4).png().toBuffer();
+    const colored=await sharp(decorated,{raw:{width:ri.width,height:ri.height,channels:4}}).png().toBuffer();
     const png=await sharp({create:{width:1024,height:1024,channels:4,background:"#00000000"}})
-      .composite([{input:lightsSvg()},{input:edge,gravity:"centre"},{input:original,gravity:"centre"}])
+      .composite([{input:lightsSvg()},{input:edge,gravity:"centre"},{input:colored,gravity:"centre"}])
       .png().toBuffer();
     const temp=SEASONAL+".tmp";
     await fs.writeFile(temp,png);await fs.rename(temp,SEASONAL);
@@ -83,7 +103,13 @@ export async function syncDiscordChristmasBranding({api,guildId,dataDir,date=new
     for(const field of ["icon","banner"]){
       if(field==="banner"&&!guild.features?.includes("BANNER"))continue;
       const existing=state.fields[field];
-      if(existing?.applied||existing?.restored||existing?.pending&&guild[field]!==existing.before)continue;
+      if(existing?.restored)continue;
+      // Upgrade the already-applied v1 image exactly once, retaining its original
+      // pre-Christmas backup. Never overwrite an unrelated manual change.
+      if(existing?.applied){
+        if(existing.artVersion===ART_VERSION)continue;
+        if(guild[field]!==existing.applied)continue;
+      }else if(existing?.pending&&guild[field]!==existing.before)continue;
       try{
         const backup=existing?existing.backup:await backupGuildArt(guildId,field,guild[field]||null);
         const entry=existing||{before:guild[field]||null,backup,pending:true};
@@ -91,7 +117,7 @@ export async function syncDiscordChristmasBranding({api,guildId,dataDir,date=new
         const artwork=field==="icon"?await sharp(logo).resize(512,512).png().toBuffer():await makeBanner(logo);
         const updated=await api("/guilds/"+guildId,"PATCH",{[field]:uri(artwork)});
         if(!updated?.[field])throw Error("Discord did not confirm seasonal "+field);
-        entry.applied=updated[field];entry.pending=false;await saveMarker(marker,state);
+        entry.applied=updated[field];entry.artVersion=ART_VERSION;entry.pending=false;await saveMarker(marker,state);
         guild=updated;
         console.log("Christmas Discord "+field+": updated");
       }catch(e){console.error("Christmas Discord "+field+":",e?.message||"unavailable");}

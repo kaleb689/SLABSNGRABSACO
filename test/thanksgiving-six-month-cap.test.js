@@ -63,6 +63,7 @@ test("Website and both backend purchase paths honor the same six-month limit",()
   assert.match(server,/validateThanksgivingPromotionSetup\(\{/);
   assert.match(checkout,/validateThanksgivingExtensionMonths\(\{months:body\.months,code,priorMonths:used\}\)/);
   assert.match(checkout,/active\.reduce\(\(sum,item\)/);
-  assert.match(site,/months\.max=thanksgivingSelected\(\)\?"6":"1200"/);
-  assert.match(site,/if\(thanksgivingSelected\(\)&&count>6\)/);
+  assert.match(site,/if\(thanksgivingSelected\(\)\)/);
+  assert.match(site,/Thanksgiving offer has ended/);
+  assert.match(checkout,/if \(isThanksgivingCode\(typed\)\) throw fail/);
 });

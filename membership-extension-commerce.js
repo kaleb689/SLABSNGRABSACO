@@ -134,6 +134,7 @@ export function registerMembershipExtensionCommerce(app, d) {
   async function getEligibleCode(input, tier, account, pending = false) {
     const typed = String(input || "").trim().toUpperCase();
     if (!typed) return null;
+    if (isThanksgivingCode(typed)) throw fail("The Thanksgiving discount has ended.");
     const all = await getDiscountsWithUsage();
     const found = all.find(record => String(record.code || "").toUpperCase() === typed);
     if (!found || !found.active || scopeOf(found) === "signup" || found.discountType === "fixed-price" ||
