@@ -1,0 +1,14 @@
+/* Seasonal colors are scoped; no layout, controls, prices, or status semantics change. */
+html.christmas-theme{--bg:#07120e;--panel:#0e1b17;--panel2:#13241c;--line:#345646;--cyan:#79e5a3;--cyan2:#19864d}
+html.christmas-theme body{background:radial-gradient(ellipse at 18% 0%,#183d2c65,transparent 50%),radial-gradient(ellipse at 88% 8%,#621c2860,transparent 45%),linear-gradient(180deg,#07120f,#0a1415 65%,#07120f)}
+html.christmas-theme .site-header,html.christmas-theme .top{background:linear-gradient(110deg,#0d261dec,#10161bed 52%,#35121deb);border-bottom-color:#9c3442}
+html.christmas-theme .site-header::after,html.christmas-theme .top::after{content:"";position:absolute;bottom:-3px;left:0;right:0;height:5px;pointer-events:none;background:radial-gradient(circle,#ff525d 0 2px,transparent 2.6px) 0 0/80px 5px repeat-x,radial-gradient(circle,#79efa2 0 2px,transparent 2.6px) 20px 0/80px 5px repeat-x,radial-gradient(circle,#ffda79 0 2px,transparent 2.6px) 40px 0/80px 5px repeat-x,radial-gradient(circle,#f1faff 0 2px,transparent 2.6px) 60px 0/80px 5px repeat-x}
+html.christmas-theme .top{position:relative}
+html.christmas-theme .home-reference-hero{border-bottom-color:#345646;background:radial-gradient(ellipse at 76% 42%,#1c7c4833,transparent 45%),radial-gradient(ellipse at 94% 20%,#8e283733,transparent 40%),linear-gradient(180deg,#08191299,#07100fbb)}
+html.christmas-theme .home-reference-logo-glow{background:radial-gradient(circle,#1fc46538,#bc203b28 43%,transparent 70%)}
+html.christmas-theme .brand-logo,html.christmas-theme .home-reference-logo,html.christmas-theme .brand>img{filter:drop-shadow(0 0 7px #30bf6755) drop-shadow(0 0 9px #d63b4544)}
+html.christmas-theme .home-reference-copy h1 em,html.christmas-theme .nav-link.active,html.christmas-theme .nav-link:hover,html.christmas-theme .hero h1 em,html.christmas-theme .eyebrow{color:#83e7a9}
+html.christmas-theme .home-reference-trust span::first-letter{color:#83e7a9}
+html.christmas-theme .price-card,html.christmas-theme .checkout-panel,html.christmas-theme .how,html.christmas-theme .queue-panel{border-color:#355d46}
+html.christmas-theme .home-reference-art::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.34;background:radial-gradient(circle,#fff 0 1px,transparent 1.8px) 7px 5px/73px 89px,radial-gradient(circle,#fff 0 1px,transparent 1.8px) 31px 17px/109px 137px;mask-image:linear-gradient(180deg,#000,transparent 90%)}
+@media(prefers-reduced-motion:reduce){html.christmas-theme .home-reference-art::before{animation:none}}

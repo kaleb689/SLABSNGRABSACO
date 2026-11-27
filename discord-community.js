@@ -11,6 +11,7 @@ import { parseMonitorDropProducts, parseSkuStockDropProducts, formattedDropPaylo
 import {createDiscordDropRecapController,dropControlRows,handleTypedDropRecapPreview} from "./discord-live-drop-recap.js";
 import {approvedTemplate,renderRecapGraphic} from "./discord-recap-graphic.js";
 import {applyApprovedDiscordBotAvatar} from "./discord-bot-avatar.js";
+import {christmasActive,prepareChristmasLogo,syncDiscordChristmasBranding} from "./christmas-branding.js";
 import {SLABSNGRABSTC_SUCCESS_CHANNEL_ID} from "./discord-source-price-field-policy.js";
 import { parseDropNews, dropNewsPayloads, isDropNewsPaste, upcomingAnnouncementPayload, upcomingAnnouncementPayloads, upcomingDropRetailer } from "./drop-news-format.js";
 import { dropImageSources, hasLinks, imageExtension, MAX_DROP_IMAGE_BYTES } from "./drop-images.js";
@@ -1076,6 +1077,7 @@ export function managedPanelButtonsChanged(key,existing={},desired={}){
 export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAccounts, getAllowance, getPaidSkuAllowance, getOgStatus, dataDir, aiKey, geminiKey, onSuccessMessage, onRestoreLapsedProfiles, onRtpLapsedProfiles, onExtendLapsedProfile, onCreateRentalExtensionCheckout, onCreateRentalBatchExtensionCheckout, onRetailerSkuUpdate, onRetailerRoleSync, onGlobalDropNotification, onSkuSelectionAudit, onAppMessageChannelReady, onAppSupportReply, raffleClub }) {
   discordCommunityStatus.configured = Boolean(token);
   discordCommunityStatus.aiConfigured = Boolean(geminiKey || aiKey);
+  if(christmasActive())void prepareChristmasLogo().catch(error=>console.error("Christmas website artwork:",error?.message||"unavailable"));
   if (!token) return;
   const deliveryGuard=createNotificationDeliveryGuard({dataDir});
   const headers = { Authorization: `Bot ${token}`, "Content-Type": "application/json" };
@@ -1330,12 +1332,21 @@ export function startDiscordCommunity({ token, getChannelId, getAccounts, saveAc
     }));
     return true;
   }
+  let christmasBrandingBusy=false;
+  async function refreshChristmasBranding(){
+    if(!guildId||christmasBrandingBusy)return;
+    christmasBrandingBusy=true;
+    try{await syncDiscordChristmasBranding({api,guildId,dataDir});}
+    catch(error){console.error("Christmas Discord branding:",error?.message||"unavailable");}
+    finally{christmasBrandingBusy=false;}
+  }
   async function provision() {
     const channelId = await getChannelId();
     if (!/^\d{17,22}$/.test(String(channelId))) throw new Error("Set DISCORD_SUCCESS_CHANNEL_ID to a channel in the desired server.");
     const channel = await api(`/channels/${channelId}`);
     guildId = channel.guild_id;
     if (!guildId) throw new Error("The success channel does not belong to a server.");
+    void refreshChristmasBranding();
     const me = await api("/users/@me");
     appId = me.id;
     discordCommunityStatus.bot = { id: me.id, username: me.username };
@@ -6052,6 +6063,7 @@ Answer general website and Discord questions broadly: navigation, step-by-step s
   setInterval(() => void refreshTcgcsvMarket(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(() => void refreshTargetSkuPrices(), 24 * 60 * 60 * 1000).unref?.();
   setInterval(syncAll, 60000).unref?.();
+  setInterval(()=>void refreshChristmasBranding(),60*60*1000).unref?.();
   // Periodic idempotent safety net for messages missed while a deployment
   // temporarily disconnects the gateway. Never formats arbitrary chat text.
   setInterval(() => {
